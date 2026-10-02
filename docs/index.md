@@ -1,8 +1,8 @@
-# Sentry WMS
+# Sơn Lộc WMS
 
-Sentry WMS is a free, open-source warehouse management system built for e-commerce fulfillment.
+Sơn Lộc WMS is a warehouse management system for e-commerce fulfillment.
 
-It connects barcode scans, pick tasks, and inventory movements to whatever database or ERP your business runs on. Sentry handles the physical warehouse execution layer -- receiving, storage, picking, packing, shipping, and counting -- so your system of record stays accurate.
+It connects barcode scans, pick tasks, and inventory movements to whatever database or ERP your business runs on. Sơn Lộc WMS handles the physical warehouse execution layer -- receiving, storage, picking, packing, shipping, and counting -- so your system of record stays accurate.
 
 ## Features
 
@@ -18,6 +18,7 @@ It connects barcode scans, pick tasks, and inventory movements to whatever datab
 - **Barcode Lookup** -- scan any barcode from the home screen to identify items, bins, POs, or SOs
 - **Connector Framework** -- pluggable ERP / commerce sync with encrypted credential vault, sync-health dashboard, rate limiting, and circuit breaker
 - **Admin Panel** -- React web app for warehouse managers to monitor operations and configure the system
+- **Customer Portal** -- separate web app where a 3PL customer sees its own stock, inbound and invoices and submits outbound requests, scoped to that customer in SQL and stripped of the operator's layout
 
 ## Stack
 
@@ -27,6 +28,7 @@ It connects barcode scans, pick tasks, and inventory movements to whatever datab
 | API | Python / Flask |
 | Database | PostgreSQL 16 |
 | Admin Panel | React 18 / Vite |
+| Customer Portal | React 19 / Vite |
 | Infrastructure | Docker Compose |
 
 ## Quick Start
@@ -42,6 +44,7 @@ docker compose up -d
 
 - API: [http://localhost:5000](http://localhost:5000)
 - Admin panel: [http://localhost:8080](http://localhost:8080)
+- Customer portal: [http://localhost:8081](http://localhost:8081)
 - Health check: [http://localhost:5000/api/health](http://localhost:5000/api/health)
 
 Fresh installs seed the admin user as `admin` / `admin` with a forced password change on first login. Set `ADMIN_PASSWORD` in your `.env` to skip the forced-change flow; the seed prints that value in the logs:
@@ -60,12 +63,22 @@ docker compose -f docker-compose.yml -f docker-compose.dev.yml up
 ## Documentation
 
 - [API Reference](api-reference.md) -- every endpoint with request/response examples
+- [Customer API](customer-api.md) -- the portal API and customer-bound tokens, with the tenancy rules
 - [Deployment](deployment.md) -- Docker setup, production config, mobile app
 - [Admin Panel](admin-panel.md) -- page-by-page guide to the web admin
 - [Test Lab](test-lab.md) -- setting up a test environment with hardware scanners
 - [Contributing](contributing.md) -- how to set up the dev environment and submit PRs
+- [Architecture patterns](patterns.md) -- scan-to-confirm, pallet, billing, permissions
+- [UAT go-live](uat-test-cases.md) -- R-01→R-08 inbound, pick, offline queue, sign-off
+- [Role matrix](role-matrix.md) -- admin / supervisor / picker / billing clerk
+- [Training flows](training-flows.md) -- receive, put-away, pick, billing
+- [Go-live runbook](runbooks/go-live.md) -- start/stop, migrations 078–086, Celery beat
 
 ## Current Version
+
+Unreleased (in the working tree) -- Customer portal. A 3PL customer gets a portal of its own on port 8081: own stock by SKU / lot / expiry, expected inbound, issued invoices, and outbound requests it submits itself, with the owning customer taken from the session and never from the body. The operational tables gain the ownership model the billing tables already had (`items.owner_customer_id`, `purchase_orders.owner_customer_id`, `sales_orders.customer_ref`), portal logins live in their own `customer_users` table with feature grants rather than staff page keys, and a customer's ERP can be issued an `X-WMS-Token` confined to that same tenant -- inbound writes stamped with the owner, `snapshot.inventory` filtered, and surfaces with no tenant dimension refused. Reads answer 404 for another customer's record exactly as they do for a record that does not exist. Migrations 087-090. No mobile changes. See [customer-api.md](customer-api.md) and the [changelog](changelog.md).
+
+v1.30.0 -- Channel availability (Pipe C). A new outbound surface publishes per-channel sellable availability to a configured HTTP sink: inventory changes collapse into a current-state number per (channel, SKU) in a new `channel_availability` table with a `current_version` / `last_version` dirty-row pattern, and a `connector-publisher` daemon reconciles against live inventory and debounce-publishes only the rows whose number actually changed, so a busy warehouse does not fan every stock tick out to every marketplace. Reading live inventory rather than replaying events keeps it truthful for allocation changes that emit no event. Channels carry a SKU scope and a declarative transform, managed from a new admin Channels page with a dispatch-time SSRF guard and a DLQ. Migration 075; new least-privilege `sentry_publisher` role and compose service. No mobile changes. See the [v1.30.0 release](https://github.com/hightower-systems/sentry-wms/releases/tag/v1.30.0).
 
 v1.29.1 -- Production fixes. The login rate-limiter keyed the lockout on the remote IP alone, so behind a shared NAT egress one person's five failed logins returned HTTP 429 to everyone behind that IP for 15 minutes; it is now keyed on `(IP, username)`. And the Sales Order detail surfaced `ship_method` verbatim, so an order that shipped on a different carrier read misleadingly above its tracking number; the Ship Method line now appends the carrier derived from the tracking-number format when it disagrees ("USPS Ground Advantage (shipped UPS)"), display-only. No migrations; no mobile changes; the build stays at 1.29.0 (versionCode 10). See the [v1.29.1 release](https://github.com/hightower-systems/sentry-wms/releases/tag/v1.29.1).
 

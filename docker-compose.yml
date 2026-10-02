@@ -54,7 +54,7 @@ services:
       # shape. The value is informational inside the container; Docker
       # applies the bind at the host level.
       API_BIND_HOST: ${API_BIND_HOST:-127.0.0.1}
-      CORS_ORIGINS: "http://localhost:3000,http://localhost:5000,http://localhost:8080,http://localhost:8081"
+      CORS_ORIGINS: "http://localhost:3000,http://localhost:3100,http://localhost:5000,http://localhost:8080,http://localhost:8081"
       SENTRY_ENCRYPTION_KEY: ${SENTRY_ENCRYPTION_KEY:?Set SENTRY_ENCRYPTION_KEY in .env -- see .env.example}
       # v1.5.0 #128: pepper for the X-WMS-Token SHA-256 hash. The app
       # fails to boot without it so a misconfigured deployment never
@@ -288,6 +288,29 @@ services:
       - ./api:/app
       - ./db:/db
 
+  # Schedules beat_schedule in jobs/__init__.py (storage billing, expiry,
+  # cleanup). Worker alone does not fire periodic tasks.
+  celery-beat:
+    build: ./api
+    container_name: sentry-celery-beat
+    command: celery -A jobs beat --loglevel=info
+    restart: unless-stopped
+    depends_on:
+      redis:
+        condition: service_healthy
+      db:
+        condition: service_healthy
+    environment:
+      PYTHONPATH: /app
+      CELERY_BROKER_URL: redis://:${REDIS_PASSWORD:?Set REDIS_PASSWORD in .env -- see .env.example}@redis:6379/0
+      CELERY_RESULT_BACKEND: redis://:${REDIS_PASSWORD:?Set REDIS_PASSWORD in .env -- see .env.example}@redis:6379/0
+      DATABASE_URL: postgresql://${POSTGRES_USER:-sentry}:${POSTGRES_PASSWORD:-sentry}@db:5432/${POSTGRES_DB:-sentry}
+      JWT_SECRET: ${JWT_SECRET:?Set JWT_SECRET in .env -- see .env.example}
+      SENTRY_ENCRYPTION_KEY: ${SENTRY_ENCRYPTION_KEY:?Set SENTRY_ENCRYPTION_KEY in .env -- see .env.example}
+    volumes:
+      - ./api:/app
+      - ./db:/db
+
   admin:
     build: ./admin
     container_name: sentry-admin
@@ -297,6 +320,23 @@ services:
       # should override via docker-compose.override.yml or a compose profile,
       # or set ADMIN_BIND_HOST=0.0.0.0 in .env for LAN-dev convenience (#64).
       - "${ADMIN_BIND_HOST:-127.0.0.1}:8080:8080"
+    depends_on:
+      - api
+
+  # Customer portal (phase 5). Its own image and its own origin, not a
+  # route inside the admin SPA: a customer-facing bundle that shares an
+  # origin with the operator panel shares its cookie jar, its localStorage
+  # and its CSP, and every admin page added later becomes a surface a
+  # tenant could reach. The published port differs (8081); the container
+  # port and the nginx hardening are identical to admin's.
+  portal:
+    build: ./portal
+    container_name: sentry-portal
+    ports:
+      # Same V-040 loopback-by-default rationale as admin above. Customers
+      # reach this through a reverse proxy in a real deployment, so opening
+      # it on the LAN is opt-in via PORTAL_BIND_HOST.
+      - "${PORTAL_BIND_HOST:-127.0.0.1}:8081:8080"
     depends_on:
       - api
 

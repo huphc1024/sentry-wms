@@ -2,7 +2,7 @@
 
 ## Reporting a Vulnerability
 
-If you discover a security vulnerability in Sentry WMS, please report it privately.
+If you discover a security vulnerability in Sơn Lộc WMS, please report it privately.
 
 **Email: security@hightowersystems.io**
 

@@ -25,13 +25,21 @@ cp .env.example .env
 docker compose up -d
 ```
 
-This starts five containers:
+This starts the core containers:
 
 - **sentry-db** -- PostgreSQL 16 on port 5432 (bound to localhost only)
 - **sentry-api** -- Flask API on port 5000
 - **sentry-redis** -- Redis 7 (broker for Celery, no host port)
 - **sentry-celery** -- Celery worker for connector sync tasks
 - **sentry-admin** -- React admin panel served by nginx on port 8080
+- **sentry-portal** -- React customer portal served by nginx on port 8081
+
+(plus the snapshot-keeper, webhook-dispatcher, connector-publisher and
+celery-beat services in `docker-compose.yml`.)
+
+The portal is a separate image and a separate origin from the admin panel
+on purpose: it serves customers, not operators, and only ever calls
+`/api/portal/*`. See `portal/README.md`.
 
 For local development with Vite dev-server and hot reload:
 
@@ -39,8 +47,9 @@ For local development with Vite dev-server and hot reload:
 docker compose -f docker-compose.yml -f docker-compose.dev.yml up
 ```
 
-The overlay replaces the nginx admin with the Vite dev-server on port 3000
-and mounts `./api` and `./admin` into their containers for live reload.
+The overlay replaces the nginx admin and portal with Vite dev-servers on
+ports 3000 and 3100, and mounts `./api`, `./admin` and `./portal` into
+their containers for live reload.
 
 ### Test database (v1.7.0+)
 
@@ -239,24 +248,29 @@ separate Redis instance.
 ### Self-hosted fonts
 
 Instrument Sans and JetBrains Mono ship inside `admin/public/fonts/`
-under the SIL Open Font License. No third-party font requests are made
+and `portal/public/fonts/` under the SIL Open Font License. No third-party font requests are made
 at runtime -- relevant if you have strict egress controls on the
 warehouse network.
 
 ### LAN development access
 
-The API and admin ports are parametrized via `API_BIND_HOST` and
-`ADMIN_BIND_HOST`. Both default to `127.0.0.1`, which is the
-correct posture for production deployments behind a reverse proxy
-and for any cloud-hosted install (V-040). For LAN development
+The API, admin and portal ports are parametrized via `API_BIND_HOST`,
+`ADMIN_BIND_HOST` and `PORTAL_BIND_HOST`. All default to `127.0.0.1`,
+which is the correct posture for production deployments behind a reverse
+proxy and for any cloud-hosted install (V-040). For LAN development
 where a phone or handheld scanner on the same network needs to
-reach the API directly, override either or both in your local
+reach the API directly, override any of them in your local
 `.env`:
 
 ```
 API_BIND_HOST=0.0.0.0
 ADMIN_BIND_HOST=0.0.0.0
+PORTAL_BIND_HOST=0.0.0.0
 ```
+
+Leave `PORTAL_BIND_HOST` on loopback unless you are actually demoing the
+customer portal from another device: it is the one surface whose intended
+audience sits outside the company, and it belongs behind TLS.
 
 `.env` is gitignored, so the override stays on the dev machine
 and does not ship to production.

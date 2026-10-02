@@ -1,6 +1,6 @@
-# Contributing to Sentry WMS
+# Contributing to Sơn Lộc WMS
 
-Thanks for your interest in contributing to Sentry WMS! Here's how to get started.
+Thanks for your interest in contributing to Sơn Lộc WMS! Here's how to get started.
 
 ## Getting Started
 

@@ -48,6 +48,7 @@ Product catalog management.
 - **Archive/Restore** soft delete toggle
 - **Delete** hard delete (blocked if inventory or order history exists)
 - **Detail view** shows inventory locations across all bins and preferred bin assignments
+- **Owner** column + per-row owner picker (3PL) - binds the SKU to a customer (`items.owner_customer_id`). Blank reads as "Own stock". This is what makes the SKU visible on that customer's portal and to a customer-bound API token; nothing else infers ownership, and there is no backfill.
 
 ---
 
@@ -60,6 +61,7 @@ Product catalog management.
 - **Create PO** with PO number, vendor, expected date, and line items (item ID + quantity)
 - **Detail modal** shows ordered vs received quantities per line
 - **Close PO** action
+- **For customer** column + per-row picker (3PL) - attributes goods received on a customer's behalf (`purchase_orders.owner_customer_id`), which is what puts the PO on that customer's portal Inbound page
 
 ---
 
@@ -81,10 +83,38 @@ Product catalog management.
 
 - List all user accounts with role, warehouse assignments, and active status
 - **Create user** with username, password, full name, role (ADMIN or USER)
+- **Role presets** (Phase 6) — Supervisor / Picker / Billing clerk / Receiver fill mobile modules + web page grants to match [role-matrix.md](role-matrix.md)
 - **Warehouse assignment** - multi-select warehouses the user can access
-- **Module access** - checkboxes for mobile functions (Pick, Pack, Ship, Receive, Put-Away, Count, Transfer)
+- **Module access** - checkboxes for mobile functions (Pick, Pack, Ship, Receive, Put-Away, Count, Transfer, Map)
+- **Web admin page access** - per-page grants for USER role (`dashboard` included); ADMIN bypasses
 - **Edit** any field including password reset
 - **Delete** hard delete (cannot delete yourself or the last admin)
+
+---
+
+## Portal accounts (customer logins)
+
+<!-- TODO: Add screenshot -->
+
+Provisioning for the customer portal (the separate SPA on port 8081).
+Page key `customer-users`. These are **not** `users` rows: customer
+logins live in `customer_users` with no `role`, no `page_keys` and no
+`warehouse_ids`, so there is no path from a customer account into staff
+permissions.
+
+- **List accounts** - filterable by customer; shows username, full name, active state, last login, and whether a password change is pending
+- **Create account** - pick the customer, set username + a temporary password, tick the feature grants. New accounts are created with `must_change_password`, so the first login is forced through the change-password screen before any data endpoint answers.
+- **Feature grants** - `inventory`, `orders`, `inbound`, `invoices`, `reports` (declared, no route yet). There is no ADMIN-style bypass: an account with no grants can sign in and see nothing. Revoking a grant takes effect on the customer's next request, without reissuing anything.
+- **Reset password** - stamps `password_changed_at`, which invalidates every token already issued to that login (so a compromised session dies immediately) and forces a change on next login.
+- **Deactivate** - kills live sessions on the next request and keeps the row for history; there is no hard delete.
+- **Cannot move a login between customers** - the tenant binding is set at creation. Reassigning it would silently hand one customer's operator a view of another's data.
+- **audit_log** writes on every create / update / reset / grant change.
+
+A customer sees nothing until their stock is attributed: set **Owner** on
+their Items and **For customer** on their Purchase Orders. An empty
+portal is nearly always missing attribution, not a broken account. See
+[customer-api.md](customer-api.md) and the
+[Customer persona](role-matrix.md#customer-portal).
 
 ---
 
@@ -247,7 +277,7 @@ internals and how to add your own.
 
 Manage `X-WMS-Token` credentials used by external systems to call Sentry's polling, snapshot, webhook, and inbound APIs.
 
-- **List tokens** - token name, status (active / revoked), scope summary, last-used timestamp, expiration
+- **List tokens** - token name, status (active / revoked), scope summary, customer binding (or *Operator*), last-used timestamp, expiration
 - **Create token** opens an issuance modal:
     - **Token name** - operator-readable label (e.g. `acme-erp-prod`)
     - **Warehouse IDs** - multi-select; empty denies the token from every warehouse-scoped endpoint
@@ -257,6 +287,7 @@ Manage `X-WMS-Token` credentials used by external systems to call Sentry's polli
     - **Source system** (v1.7+) - dropdown sourced from `inbound_source_systems_allowlist`; required when issuing an inbound token
     - **Inbound resources** (v1.7+) - multi-select from `sales_orders`, `items`, `customers`, `vendors`, `purchase_orders`; empty denies inbound POSTs (Decision-S)
     - **Mapping override capability** (v1.7+) - checkbox; reserved for v1.7.1, currently has no runtime effect (the v1.7.0 handler rejects requests with `mapping_overrides` regardless per #269)
+    - **Customer binding** (3PL) - dropdown; leave on *Operator* for an unscoped token (the default, and what every pre-existing token is). Binding a token to a customer stamps the owning customer on its inbound writes, refuses a payload that names another customer, and filters `snapshot.inventory` to that customer's stock. The form refuses a binding the enforcement layer cannot honour, so a bound token cannot be issued against the event feed, dockd or POS, nor against the `customers` / `vendors` inbound resources. See [customer-api.md](customer-api.md).
     - **Expiration** - defaults to one year from issuance
 - **One-shot plaintext** - the modal displays the plaintext token exactly once on creation; subsequent reads only show the SHA256 hash. Operators copy the plaintext into the consuming system's secret store.
 - **Rotate** - flips the token hash and returns a fresh plaintext (one-shot reveal); the prior hash stops authenticating immediately.
@@ -264,7 +295,7 @@ Manage `X-WMS-Token` credentials used by external systems to call Sentry's polli
 - **Delete** - hard delete after confirmation; preserved as forensic audit row in `wms_tokens_audit` (V-157 / #157 forensic trail).
 - **audit_log** writes on every issuance / rotate / revoke / delete (V-208 / #141).
 
-Cross-direction scope rule: a token's outbound and inbound surfaces are independent; an inbound-only token cannot reach the polling endpoints and vice versa. Cross-direction misuse returns 401 `cross_direction_scope_violation`. See [SECURITY.md](https://github.com/hightower-systems/sentry-wms/blob/main/SECURITY.md) for the full scope-enforcement matrix.
+Cross-direction scope rule: a token's outbound and inbound surfaces are independent; an inbound-only token cannot reach the polling endpoints and vice versa. Cross-direction misuse returns 401 `cross_direction_scope_violation`. A customer-bound token adds a tenant dimension on top of that: surfaces with no owning-customer column return 403 `customer_scope_unsupported_surface`, and a write naming another customer returns 403 `customer_scope_violation`. See [SECURITY.md](https://github.com/hightower-systems/sentry-wms/blob/main/SECURITY.md) for the full scope-enforcement matrix.
 
 ---
 

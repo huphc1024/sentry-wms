@@ -6,6 +6,12 @@ is a shorter, docs-site-friendly summary.
 
 ---
 
+## Unreleased -- Customer portal
+
+*In the working tree; not yet tagged.*
+
+A 3PL customer gets a portal of its own (a third Vite workspace, published on port 8081): its own stock by SKU / lot / expiry, expected inbound, issued invoices, and outbound requests it submits itself. The operational tables gain the ownership model the billing tables already had -- `items.owner_customer_id`, `purchase_orders.owner_customer_id`, and `sales_orders.customer_ref` as a real FK beside the legacy free-text code -- with an **Owner** picker on Items and a **For customer** picker on Purchase Orders, and no backfill: stock reaches a customer's view only once an operator attributes it. Portal logins live in their own `customer_users` table with feature grants (`inventory` / `orders` / `inbound` / `invoices`) instead of staff page keys, carry `subject_type=customer` in the JWT, and ride separate cookies so an operator can hold both sessions at once; a new admin **Portal accounts** page provisions them. Order submission is server-controlled where it matters: the owning customer comes from the session, the SO number from a dedicated sequence, the status from `SO_OPEN`, and `priority` is not accepted at all. `wms_tokens.customer_id` is finally enforced, so a customer's ERP can hold a token confined to that tenant -- inbound writes stamped with the owner and refused when they name another, `snapshot.inventory` filtered, and the event feed / dockd / POS refused outright for want of a tenant dimension. Reads answer 404 for another customer's record exactly as they do for one that does not exist. Migrations 087-090. No mobile changes.
+
 ## v1.30.0 -- Channel availability (Pipe C)
 
 *2026-06-19.* [Full notes](https://github.com/hightower-systems/sentry-wms/releases/tag/v1.30.0).

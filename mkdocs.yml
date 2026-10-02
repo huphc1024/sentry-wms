@@ -39,11 +39,18 @@ extra_css:
 nav:
   - Home: index.md
   - API Reference: api-reference.md
+  - Customer API: customer-api.md
   - Deployment: deployment.md
   - Admin Panel: admin-panel.md
   - Connectors: connectors.md
   - ERP Integration: erp-integration.md
   - Transfer Orders: transfer-orders.md
+  - Architecture patterns: patterns.md
+  - Go-live:
+      - Runbook: runbooks/go-live.md
+      - Role matrix: role-matrix.md
+      - Training flows: training-flows.md
+      - UAT test cases: uat-test-cases.md
   - Test Lab: test-lab.md
   - Contributing: contributing.md
   - Changelog: changelog.md

@@ -1,6 +1,97 @@
 # Changelog
 
-All notable changes to Sentry WMS will be documented in this file.
+All notable changes to Sơn Lộc WMS will be documented in this file.
+
+## [Unreleased]
+
+"Customer portal" arc. A 3PL customer can now see its own stock, inbound
+and invoices, and submit outbound requests, through a portal of its own -
+and a customer's ERP can be given an API token confined to that same
+tenant. The operational layer gains the ownership model the commercial
+layer already had: before this, `billing_invoices` knew which customer a
+charge belonged to but `inventory` did not know whose goods it was
+holding.
+
+Two rules run through the whole arc. Reads filter in SQL, so "no such
+record" and "another customer's record" both answer 404 rather than
+turning an endpoint into an existence oracle over other tenants' order
+numbers (the V-026 posture). Writes take the owning customer from the
+credential and never from the body, so a request naming another customer
+is refused instead of silently re-attributed.
+
+**Mobile.** Source changes only: every screen now reads its text from
+language tables with a VI / EN switch (see *Changed*). No version bump and
+no new APK is cut by this entry; the build stays 1.29.0 (versionCode 10)
+until a mobile release is made from it.
+
+### Added
+
+- **Stock ownership by customer** (migration 087): `items.owner_customer_id`, `purchase_orders.owner_customer_id`, and `sales_orders.customer_ref` - a real FK alongside the existing free-text `customer_id` code, which is kept so inbound mappings do not break. No backfill exists for any of them (there was no prior column to derive one from), so stock reaches a customer's view only once an operator attributes it: an **Owner** picker on Items and a **For customer** picker on Purchase Orders.
+- **Customer portal logins** (migrations 088-089): `customer_users` + `customer_user_permissions` in their own tables, deliberately not rows in `users` - a portal account has no `role`, no `page_keys` and no `warehouse_ids`, so no path exists from a customer account into staff permissions. Portal JWTs carry `subject_type=customer` and ride separate cookies (`sentry_portal_auth` / `sentry_portal_csrf`), so an operator can hold an admin session and a portal session in one browser. Login rate-limiting reuses the staff `login_attempts` table under a `customer:` key prefix, so a customer spraying passwords cannot lock out a staff account with the same username.
+- **Customer portal API** (`/api/portal/*`, migration 090): login / logout / me / change-password, plus own-stock inventory, expected inbound, outbound orders with detail, order submission, and issued invoices. Every route carries `@require_customer_auth` plus a `@require_customer_feature` grant, and every read filters through `customer_scope_clause`. Deliberately withheld: bin, zone and any other locator (the warehouse layout is the operator's, and a per-bin breakdown reconstructs it), and DRAFT invoices (a number the operator has not committed to).
+- **Portal order submission** with every trust-sensitive field server-controlled: the owning customer comes from the session, `so_number` from a dedicated sequence, `status` from `SO_OPEN`, and `order_origin` from `customer-portal`; `priority` and `status` are not accepted at all, so a customer cannot jump the operator's pick queue. Line SKUs are resolved under the caller's ownership scope, so an SKU it does not own is reported exactly like one that does not exist.
+- **Admin: Portal accounts page** (page key `customer-users`): provision customer logins, set feature grants, reset a password (which invalidates that login's already-issued tokens), deactivate (which kills live sessions on the next request). A login cannot be moved between customers after creation.
+- **Customer portal SPA** (`sentry-wms/portal`): a third Vite workspace with its own image, origin and nginx hardening, published on host port 8081, rather than a route inside the admin panel - a customer-facing bundle sharing an origin with the operator panel shares its cookie jar and its CSP, and every admin page added later becomes a surface a tenant could reach. Pages: sign-in, dashboard, inventory, orders (with submission), inbound, invoices, change password. Dev overlay runs it on port 3100; `PORTAL_BIND_HOST` (loopback by default) controls the published bind.
+- **Customer-bound API tokens**: enforcement for `wms_tokens.customer_id`, which migration 089 added and nothing read. A bound token's inbound writes are stamped with the owning customer and refused when they name another or when the record they address already belongs to someone else; `snapshot.inventory` filters to that customer's items; `inventory_update` answers 404 for an item owned by another customer. Surfaces with no owning-customer dimension - the event feed, dockd, POS - and the shared `customers` / `vendors` inbound resources are refused outright rather than served unscoped. Issued from the API tokens page via a new **Customer binding** field, which will not issue a binding the enforcement layer cannot honour.
+- **Docs**: [customer-api.md](docs/customer-api.md) (both customer surfaces, the scoping rules and the operator checklist), [portal-openapi.yaml](docs/api/portal-openapi.yaml) with a route-parity test, a *Customer tenancy* pattern in [patterns.md](docs/patterns.md), and a Customer persona in [role-matrix.md](docs/role-matrix.md).
+
+### Changed
+
+- **One translation mechanism in the admin panel.** The four runtime
+  mechanisms that rewrote English into Vietnamese after render -
+  `ContentTranslator` (a DOM sweep), `translateTree`, `tx()` and the
+  `extraVi` dictionary - are removed. Every page and component now reads
+  keyed tables (`src/i18n/messages/*.js`), so a value from the database is
+  never "translated": a zone genuinely named `Test` used to render as
+  `Thử`, and an operator reading that code off the screen typed the wrong
+  thing into the handheld. 125 message keys that no page referenced were
+  dropped. The static gates (`i18n-guard`, `i18n-hook`, `i18n-messages`)
+  are now the whole defence and the migration-status burn-down list is
+  gone.
+- **Mobile i18n.** The handheld mixed Vietnamese and English on the same
+  screens (nine of seventeen screens carried Vietnamese, the rest English).
+  All screens and shared components now use `src/i18n` tables - 464 keys,
+  each in both languages - with a **VI / EN** switch on the login and home
+  screens. The choice is stored on the device; Vietnamese stays the
+  default. Expiry labels and API-client / scan-lookup messages resolve
+  through the same tables. A static gate fails the suite on a hardcoded
+  string.
+- **Portal i18n.** The customer portal had Vietnamese written into its
+  markup and no English. It now has the same layer (218 keys, both
+  languages), a **VI / EN** switch in the header and on the sign-in card,
+  and dates / numbers that follow the chosen language (`vi-VN` / `en-GB`).
+  The portal name from `brand.js` and the tab title still read Vietnamese
+  in English mode.
+- **Bundle (admin).** Vendor code is split into its own chunks
+  (`react-vendor`, `antd`), so a deploy no longer re-downloads antd and
+  React along with the app. The unused `konva` / `react-konva` dependencies
+  and the orphaned `components/warehouse-map/` canvas code are removed.
+  The SRI test now asserts `sri()` sits in the `plugins` array and that
+  every script and stylesheet in a built `index.html` carries `integrity`.
+
+### Fixed
+
+- **Admin in English showed Vietnamese pagination.** antd's locale was
+  pinned to `vi_VN`, so "Trang Trước / Trang Kế", empty states and date
+  pickers stayed Vietnamese when English was selected. It now follows the
+  language switch.
+- **Raw zone types in two selects** (Zones, Warehouse Simulation) now show
+  `zones.type.*` labels instead of `STORAGE` / `RECEIVING`.
+- **Printed invoices and contracts collapsed into one column.**
+  `invoice_print.html` and `contract_print.html` used `display: flex` /
+  `grid`, which xhtml2pdf ignores, so the two-column blocks and the
+  signature boxes were stacked in the PDF sent to customers. They are
+  tables now.
+- **Three stale API tests.** `vehicle-movements` payloads were missing the
+  required `warehouse_id`, and two item tests still searched the English
+  seed data (`category=Flies`, `fly line`) after it was Vietnamised.
+
+### Migrations
+
+- **087** - stock ownership by customer: `items.owner_customer_id`, `purchase_orders.owner_customer_id`, `sales_orders.customer_ref`, all nullable with partial indexes. NULL means operator-owned / unattributed, which is every existing row.
+- **088** - `customer_users` + `customer_user_permissions`. `must_change_password` defaults TRUE, so every provisioned login starts behind a forced change.
+- **089** - `wms_tokens.customer_id`. NULL = operator token, unscoped; every token issued before this keeps working unchanged.
+- **090** - `portal_order_seq`, the sequence backing portal-submitted SO numbers. A timestamp or a `COUNT(*)` would collide under concurrent submissions from the same customer.
 
 ## [v1.30.0] - 2026-06-19
 

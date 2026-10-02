@@ -77,5 +77,13 @@ services:
     depends_on:
       - api
 
+  portal:
+    build: ./portal
+    container_name: sentry-portal
+    ports:
+      - "8081:8080"
+    depends_on:
+      - api
+
 volumes:
   pgdata:
