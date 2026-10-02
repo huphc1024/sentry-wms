@@ -8,7 +8,14 @@ import DataTable from '../components/DataTable.jsx';
 import PageHeader from '../components/PageHeader.jsx';
 import Modal from '../components/Modal.jsx';
 import StatusTag from '../components/StatusTag.jsx';
+import { useLocale } from '../i18n/locale.jsx';
+import RichText from '../i18n/RichText.jsx';
 import CreateRmaModal from '../components/CreateRmaModal.jsx';
+import SkuBarcodeAutocomplete from '../components/SkuBarcodeAutocomplete.jsx';
+import OrderLineEditor from '../components/OrderLineEditor.jsx';
+import { emptyOrderLine, resolveOrderLines } from '../utils/orderLines.js';
+import { resolveItemFromScan } from '../utils/itemScanOptions.js';
+import { useWarehouse } from '../warehouse.jsx';
 
 const STATUS_OPTIONS = ['All', 'OPEN', 'PICKED', 'PACKED', 'SHIPPED', 'CANCELLED', 'REFUNDED'];
 const EDITABLE_STATUS_OPTIONS = ['OPEN', 'PICKED', 'PACKED', 'SHIPPED', 'CANCELLED', 'REFUNDED'];
@@ -78,18 +85,40 @@ const ADDRESS_FIELD_LABELS = {
 };
 
 function NullableValue({ value }) {
+  const { t } = useLocale();
   if (value === null || value === undefined || value === '') {
     return <span style={{ color: 'var(--text-secondary)' }}>-</span>;
   }
   return <span>{value}</span>;
 }
 
+function emptySoCreateForm(warehouseId) {
+  return {
+    so_number: '',
+    warehouse_id: warehouseId || '',
+    customer_name: '',
+    customer_phone: '',
+    customer_address: '',
+    ship_method: '',
+    ship_by_date: '',
+    lines: [emptyOrderLine()],
+  };
+}
+
 export default function SalesOrders() {
+  const { t } = useLocale();
   const { user } = useAuth();
   const isAdmin = user?.role === 'ADMIN';
   const hasSOFullEdit = isAdmin || (user?.allowed_overrides || []).includes('so-full-edit');
 
   const [searchParams] = useSearchParams();
+  const { warehouses, warehouseId } = useWarehouse();
+  // Manual SO entry. Same story as the PO page: the create form existed
+  // only under Settings > Manual Entry, which is not where anyone looks
+  // for it when a customer phones an order in.
+  const [createForm, setCreateForm] = useState(null);
+  const [createError, setCreateError] = useState('');
+  const [creating, setCreating] = useState(false);
   const [search, setSearch] = useState(searchParams.get('q') || '');
   const [orders, setOrders] = useState([]);
   const [pagination, setPagination] = useState(null);
@@ -137,7 +166,6 @@ export default function SalesOrders() {
   const [newLineQty, setNewLineQty] = useState('');
   const [newLineError, setNewLineError] = useState('');
   const [addingLine, setAddingLine] = useState(false);
-  const [skuSuggestions, setSkuSuggestions] = useState([]);
   const [resolvedItem, setResolvedItem] = useState(null);
   // Allocation-release confirm: shows what will happen before the
   // PATCH/DELETE leaves the browser so the operator can back out.
@@ -180,37 +208,48 @@ export default function SalesOrders() {
     });
   }, []);
 
-  // Debounced SKU typeahead matching the PO edit modal. Quiet when the
-  // edit modal is closed; minimum 2 characters to avoid spamming the
-  // items endpoint on every keystroke.
-  useEffect(() => {
-    if (!editing) return;
-    const sku = newLineSku.trim();
-    if (sku.length < 2) {
-      setSkuSuggestions([]);
-      setResolvedItem(null);
+  async function submitCreate() {
+    setCreateError('');
+    if (!String(createForm.so_number || '').trim()) {
+      setCreateError('SO number is required.');
       return;
     }
-    const handle = setTimeout(async () => {
-      const res = await api.get(
-        `/admin/items?q=${encodeURIComponent(sku)}&per_page=10&active=true`,
-        { silentPermissionDenied: true },
-      );
-      if (!res?.ok) {
-        setSkuSuggestions([]);
-        setResolvedItem(null);
-        return;
-      }
-      const data = await res.json();
-      const items = data.items || [];
-      setSkuSuggestions(items);
-      const exact = items.find(
-        (i) => String(i.sku || '').trim().toLowerCase() === sku.toLowerCase(),
-      ) || null;
-      setResolvedItem(exact);
-    }, 200);
-    return () => clearTimeout(handle);
-  }, [newLineSku, editing]);
+    if (!createForm.warehouse_id) {
+      setCreateError('Warehouse is required.');
+      return;
+    }
+    const { lines, error } = await resolveOrderLines(createForm.lines);
+    if (error) {
+      setCreateError(error);
+      return;
+    }
+
+    setCreating(true);
+    const address = createForm.customer_address.trim() || null;
+    const res = await api.post('/admin/sales-orders', {
+      so_number: createForm.so_number.trim(),
+      warehouse_id: Number(createForm.warehouse_id),
+      customer_name: createForm.customer_name.trim() || null,
+      customer_phone: createForm.customer_phone.trim() || null,
+      customer_address: address,
+      // The picking ticket prints ship_address; keeping the two in step
+      // means an order typed here produces the same label as one that
+      // arrived from a marketplace.
+      ship_address: address,
+      ship_method: createForm.ship_method.trim() || null,
+      ship_by_date: createForm.ship_by_date || null,
+      lines,
+    });
+    setCreating(false);
+    if (!res?.ok) {
+      const data = await res?.json().catch(() => null);
+      setCreateError(data?.error || 'Failed to create sales order');
+      return;
+    }
+    setCreateForm(null);
+    setPage(1);
+    await loadOrders();
+  }
 
   async function loadOrders() {
     const qp = new URLSearchParams({ page: String(page), per_page: '50' });
@@ -500,32 +539,30 @@ export default function SalesOrders() {
   // ── line CRUD ─────────────────────────────────────────────────────────────
 
   async function resolveSku(sku) {
-    const key = String(sku || '').trim().toLowerCase();
+    const key = String(sku || '').trim();
     if (!key) return null;
     const res = await api.get(
-      `/admin/items?q=${encodeURIComponent(sku)}&per_page=10&active=true`,
+      `/admin/items?q=${encodeURIComponent(key)}&per_page=10&active=true`,
       { silentPermissionDenied: true },
     );
     if (!res?.ok) return null;
     const data = await res.json();
-    return (data.items || []).find(
-      (i) => String(i.sku || '').trim().toLowerCase() === key,
-    ) || null;
+    return resolveItemFromScan(key, data.items || []);
   }
 
   async function addLine() {
     setNewLineError('');
     const sku = newLineSku.trim();
     const qty = parseInt(newLineQty, 10);
-    if (!sku) { setNewLineError('Enter a SKU'); return; }
-    if (isNaN(qty) || qty <= 0) { setNewLineError('Enter a positive quantity'); return; }
+    if (!sku) { setNewLineError(t('salesOrders.enterSku')); return; }
+    if (isNaN(qty) || qty <= 0) { setNewLineError(t('salesOrders.enterQty')); return; }
     setAddingLine(true);
     try {
       let item = resolvedItem;
       if (!item || String(item.sku).toLowerCase() !== sku.toLowerCase()) {
         item = await resolveSku(sku);
       }
-      if (!item) { setNewLineError(`Unknown SKU: ${sku}`); return; }
+      if (!item) { setNewLineError(t('salesOrders.unknownSku', { sku })); return; }
       const res = await api.post(
         `/admin/sales-orders/${editing.so_id}/lines`,
         { item_id: item.item_id, quantity_ordered: qty },
@@ -539,7 +576,6 @@ export default function SalesOrders() {
         setNewLineSku('');
         setNewLineQty('');
         setResolvedItem(null);
-        setSkuSuggestions([]);
       } else {
         let data = null;
         try { data = await res?.json(); } catch (_) { /* non-JSON body */ }
@@ -813,7 +849,7 @@ export default function SalesOrders() {
       const boNumber = data.backorder_so?.so_number || '(unknown BO)';
       closePartialFulfill();
       closeEdit();
-      setSuccessBanner(`Backorder ${boNumber} created.`);
+      setSuccessBanner(t('salesOrders.backorderCreated', { bo: boNumber }));
       // Auto-clear the banner after a few seconds so it does not
       // shadow later actions on the list.
       setTimeout(() => setSuccessBanner(''), 6000);
@@ -838,28 +874,32 @@ export default function SalesOrders() {
   }
 
   const columns = [
-    { key: 'so_number', label: 'SO Number', mono: true },
-    { key: 'customer_name', label: 'Customer' },
-    { key: 'ship_by_date', label: 'Ship By', mono: true, render: (r) => r.ship_by_date ? formatDateOnly(r.ship_by_date) : '-' },
-    { key: 'status', label: 'Status', render: (r) => <StatusTag status={r.status} /> },
-    { key: 'created_at', label: 'Created', render: (r) => r.created_at ? new Date(r.created_at).toLocaleDateString() : '-' },
+    { key: 'so_number', labelKey: 'salesOrders.number', mono: true },
+    { key: 'customer_name', labelKey: 'common.customer' },
+    { key: 'ship_by_date', labelKey: 'salesOrders.shipBy', mono: true, render: (r) => r.ship_by_date ? formatDateOnly(r.ship_by_date) : '-' },
+    { key: 'status', labelKey: 'common.status', render: (r) => <StatusTag status={r.status} /> },
+    { key: 'created_at', labelKey: 'salesOrders.created', render: (r) => r.created_at ? new Date(r.created_at).toLocaleDateString() : '-' },
     { key: 'actions', label: '', render: (r) => (
-      <button className="btn btn-sm" onClick={(e) => { e.stopPropagation(); openEdit(r); }} aria-label="Edit" title="Edit">&#9998;</button>
+      <button className="btn btn-sm" onClick={(e) => { e.stopPropagation(); openEdit(r); }} aria-label={t('common.edit')} title={t('common.edit')}>&#9998;</button>
     )},
   ];
 
   return (
     <div>
-      <PageHeader title="Sales Orders" />
+      <PageHeader title={t('nav.salesOrders')}>
+        <button className="btn btn-primary" onClick={() => { setCreateError(''); setCreateForm(emptySoCreateForm(warehouseId)); }}>
+          {t('salesOrders.newOrder')}
+        </button>
+      </PageHeader>
       {successBanner && (
         <div
           role="status"
           style={{
             margin: '0 0 12px 0',
             padding: '8px 12px',
-            background: 'var(--success-bg, #e8f5e9)',
-            color: 'var(--success, #2e7d32)',
-            border: '1px solid var(--success, #2e7d32)',
+            background: 'var(--success-bg)',
+            color: 'var(--success)',
+            border: '1px solid var(--success)',
             borderRadius: 4,
             fontSize: 13,
           }}
@@ -869,14 +909,21 @@ export default function SalesOrders() {
       )}
 
       <div style={{ marginBottom: 16, display: 'flex', alignItems: 'center', gap: 8 }}>
-        <label style={{ fontSize: 13, color: 'var(--text-secondary)' }}>Status:</label>
+        <label style={{ fontSize: 13, color: 'var(--text-secondary)' }}>{t('common.status')}:</label>
         <select className="form-select" value={statusFilter} onChange={(e) => { setStatusFilter(e.target.value); setPage(1); }} style={{ width: 160 }}>
-          {STATUS_OPTIONS.map((s) => <option key={s} value={s}>{s}</option>)}
+          {/* The column beside this one renders status through
+              `status.*`, so the filter has to as well -- otherwise the
+              list says MỞ and the dropdown above it says OPEN. */}
+          {STATUS_OPTIONS.map((s) => (
+            <option key={s} value={s}>
+              {s === 'All' ? t('common.all') : t(`status.${s}`)}
+            </option>
+          ))}
         </select>
         <input
           className="form-input"
           style={{ maxWidth: 320 }}
-          placeholder="Search by SO number or customer"
+          placeholder={t('salesOrders.searchPlaceholder')}
           value={search}
           onChange={(e) => { setSearch(e.target.value); setPage(1); }}
         />
@@ -888,7 +935,7 @@ export default function SalesOrders() {
         pagination={pagination}
         onPageChange={setPage}
         onRowClick={viewSO}
-        emptyMessage="No sales orders found"
+        emptyMessageKey="salesOrders.empty"
       />
 
       {selectedSO && (
@@ -904,39 +951,39 @@ export default function SalesOrders() {
                     onClick={() => setCreatingRma(true)}
                     data-testid="open-create-rma"
                   >
-                    Create RMA
+                    {t('salesOrders.createRma')}
                   </button>
                 )}
-              <button className="btn" onClick={() => { setSelectedSO(null); setSOLines([]); }}>Close</button>
+              <button className="btn" onClick={() => { setSelectedSO(null); setSOLines([]); }}>{t('common.close')}</button>
             </>
           }
           size="wide"
         >
           <section className="section">
-            <div className="section-title">Order Summary</div>
+            <div className="section-title">{t('salesOrders.orderSummary')}</div>
             <div className="detail-grid detail-grid-2col" style={{ marginBottom: 0 }}>
-              <span className="detail-label">Customer</span><span>{selectedSO.customer_name || '-'}</span>
-              <span className="detail-label">Status</span><span><StatusTag status={selectedSO.status} /></span>
+              <span className="detail-label">{t('common.customer')}</span><span>{selectedSO.customer_name || '-'}</span>
+              <span className="detail-label">{t('common.status')}</span><span><StatusTag status={selectedSO.status} /></span>
               {/* mig 063: free-text upstream-origin label populated
                   by the inbound payload mapping. */}
-              <span className="detail-label">Source:</span>
+              <span className="detail-label">{t('salesOrders.source')}</span>
               <span><NullableValue value={selectedSO.order_origin} /></span>
-              <span className="detail-label">Ship By</span><span className="mono">{selectedSO.ship_by_date ? formatDateOnly(selectedSO.ship_by_date) : '-'}</span>
+              <span className="detail-label">{t('salesOrders.shipBy')}</span><span className="mono">{selectedSO.ship_by_date ? formatDateOnly(selectedSO.ship_by_date) : '-'}</span>
               {/* ship_method is the customer's requested service and is
                   never rewritten on ship; surface the authoritative carrier
                   when it contradicts the method (e.g. a USPS-named service
                   that shipped on a 1Z UPS label) so this line stops
                   contradicting the Tracking # below it. Display-only. */}
-              <span className="detail-label">Ship Method</span><span>{shipMethodDisplay(selectedSO).text}</span>
+              <span className="detail-label">{t('salesOrders.shipMethod')}</span><span>{shipMethodDisplay(selectedSO).text}</span>
               {/* v1.8.0 (#282) per-order cost fields. order_total +
                   customer_shipping_paid arrive as strings on the wire to
                   preserve Decimal precision; render literal. */}
-              <span className="detail-label">Order Total</span>
+              <span className="detail-label">{t('salesOrders.orderTotal')}</span>
               <span className="mono"><NullableValue value={selectedSO.order_total != null ? `$${selectedSO.order_total}` : null} /></span>
               {/* so-refinement: tracking # under the cost fields. */}
-              <span className="detail-label">Tracking #</span>
+              <span className="detail-label">{t('salesOrders.tracking')}</span>
               <span className="mono"><NullableValue value={selectedSO.tracking_number} /></span>
-              <span className="detail-label">Shipping Paid</span>
+              <span className="detail-label">{t('salesOrders.shippingPaid')}</span>
               <span className="mono"><NullableValue value={selectedSO.customer_shipping_paid != null ? `$${selectedSO.customer_shipping_paid}` : null} /></span>
               {/* so-refinement: legacy ship_address row dropped from
                   the Order Summary -- the structured Shipping Address
@@ -953,11 +1000,11 @@ export default function SalesOrders() {
             <section className="section">
               <div style={{
                 padding: 10,
-                borderLeft: '3px solid #b87333', backgroundColor: '#fdf6ed',
+                borderLeft: '3px solid var(--copper)', backgroundColor: 'var(--warning-bg)',
                 whiteSpace: 'pre-wrap',
               }}>
                 <div style={{
-                  fontSize: 11, fontWeight: 700, color: '#b87333',
+                  fontSize: 11, fontWeight: 700, color: 'var(--accent)',
                   letterSpacing: 0.4, marginBottom: 4,
                 }}>NOTE</div>
                 <div style={{ fontSize: 13, lineHeight: 1.4 }}>{selectedSO.memo}</div>
@@ -970,12 +1017,12 @@ export default function SalesOrders() {
               renders cleanly without column shifts. so-refinement:
               address edits live in the main Edit modal now. */}
           <section className="section">
-            <div className="section-title">Addresses</div>
+            <div className="section-title">{t('salesOrders.addresses')}</div>
             <div style={{
               display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16,
             }}>
               <div className="card">
-                <div className="card-title">Billing Address</div>
+                <div className="card-title">{t('salesOrders.billingAddress')}</div>
                 <div className="detail-grid" style={{ marginBottom: 0 }}>
                   {ADDRESS_FIELD_KEYS.filter((k) => k.startsWith('billing_')).map((k) => (
                     <span key={k} style={{ display: 'contents' }}>
@@ -986,7 +1033,7 @@ export default function SalesOrders() {
                 </div>
               </div>
               <div className="card">
-                <div className="card-title">Shipping Address</div>
+                <div className="card-title">{t('salesOrders.shippingAddress')}</div>
                 <div className="detail-grid" style={{ marginBottom: 0 }}>
                   {ADDRESS_FIELD_KEYS.filter((k) => k.startsWith('shipping_')).map((k) => (
                     <span key={k} style={{ display: 'contents' }}>
@@ -1000,16 +1047,16 @@ export default function SalesOrders() {
           </section>
 
           <section className="section" style={{ marginBottom: 0 }}>
-            <div className="section-title">Line Items</div>
+            <div className="section-title">{t('salesOrders.lineItems')}</div>
             {soLines.length > 0 ? (
               <table className="lines-table">
                 <thead>
                   <tr>
-                    <th>SKU</th>
-                    <th>Item Name</th>
-                    <th style={{ textAlign: 'right' }}>Ordered</th>
-                    <th style={{ textAlign: 'right' }}>Picked</th>
-                    <th style={{ textAlign: 'right' }}>Shipped</th>
+                    <th>{t('common.sku')}</th>
+                    <th>{t('common.itemName')}</th>
+                    <th style={{ textAlign: 'right' }}>{t('salesOrders.ordered')}</th>
+                    <th style={{ textAlign: 'right' }}>{t('salesOrders.picked')}</th>
+                    <th style={{ textAlign: 'right' }}>{t('salesOrders.shipped')}</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -1025,7 +1072,7 @@ export default function SalesOrders() {
                 </tbody>
               </table>
             ) : (
-              <p style={{ fontSize: 13, color: 'var(--text-secondary)' }}>No line items</p>
+              <p style={{ fontSize: 13, color: 'var(--text-secondary)' }}>{t('salesOrders.noLineItems')}</p>
             )}
           </section>
         </Modal>
@@ -1040,7 +1087,7 @@ export default function SalesOrders() {
             setCreatingRma(false);
             setSelectedSO(null);
             setSOLines([]);
-            setSuccessBanner(`RMA ${data.so_number} created`);
+            setSuccessBanner(t('salesOrders.rmaCreated', { rma: data.so_number }));
           }}
         />
       )}
@@ -1057,13 +1104,13 @@ export default function SalesOrders() {
         const addressEditable = isAdmin || status === 'OPEN';
         return (
           <Modal
-            title={`Edit SO ${editing.so_number}`}
+            title={t('salesOrders.editTitle', { so: editing.so_number })}
             onClose={closeEdit}
             size="wide"
             footer={
               <>
                 {status === 'OPEN' && (
-                  <button className="btn btn-danger" onClick={() => setConfirmCancel(true)}>Cancel Order</button>
+                  <button className="btn btn-danger" onClick={() => setConfirmCancel(true)}>{t('salesOrders.cancelOrder')}</button>
                 )}
                 {/* Admin virtual pick: operator marks the SO picked
                     without the handheld. Gated to OPEN + ADMIN-or-
@@ -1074,9 +1121,9 @@ export default function SalesOrders() {
                   <button
                     className="btn btn-warning"
                     onClick={openAdminPick}
-                    title="Mark this order picked via admin (no handheld)"
+                    title={t('salesOrders.adminPickTooltip')}
                   >
-                    Admin Pick
+                    {t('salesOrders.adminPick')}
                   </button>
                 )}
                 {/* so-refinement: shortcut to the release modal that
@@ -1086,8 +1133,8 @@ export default function SalesOrders() {
                   <button
                     className="btn"
                     onClick={() => openReleaseOnly(editing._pick_tasks || [])}
-                    title="Release picked inventory back to source bins without changing status"
-                  >Release Picked Quantities</button>
+                    title={t('salesOrders.releasePickedTooltip')}
+                  >{t('salesOrders.releasePicked')}</button>
                 )}
                 {/* Partial-fulfill. Status gate {OPEN, PICKED};
                     PICKED requires admin/so-full-edit so the button
@@ -1103,11 +1150,11 @@ export default function SalesOrders() {
                     className="btn btn-warning"
                     onClick={openPartialFulfill}
                   >
-                    Partially Fulfill
+                    {t('salesOrders.partiallyFulfill')}
                   </button>
                 )}
-                <button className="btn" onClick={closeEdit}>Cancel</button>
-                <button className="btn btn-primary" onClick={saveEdit} disabled={!headerEditable}>Save</button>
+                <button className="btn" onClick={closeEdit}>{t('common.cancel')}</button>
+                <button className="btn btn-primary" onClick={saveEdit} disabled={!headerEditable}>{t('common.save')}</button>
               </>
             }
           >
@@ -1128,27 +1175,27 @@ export default function SalesOrders() {
             )}
             <div className="form-row">
               <div className="form-group">
-                <label>SO Number</label>
+                <label>{t('salesOrders.number')}</label>
                 <input className="form-input" disabled={!headerEditable} value={editForm.so_number} onChange={(e) => setEditForm({ ...editForm, so_number: e.target.value })} />
               </div>
               <div className="form-group">
-                <label>Customer</label>
+                <label>{t('common.customer')}</label>
                 <input className="form-input" disabled={!headerEditable} value={editForm.customer_name} onChange={(e) => setEditForm({ ...editForm, customer_name: e.target.value })} />
               </div>
             </div>
             <div className="form-row">
               <div className="form-group">
-                <label>Phone</label>
+                <label>{t('salesOrders.phone')}</label>
                 <input className="form-input" disabled={!headerEditable} value={editForm.customer_phone} onChange={(e) => setEditForm({ ...editForm, customer_phone: e.target.value })} />
               </div>
               <div className="form-group">
-                <label>Ship By</label>
+                <label>{t('salesOrders.shipBy')}</label>
                 <input className="form-input" type="date" disabled={!headerEditable} value={editForm.ship_by_date} onChange={(e) => setEditForm({ ...editForm, ship_by_date: e.target.value })} />
               </div>
             </div>
             <div className="form-row">
               <div className="form-group">
-                <label>Status</label>
+                <label>{t('common.status')}</label>
                 <select
                   className="form-select"
                   disabled={!headerEditable}
@@ -1161,17 +1208,17 @@ export default function SalesOrders() {
                 </select>
               </div>
               <div className="form-group">
-                <label>Source System</label>
+                <label>{t('salesOrders.sourceSystem')}</label>
                 <select
                   className="form-select"
                   disabled={!sourceSystemEditable}
                   value={editForm.source_system || ''}
                   onChange={(e) => setEditForm({ ...editForm, source_system: e.target.value })}
-                  title={sourceSystemEditable
-                    ? 'Reassign the ERP source tag (audit-logged)'
-                    : 'ADMIN or so-full-edit override required to reassign'}
+                  title={t(sourceSystemEditable
+                    ? 'salesOrders.reassignSource'
+                    : 'salesOrders.reassignNeedsOverride')}
                 >
-                  <option value="">(none)</option>
+                  <option value="">{t('salesOrders.none')}</option>
                   {sourceSystems.map((s) => (
                     <option key={s.source_system} value={s.source_system}>
                       {s.source_system} {s.kind ? `(${s.kind})` : ''}
@@ -1184,18 +1231,18 @@ export default function SalesOrders() {
                 dropdown -- the inbound payload populates it; ADMIN /
                 so-full-edit can override. Empty string clears the column. */}
             <div className="form-group">
-              <label>Source:</label>
+              <label>{t('salesOrders.source')}</label>
               <input
                 className="form-input"
                 disabled={!headerEditable}
                 maxLength={64}
-                placeholder="e.g. amazon, shopify-store-1, phone-order"
+                placeholder={t('salesOrders.sourceExample')}
                 value={editForm.order_origin}
                 onChange={(e) => setEditForm({ ...editForm, order_origin: e.target.value })}
               />
             </div>
             <div className="form-group">
-              <label>Ship Method</label>
+              <label>{t('salesOrders.shipMethod')}</label>
               <input className="form-input" disabled={!headerEditable} value={editForm.ship_method} onChange={(e) => setEditForm({ ...editForm, ship_method: e.target.value })} />
             </div>
             {/* so-refinement: Tracking # on its own row, right-aligned
@@ -1203,23 +1250,23 @@ export default function SalesOrders() {
             <div className="form-row">
               <div className="form-group" aria-hidden="true" />
               <div className="form-group">
-                <label>Tracking #</label>
+                <label>{t('salesOrders.tracking')}</label>
                 <input
                   className="form-input mono"
                   disabled={!headerEditable}
                   maxLength={128}
-                  placeholder="Auto-fills from Dockd on ship"
+                  placeholder={t('salesOrders.trackingAutofill')}
                   value={editForm.tracking_number}
                   onChange={(e) => setEditForm({ ...editForm, tracking_number: e.target.value })}
                 />
               </div>
             </div>
             <div className="form-group">
-              <label>Ship Address</label>
+              <label>{t('salesOrders.shipAddress')}</label>
               <textarea className="form-input" rows={2} disabled={!headerEditable} value={editForm.ship_address} onChange={(e) => setEditForm({ ...editForm, ship_address: e.target.value })} />
             </div>
             <div className="form-group">
-              <label>Note (memo)</label>
+              <label>{t('salesOrders.memo')}</label>
               <textarea
                 className="form-input" rows={3}
                 placeholder="......"
@@ -1234,7 +1281,7 @@ export default function SalesOrders() {
                 Saved via PATCH /address from saveEdit when any of the 16
                 fields changed. Empty string clears to NULL. */}
             <section className="section" style={{ marginTop: 16 }}>
-              <div className="section-title">Addresses</div>
+              <div className="section-title">{t('salesOrders.addresses')}</div>
               {!addressEditable && (
                 <p style={{ fontSize: 12, color: 'var(--text-secondary)', marginBottom: 12 }}>
                   Address edits are locked while the SO is {status}. Only
@@ -1243,7 +1290,7 @@ export default function SalesOrders() {
               )}
               <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16 }}>
                 <div>
-                  <strong style={{ display: 'block', marginBottom: 8 }}>Billing</strong>
+                  <strong style={{ display: 'block', marginBottom: 8 }}>{t('salesOrders.billing')}</strong>
                   {ADDRESS_FIELD_KEYS.filter((k) => k.startsWith('billing_')).map((k) => (
                     <div key={k} className="form-group">
                       <label>{ADDRESS_FIELD_LABELS[k]}</label>
@@ -1257,7 +1304,7 @@ export default function SalesOrders() {
                   ))}
                 </div>
                 <div>
-                  <strong style={{ display: 'block', marginBottom: 8 }}>Shipping</strong>
+                  <strong style={{ display: 'block', marginBottom: 8 }}>{t('salesOrders.shipping')}</strong>
                   {ADDRESS_FIELD_KEYS.filter((k) => k.startsWith('shipping_')).map((k) => (
                     <div key={k} className="form-group">
                       <label>{ADDRESS_FIELD_LABELS[k]}</label>
@@ -1274,17 +1321,17 @@ export default function SalesOrders() {
             </section>
 
             <section className="section" style={{ marginTop: 16 }}>
-              <div className="section-title">Line Items</div>
+              <div className="section-title">{t('salesOrders.lineItems')}</div>
               {editLines.length > 0 ? (
                 <table className="lines-table">
                   <thead>
                     <tr>
-                      <th>SKU</th>
-                      <th>Item Name</th>
-                      <th style={{ textAlign: 'right' }}>Ordered</th>
-                      <th style={{ textAlign: 'right' }}>Allocated</th>
-                      <th style={{ textAlign: 'right' }}>Picked</th>
-                      <th style={{ textAlign: 'right' }}>Shipped</th>
+                      <th>{t('common.sku')}</th>
+                      <th>{t('common.itemName')}</th>
+                      <th style={{ textAlign: 'right' }}>{t('salesOrders.ordered')}</th>
+                      <th style={{ textAlign: 'right' }}>{t('common.allocated')}</th>
+                      <th style={{ textAlign: 'right' }}>{t('salesOrders.picked')}</th>
+                      <th style={{ textAlign: 'right' }}>{t('salesOrders.shipped')}</th>
                       <th style={{ width: 40 }}></th>
                     </tr>
                   </thead>
@@ -1318,8 +1365,8 @@ export default function SalesOrders() {
                                 style={{ padding: '0 6px' }}
                                 disabled={!lineEditable || (l.quantity_allocated || 0) <= (l.quantity_picked || 0)}
                                 onClick={() => adjustLineAllocation(l, -1)}
-                                title="Release one reserved unit"
-                                aria-label="Decrease allocated"
+                                title={t('salesOrders.releaseOneUnit')}
+                                aria-label={t('salesOrders.decreaseAllocated')}
                               >-</button>
                               <span className="mono" style={{ minWidth: 20, textAlign: 'center' }}>{l.quantity_allocated || 0}</span>
                               <button
@@ -1328,8 +1375,8 @@ export default function SalesOrders() {
                                 style={{ padding: '0 6px' }}
                                 disabled={!lineEditable || (l.quantity_allocated || 0) >= (l.quantity_ordered || 0)}
                                 onClick={() => adjustLineAllocation(l, 1)}
-                                title="Reserve one more unit"
-                                aria-label="Increase allocated"
+                                title={t('salesOrders.reserveOneUnit')}
+                                aria-label={t('salesOrders.increaseAllocated')}
                               >+</button>
                             </span>
                           </td>
@@ -1342,10 +1389,10 @@ export default function SalesOrders() {
                               disabled={!removable}
                               title={!removable
                                 ? (LINE_TERMINAL_STATUSES.has(status)
-                                    ? `Lines locked while SO is ${status}`
-                                    : 'Line has picked/packed/shipped units; unwind first')
-                                : 'Remove line'}
-                              aria-label="Remove line"
+                                  ? t('salesOrders.linesLocked', { status })
+                                  : t('salesOrders.lineHasUnits'))
+                                : t('salesOrders.removeLine')}
+                              aria-label={t('salesOrders.removeLine')}
                             >&#10005;</button>
                           </td>
                         </tr>
@@ -1354,7 +1401,7 @@ export default function SalesOrders() {
                   </tbody>
                 </table>
               ) : (
-                <p style={{ fontSize: 13, color: 'var(--text-secondary)' }}>No line items yet.</p>
+                <p style={{ fontSize: 13, color: 'var(--text-secondary)' }}>{t('salesOrders.noLineItemsYet')}</p>
               )}
 
               {lineEditable && (
@@ -1365,23 +1412,22 @@ export default function SalesOrders() {
                 }}>
                   <div style={{ display: 'flex', alignItems: 'flex-start', gap: 8 }}>
                     <div style={{ flex: '0 0 240px' }}>
-                      <label style={{ fontSize: 11, color: 'var(--text-secondary)', fontWeight: 500 }}>SKU</label>
-                      <input
+                      <label style={{ fontSize: 11, color: 'var(--text-secondary)', fontWeight: 500 }}>{t('common.sku')}</label>
+                      <SkuBarcodeAutocomplete
                         className="form-input mono"
-                        placeholder="Type SKU to search"
-                        list="so-edit-sku-suggestions"
+                        listId="so-edit-sku-suggestions"
+                        minChars={2}
+                        placeholder={t('skuSearch.placeholder')}
                         value={newLineSku}
-                        onChange={(e) => setNewLineSku(e.target.value)}
+                        onChange={setNewLineSku}
+                        onItemSelect={setResolvedItem}
                         onKeyDown={(e) => { if (e.key === 'Enter') addLine(); }}
+                        apiOptions={{ silentPermissionDenied: true }}
+                        showNoMatch
                       />
-                      <datalist id="so-edit-sku-suggestions">
-                        {skuSuggestions.map((it) => (
-                          <option key={it.item_id} value={it.sku}>{it.item_name}</option>
-                        ))}
-                      </datalist>
                     </div>
                     <div style={{ flex: '0 0 120px' }}>
-                      <label style={{ fontSize: 11, color: 'var(--text-secondary)', fontWeight: 500 }}>Quantity</label>
+                      <label style={{ fontSize: 11, color: 'var(--text-secondary)', fontWeight: 500 }}>{t('salesOrders.quantity')}</label>
                       <input
                         className="form-input"
                         type="number"
@@ -1399,7 +1445,7 @@ export default function SalesOrders() {
                       disabled={addingLine}
                       style={{ marginTop: 16 }}
                     >
-                      {addingLine ? 'Adding...' : 'Add Line'}
+                      {addingLine ? t('salesOrders.adding') : t('salesOrders.addLine')}
                     </button>
                   </div>
                   {newLineError && (
@@ -1409,12 +1455,13 @@ export default function SalesOrders() {
                   )}
                   {!newLineError && resolvedItem && (
                     <div style={{ marginTop: 8, fontSize: 12, color: 'var(--success)' }}>
-                      Found: <strong>{resolvedItem.sku}</strong> - {resolvedItem.item_name}
-                    </div>
-                  )}
-                  {!newLineError && !resolvedItem && newLineSku.trim().length >= 2 && skuSuggestions.length === 0 && (
-                    <div style={{ marginTop: 8, fontSize: 12, color: 'var(--text-secondary)' }}>
-                      No matches for "{newLineSku.trim()}". Click Add Line to retry the lookup.
+                      <RichText
+                        text={t('salesOrders.foundItem')}
+                        values={{
+                          sku: <strong>{resolvedItem.sku}</strong>,
+                          name: resolvedItem.item_name,
+                        }}
+                      />
                     </div>
                   )}
                 </div>
@@ -1426,40 +1473,50 @@ export default function SalesOrders() {
 
       {releaseConfirm && (
         <Modal
-          title="Release pick-batch allocation?"
+          title={t('salesOrders.releaseAllocTitle')}
           onClose={() => setReleaseConfirm(null)}
           footer={
             <>
-              <button className="btn" onClick={() => setReleaseConfirm(null)}>Back</button>
+              <button className="btn" onClick={() => setReleaseConfirm(null)}>{t('common.back')}</button>
               <button className="btn btn-danger" onClick={confirmReleaseAndProceed}>
-                {releaseConfirm.intent === 'delete' ? 'Release + Remove Line' : 'Release + Update'}
+                {t(releaseConfirm.intent === 'delete'
+                  ? 'salesOrders.releaseAndRemove'
+                  : 'salesOrders.releaseAndUpdate')}
               </button>
             </>
           }
         >
           <p style={{ fontSize: 13, marginBottom: 8 }}>
-            Line <strong>{releaseConfirm.line.sku}</strong> currently has{' '}
-            <strong>{releaseConfirm.line.quantity_allocated}</strong> units allocated to a pick batch.
+            <RichText
+              text={t('salesOrders.lineAllocated')}
+              values={{
+                sku: <strong>{releaseConfirm.line.sku}</strong>,
+                n: <strong>{releaseConfirm.line.quantity_allocated}</strong>,
+              }}
+            />
           </p>
           <p style={{ fontSize: 13, marginBottom: 8 }}>
             {releaseConfirm.intent === 'delete'
-              ? 'Removing this line will release those units back to the source bins. The line will then be deleted.'
-              : `Reducing quantity to ${releaseConfirm.newQty} (below the allocated ${releaseConfirm.line.quantity_allocated}) will release the full line allocation back to the source bins.`}
+              ? t('salesOrders.releaseExplainDelete')
+              : t('salesOrders.releaseExplainShrink', {
+                qty: releaseConfirm.newQty,
+                allocated: releaseConfirm.line.quantity_allocated,
+              })}
           </p>
           <p style={{ fontSize: 12, color: 'var(--text-secondary)' }}>
-            Released inventory becomes available for re-allocation on the next pick-batch create. The action is audit-logged.
+            {t('salesOrders.releaseAuditNote')}
           </p>
         </Modal>
       )}
 
       {confirmCancel && editing && (
         <Modal
-          title={`Cancel order ${editing.so_number}?`}
+          title={t('salesOrders.cancelOrderTitle', { so: editing.so_number })}
           onClose={() => setConfirmCancel(false)}
           footer={
             <>
-              <button className="btn" onClick={() => setConfirmCancel(false)}>Keep Order</button>
-              <button className="btn btn-danger" onClick={cancelSO}>Cancel Order</button>
+              <button className="btn" onClick={() => setConfirmCancel(false)}>{t('salesOrders.keepOrder')}</button>
+              <button className="btn btn-danger" onClick={cancelSO}>{t('salesOrders.cancelOrder')}</button>
             </>
           }
         >
@@ -1477,20 +1534,20 @@ export default function SalesOrders() {
           by the backend. Submit is all-or-nothing. */}
       {adminPicking && (
         <Modal
-          title={`Admin pick ${adminPicking.so_number}`}
+          title={t('salesOrders.adminPickTitle', { so: adminPicking.so_number })}
           onClose={closeAdminPick}
           size="wide"
           footer={
             <>
               <button className="btn" onClick={closeAdminPick} disabled={adminPickSubmitting}>
-                Cancel
+                {t('common.cancel')}
               </button>
               <button
                 className="btn btn-warning"
                 onClick={submitAdminPick}
                 disabled={adminPickSubmitting}
               >
-                {adminPickSubmitting ? 'Picking...' : 'Pick'}
+                {adminPickSubmitting ? t('salesOrders.picking') : t('salesOrders.pick')}
               </button>
             </>
           }
@@ -1505,18 +1562,18 @@ export default function SalesOrders() {
             Picked Quantities modal can undo it later.
           </p>
           {Object.keys(adminPickForm).length === 0 ? (
-            <p style={{ fontSize: 13 }}>Every line is already fully picked.</p>
+            <p style={{ fontSize: 13 }}>{t('salesOrders.everyLineFullyPicked')}</p>
           ) : (
             <table className="data-table" style={{ marginBottom: 12 }}>
               <thead>
                 <tr>
-                  <th>Line</th>
-                  <th>SKU</th>
-                  <th>Item</th>
-                  <th style={{ textAlign: 'right' }}>Ordered</th>
-                  <th style={{ textAlign: 'right' }}>Picked</th>
-                  <th>Bin</th>
-                  <th style={{ width: 100 }}>Qty</th>
+                  <th>{t('salesOrders.line')}</th>
+                  <th>{t('common.sku')}</th>
+                  <th>{t('common.item')}</th>
+                  <th style={{ textAlign: 'right' }}>{t('salesOrders.ordered')}</th>
+                  <th style={{ textAlign: 'right' }}>{t('salesOrders.picked')}</th>
+                  <th>{t('common.bin')}</th>
+                  <th style={{ width: 100 }}>{t('common.qty')}</th>
                   <th style={{ width: 100 }}></th>
                 </tr>
               </thead>
@@ -1551,13 +1608,13 @@ export default function SalesOrders() {
                               {b.bin_code}
                               {b.zone_name ? ` (${b.zone_name})` : ''}
                               {' '}- avail {b.quantity_available}
-                              {b.preferred_priority != null ? ' [pref]' : ''}
+                              {b.preferred_priority != null ? ` ${t('salesOrders.preferredMark')}` : ''}
                             </option>
                           ))}
                         </select>
                         {bins.length === 0 && (
                           <div style={{ fontSize: 11, color: 'var(--text-secondary)', marginTop: 4 }}>
-                            No bins with available stock in this warehouse.
+                            {t('salesOrders.noBinsWithStock')}
                           </div>
                         )}
                       </td>
@@ -1581,15 +1638,15 @@ export default function SalesOrders() {
                             type="button"
                             className="btn btn-sm"
                             onClick={() => addAdminPickBin(line.so_line_id)}
-                            title="Pick remainder from a second bin"
-                          >+ bin</button>
+                            title={t('salesOrders.pickFromSecondBin')}
+                          >{t('salesOrders.addBin')}</button>
                           {entries.length > 1 && (
                             <button
                               type="button"
                               className="btn btn-sm btn-danger"
                               onClick={() => removeAdminPickBin(line.so_line_id, idx)}
-                              title="Drop this bin entry"
-                              aria-label="Remove entry"
+                              title={t('salesOrders.dropBinEntry')}
+                              aria-label={t('salesOrders.removeEntry')}
                             >&#10005;</button>
                           )}
                         </div>
@@ -1630,13 +1687,17 @@ export default function SalesOrders() {
         return (
           <Modal
             title={releaseOnly
-              ? `Release picked quantities - SO ${editing.so_number}`
-              : `Revert SO ${editing.so_number}: ${currentStatus} -> ${newStatus}`}
+              ? t('salesOrders.releasePickedTitle', { so: editing.so_number })
+              : t('salesOrders.revertTitle', {
+                so: editing.so_number,
+                from: currentStatus,
+                to: newStatus,
+              })}
             onClose={() => setRevertConfirm(null)}
             size="wide"
             footer={
               <>
-                <button className="btn" onClick={() => setRevertConfirm(null)} disabled={busy}>Back</button>
+                <button className="btn" onClick={() => setRevertConfirm(null)} disabled={busy}>{t('common.back')}</button>
                 <button
                   className="btn btn-primary"
                   onClick={confirmRevertAndSave}
@@ -1645,7 +1706,7 @@ export default function SalesOrders() {
                     ? `Cannot demote to ${newStatus} with ${heldCount} pick(s) checked as Keep. Uncheck them or pick a target at PICKED or higher.`
                     : 'Release unchecked picks and save'}
                 >
-                  {busy ? 'Reverting...' : 'Release & Save'}
+                  {busy ? t('salesOrders.reverting') : t('salesOrders.releaseAndSave')}
                 </button>
               </>
             }
@@ -1655,7 +1716,7 @@ export default function SalesOrders() {
             {(willUnship || willUnpack) && (
               <div style={{
                 padding: 10, marginBottom: 12,
-                borderLeft: '3px solid var(--copper)', backgroundColor: '#fdf6ed',
+                borderLeft: '3px solid var(--copper)', backgroundColor: 'var(--warning-bg)',
               }}>
                 <div style={{ fontSize: 11, fontWeight: 700, color: 'var(--copper)', letterSpacing: 0.4, marginBottom: 4 }}>
                   SIDE EFFECTS
@@ -1663,15 +1724,15 @@ export default function SalesOrders() {
                 <ul style={{ fontSize: 13, lineHeight: 1.5, paddingLeft: 18, margin: 0 }}>
                   {willUnship && (
                     <li>
-                      <strong>Unship:</strong> tracking number, carrier, and shipped-at
+                      <strong>{t('salesOrders.unship')}</strong> {t('salesOrders.unshipDetail')}
                       will clear on the header. Physical inventory was already
                       shipped; reconcile externally if the package is returning.
                     </li>
                   )}
                   {willUnpack && (
                     <li>
-                      <strong>Unpack:</strong> packed quantity zeroes on every line.
-                      No inventory moves (pack does not touch bin stock).
+                      <strong>{t('salesOrders.unpack')}</strong> {t('salesOrders.unpackDetail')}
+                      {t('salesOrders.unpackNoMoves')}
                     </li>
                   )}
                 </ul>
@@ -1680,21 +1741,43 @@ export default function SalesOrders() {
 
             <p style={{ fontSize: 13, marginBottom: 8 }}>
               {pickTasks.length === 0
-                ? <>No PICKED units to release.{releaseOnly ? '' : ` The revert will just change the status${willUnpack ? ' and unpack' : ''}${willUnship ? ' and unship' : ''}.`}</>
-                : <>This SO has <strong>{pickTasks.length}</strong> picked task(s) totalling <strong>{pickTasks.reduce((acc, t) => acc + (t.quantity_picked || 0), 0)}</strong> units across the bins below. All are kept PICKED by default; <strong>uncheck</strong> the Keep box for any task you want to release back to bin.</>
-              }
+                ? (
+                  <>
+                    {t('salesOrders.noPickedToRelease')}
+                    {!releaseOnly && ` ${t('salesOrders.revertJustChangesStatus', {
+                      extra: [
+                        willUnpack ? t('salesOrders.andUnpack') : '',
+                        willUnship ? t('salesOrders.andUnship') : '',
+                      ].filter(Boolean).join(' '),
+                    })}`}
+                  </>
+                )
+                : (
+                  <RichText
+                    text={t('salesOrders.pickedTasksSummary')}
+                    values={{
+                      tasks: <strong>{pickTasks.length}</strong>,
+                      units: (
+                        <strong>
+                          {pickTasks.reduce((acc, task) => acc + (task.quantity_picked || 0), 0)}
+                        </strong>
+                      ),
+                      uncheck: <strong>{t('salesOrders.uncheck')}</strong>,
+                    }}
+                  />
+                )}
             </p>
 
             {pickTasks.length > 0 && (
               <table className="lines-table" style={{ marginTop: 8 }}>
                 <thead>
                   <tr>
-                    <th style={{ width: 56, textAlign: 'center' }}>Keep</th>
-                    <th>SKU</th>
-                    <th>Item</th>
-                    <th>Bin</th>
-                    <th style={{ textAlign: 'right' }}>Qty</th>
-                    <th>Picked At</th>
+                    <th style={{ width: 56, textAlign: 'center' }}>{t('salesOrders.keep')}</th>
+                    <th>{t('common.sku')}</th>
+                    <th>{t('common.item')}</th>
+                    <th>{t('common.bin')}</th>
+                    <th style={{ textAlign: 'right' }}>{t('common.qty')}</th>
+                    <th>{t('salesOrders.pickedAt')}</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -1706,7 +1789,7 @@ export default function SalesOrders() {
                           checked={keepIds.has(t.pick_task_id)}
                           onChange={() => toggleId(t.pick_task_id)}
                           disabled={busy}
-                          title="Check to keep this pick (unchecked releases back to bin)"
+                          title={t('salesOrders.keepPickTooltip')}
                         />
                       </td>
                       <td className="mono">{t.sku}</td>
@@ -1724,16 +1807,21 @@ export default function SalesOrders() {
 
             {blockedByHeld && (
               <p style={{ fontSize: 12, color: 'var(--danger)', marginTop: 12 }}>
-                Target status <strong>{newStatus}</strong> requires zero picked
-                units. {heldCount} task(s) are checked to keep - uncheck them
-                or change the target to PICKED or higher.
+                <RichText
+                  text={t('salesOrders.blockedByHeld', { held: heldCount })}
+                  values={{ status: <strong>{newStatus}</strong> }}
+                />
               </p>
             )}
             {!blockedByHeld && pickTasks.length > 0 && (
               <p style={{ fontSize: 12, color: 'var(--text-secondary)', marginTop: 12 }}>
-                Releasing <strong>{releaseCount}</strong> of {pickTasks.length} task(s),
-                returning <strong>{totalReleaseUnits}</strong> units to their bins.
-                The action is audit-logged per task.
+                <RichText
+                  text={t('salesOrders.releasingSummary', { total: pickTasks.length })}
+                  values={{
+                    count: <strong>{releaseCount}</strong>,
+                    units: <strong>{totalReleaseUnits}</strong>,
+                  }}
+                />
               </p>
             )}
           </Modal>
@@ -1746,20 +1834,22 @@ export default function SalesOrders() {
           the server validation. */}
       {partialFulfilling && (
         <Modal
-          title={`Partially fulfill ${partialFulfilling.so_number}`}
+          title={t('salesOrders.partialTitle', { so: partialFulfilling.so_number })}
           onClose={closePartialFulfill}
           size="wide"
           footer={
             <>
               <button className="btn" onClick={closePartialFulfill} disabled={partialSubmitting}>
-                Cancel
+                {t('common.cancel')}
               </button>
               <button
                 className="btn btn-warning"
                 onClick={submitPartialFulfill}
                 disabled={partialSubmitting}
               >
-                {partialSubmitting ? 'Creating BO...' : 'Ship Available + Create Backorder'}
+                {partialSubmitting
+                  ? t('salesOrders.creatingBackorder')
+                  : t('salesOrders.shipAvailableCreateBo')}
               </button>
             </>
           }
@@ -1775,18 +1865,18 @@ export default function SalesOrders() {
             already-picked qty are not editable.
           </p>
           {(editLines || []).length === 0 ? (
-            <p style={{ fontSize: 13 }}>No lines on this order.</p>
+            <p style={{ fontSize: 13 }}>{t('salesOrders.noLinesOnOrder')}</p>
           ) : (
             <table className="data-table" style={{ marginBottom: 12 }}>
               <thead>
                 <tr>
-                  <th>Line</th>
-                  <th>SKU</th>
-                  <th>Item</th>
-                  <th style={{ textAlign: 'right' }}>Ordered</th>
-                  <th style={{ textAlign: 'right' }}>Picked</th>
-                  <th style={{ textAlign: 'right' }}>Unshipped</th>
-                  <th style={{ width: 100 }}>Short</th>
+                  <th>{t('salesOrders.line')}</th>
+                  <th>{t('common.sku')}</th>
+                  <th>{t('common.item')}</th>
+                  <th style={{ textAlign: 'right' }}>{t('salesOrders.ordered')}</th>
+                  <th style={{ textAlign: 'right' }}>{t('salesOrders.picked')}</th>
+                  <th style={{ textAlign: 'right' }}>{t('salesOrders.unshipped')}</th>
+                  <th style={{ width: 100 }}>{t('salesOrders.short')}</th>
                 </tr>
               </thead>
               <tbody>
@@ -1824,15 +1914,119 @@ export default function SalesOrders() {
             </table>
           )}
           <div className="form-group">
-            <label>Reason (free text, audit-logged)</label>
+            <label>{t('salesOrders.reasonFreeText')}</label>
             <input
               className="form-input"
               value={partialForm.reason}
               onChange={(e) => setPartialForm((prev) => ({ ...prev, reason: e.target.value }))}
-              placeholder="e.g. physical count came up short"
+              placeholder={t('salesOrders.reasonExample')}
               maxLength={500}
             />
           </div>
+        </Modal>
+      )}
+
+      {createForm && (
+        <Modal
+          title={t('salesOrders.newOrder')}
+          onClose={() => setCreateForm(null)}
+          footer={
+            <>
+              <button className="btn" onClick={() => setCreateForm(null)} disabled={creating}>{t('common.cancel')}</button>
+              <button className="btn btn-primary" onClick={submitCreate} disabled={creating}>
+                {creating ? t('salesOrders.creating') : t('salesOrders.createOrder')}
+              </button>
+            </>
+          }
+        >
+          {createError && <div className="alert alert-error">{createError}</div>}
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
+            <div className="form-group">
+              <label htmlFor="so-create-number">{t('salesOrders.number')}</label>
+              <input
+                id="so-create-number"
+                className="form-input mono"
+                value={createForm.so_number}
+                onChange={(e) => setCreateForm({ ...createForm, so_number: e.target.value })}
+                placeholder="SO-2026-010"
+                autoFocus
+              />
+            </div>
+            <div className="form-group">
+              <label htmlFor="so-create-warehouse">{t('common.warehouse')}</label>
+              <select
+                id="so-create-warehouse"
+                className="form-input"
+                value={createForm.warehouse_id}
+                onChange={(e) => setCreateForm({ ...createForm, warehouse_id: e.target.value })}
+              >
+                <option value="">{t('salesOrders.selectWarehouse')}</option>
+                {warehouses.map((w) => (
+                  <option key={w.warehouse_id || w.id} value={w.warehouse_id || w.id}>
+                    {w.warehouse_code} &middot; {w.warehouse_name}
+                  </option>
+                ))}
+              </select>
+            </div>
+            <div className="form-group">
+              <label htmlFor="so-create-customer">{t('common.customer')}</label>
+              <input
+                id="so-create-customer"
+                className="form-input"
+                value={createForm.customer_name}
+                onChange={(e) => setCreateForm({ ...createForm, customer_name: e.target.value })}
+              />
+            </div>
+            <div className="form-group">
+              <label htmlFor="so-create-phone">{t('common.phone')}</label>
+              <input
+                id="so-create-phone"
+                className="form-input"
+                value={createForm.customer_phone}
+                onChange={(e) => setCreateForm({ ...createForm, customer_phone: e.target.value })}
+              />
+            </div>
+            <div className="form-group">
+              <label htmlFor="so-create-ship-method">{t('salesOrders.shipMethod')}</label>
+              <input
+                id="so-create-ship-method"
+                className="form-input"
+                value={createForm.ship_method}
+                onChange={(e) => setCreateForm({ ...createForm, ship_method: e.target.value })}
+              />
+            </div>
+            <div className="form-group">
+              <label htmlFor="so-create-ship-by">{t('salesOrders.shipByDate')}</label>
+              <input
+                id="so-create-ship-by"
+                className="form-input"
+                type="date"
+                value={createForm.ship_by_date}
+                onChange={(e) => setCreateForm({ ...createForm, ship_by_date: e.target.value })}
+              />
+            </div>
+          </div>
+          <div className="form-group">
+            <label htmlFor="so-create-address">{t('salesOrders.shippingAddress')}</label>
+            <textarea
+              id="so-create-address"
+              className="form-input"
+              rows={2}
+              value={createForm.customer_address}
+              onChange={(e) => setCreateForm({ ...createForm, customer_address: e.target.value })}
+            />
+          </div>
+          <h4 style={{ margin: '16px 0 8px', fontSize: 13, color: 'var(--text-secondary)' }}>{t('salesOrders.lines')}</h4>
+          <OrderLineEditor
+            lines={createForm.lines}
+            onChange={(lines) => setCreateForm({ ...createForm, lines })}
+            listIdPrefix="so-create"
+            disabled={creating}
+          />
+          <p style={{ marginTop: 12, fontSize: 12, color: 'var(--text-secondary)' }}>
+            Stock is reserved for each line as far as the warehouse can cover it,
+            the moment the order is created.
+          </p>
         </Modal>
       )}
     </div>
@@ -1844,6 +2038,7 @@ export default function SalesOrders() {
 // the parent's value after a successful update so a server-side rewrite
 // (e.g. allocation release zeroing the line) reflects immediately.
 function LineQtyInput({ line, disabled, onCommit }) {
+  const { t } = useLocale();
   const [val, setVal] = useState(String(line.quantity_ordered));
   const [saving, setSaving] = useState(false);
 

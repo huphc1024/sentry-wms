@@ -3,6 +3,8 @@ import { api } from '../api.js';
 import DataTable from '../components/DataTable.jsx';
 import PageHeader from '../components/PageHeader.jsx';
 import Modal from '../components/Modal.jsx';
+import SkuBarcodeAutocomplete from '../components/SkuBarcodeAutocomplete.jsx';
+import { useLocale } from '../i18n/locale.jsx';
 
 // Action-type categorization drives the badge color in the table and
 // modal header. Categories map to existing tag-* classes in App.css so
@@ -48,7 +50,7 @@ const CATEGORY_TAG_CLASS = {
 };
 
 const ACTION_OPTIONS = [
-  { value: '', label: 'All actions' },
+  { value: '', labelKey: 'auditLog.allActions' },
   ...Object.keys(ACTION_CATEGORY).sort().map((a) => ({ value: a, label: a })),
 ];
 
@@ -114,6 +116,7 @@ function EntityCell({ row }) {
 }
 
 function DetailsChips({ row }) {
+  const { t } = useLocale();
   const parsed = useMemo(() => parseDetails(row.details), [row.details]);
   if (!parsed || Object.keys(parsed).length === 0) {
     return <span style={{ color: 'var(--text-tertiary)' }}>-</span>;
@@ -144,7 +147,7 @@ function DetailsChips({ row }) {
           fontSize: 11, color: 'var(--text-tertiary)',
           alignSelf: 'center', fontStyle: 'italic',
         }}>
-          +{overflow} more
+          {t('auditLog.andMore', { n: overflow })}
         </span>
       )}
     </div>
@@ -156,24 +159,25 @@ function DetailsChips({ row }) {
 // chasing a SKU lands directly on the per-item lifecycle view.
 // Switching to the 'audit' tab restores the original full feed.
 export default function AuditLog() {
+  const { t } = useLocale();
   const [tab, setTab] = useState('item-history');
   return (
     <div>
-      <PageHeader title="Audit log" />
+      <PageHeader title={t('nav.auditLog')} />
       <div className="data-tabs" style={{ marginBottom: 16 }}>
         <button
           type="button"
           className={`data-tab${tab === 'item-history' ? ' active' : ''}`}
           onClick={() => setTab('item-history')}
         >
-          Item History
+          {t('auditLog.itemHistory')}
         </button>
         <button
           type="button"
           className={`data-tab${tab === 'audit' ? ' active' : ''}`}
           onClick={() => setTab('audit')}
         >
-          Audit Log
+          {t('nav.auditLog')}
         </button>
       </div>
       {tab === 'item-history' ? <ItemHistoryView /> : <FullAuditLogView />}
@@ -182,11 +186,11 @@ export default function AuditLog() {
 }
 
 function ItemHistoryView() {
+  const { t } = useLocale();
   // SKU typeahead -> resolve to item_id -> /admin/audit-log?item_id=<id>.
   // Two-character minimum keeps the catalog from returning a huge result
   // set on a single-letter prefix; the dropdown caps at 25.
   const [itemSearch, setItemSearch] = useState('');
-  const [itemResults, setItemResults] = useState([]);
   const [itemSearching, setItemSearching] = useState(false);
   const [item, setItem] = useState(null);
   const [logs, setLogs] = useState([]);
@@ -196,26 +200,6 @@ function ItemHistoryView() {
   const [selected, setSelected] = useState(null);
   const [sortKey, setSortKey] = useState('created_at');
   const [sortDir, setSortDir] = useState('desc');
-
-  useEffect(() => {
-    const q = itemSearch.trim();
-    if (q.length < 2 || item) {
-      setItemResults([]);
-      return;
-    }
-    setItemSearching(true);
-    const handle = setTimeout(async () => {
-      const res = await api.get(
-        `/admin/items?q=${encodeURIComponent(q)}&per_page=25&active=true`,
-        { silentPermissionDenied: true },
-      );
-      setItemSearching(false);
-      if (!res?.ok) return;
-      const data = await res.json();
-      setItemResults(data.items || []);
-    }, 200);
-    return () => clearTimeout(handle);
-  }, [itemSearch, item]);
 
   useEffect(() => {
     if (!item) {
@@ -246,15 +230,13 @@ function ItemHistoryView() {
 
   function pickItem(it) {
     setItem(it);
-    setItemSearch(`${it.sku} - ${it.item_name}`);
-    setItemResults([]);
+    setItemSearch(it.sku || '');
     setPage(1);
   }
 
   function clearItem() {
     setItem(null);
     setItemSearch('');
-    setItemResults([]);
     setLogs([]);
     setPagination(null);
     setPage(1);
@@ -276,42 +258,30 @@ function ItemHistoryView() {
         position: 'relative', marginBottom: 16, maxWidth: 480,
       }}>
         <label style={FILTER_LABEL_STYLE}>
-          SKU {itemSearching && <span style={{ textTransform: 'none', fontWeight: 400 }}>(searching...)</span>}
+          {t('common.sku')}{' '}
+          {itemSearching && (
+            <span style={{ textTransform: 'none', fontWeight: 400 }}>
+              {t('interTransfers.searching')}
+            </span>
+          )}
         </label>
-        <div style={{ display: 'flex', gap: 8 }}>
-          <input
-            className="form-input"
-            placeholder="Type SKU or item name (min 2 chars)"
+        <div style={{ display: 'flex', gap: 8, flex: 1 }}>
+          <SkuBarcodeAutocomplete
+            listId="audit-log-item-options"
+            minChars={2}
+            perPage={25}
+            placeholder={t('skuSearch.placeholderMin2')}
             value={itemSearch}
-            onChange={(e) => { setItemSearch(e.target.value); if (item) setItem(null); }}
-            autoComplete="off"
+            onChange={(v) => { setItemSearch(v); if (item) setItem(null); }}
+            onItemSelect={(it) => { if (it) pickItem(it); }}
+            onSearchingChange={setItemSearching}
+            apiOptions={{ silentPermissionDenied: true }}
+            showNoMatch={!item}
           />
           {item && (
-            <button className="btn btn-sm" onClick={clearItem}>Clear</button>
+            <button className="btn btn-sm" onClick={clearItem}>{t('webhooks.clearFilters')}</button>
           )}
         </div>
-        {!item && itemResults.length > 0 && (
-          <div style={{
-            position: 'absolute', top: '100%', left: 0, right: 0,
-            maxHeight: 240, overflowY: 'auto', background: 'var(--white)',
-            border: '1px solid var(--border-dark)', borderRadius: 8,
-            boxShadow: '0 4px 12px rgba(0,0,0,0.08)', zIndex: 100,
-            marginTop: 4,
-          }}>
-            {itemResults.map((it) => (
-              <div
-                key={it.item_id}
-                onMouseDown={() => pickItem(it)}
-                style={{
-                  padding: '8px 12px', cursor: 'pointer',
-                  borderBottom: '1px solid var(--border)', fontSize: 13,
-                }}
-              >
-                <strong className="mono">{it.sku}</strong>  -  {it.item_name}
-              </div>
-            ))}
-          </div>
-        )}
       </div>
 
       {!item && (
@@ -333,8 +303,8 @@ function ItemHistoryView() {
           onSort={handleSort}
           emptyMessage={
             loading
-              ? 'Loading…'
-              : `No audit events for ${item.sku}.`
+              ? t('common.loading')
+              : t('auditLog.noEventsFor', { sku: item.sku })
           }
         />
       )}
@@ -347,6 +317,7 @@ function ItemHistoryView() {
 }
 
 function FullAuditLogView() {
+  const { t } = useLocale();
   const [logs, setLogs] = useState([]);
   const [pagination, setPagination] = useState(null);
   const [page, setPage] = useState(1);
@@ -415,7 +386,7 @@ function FullAuditLogView() {
         marginBottom: 16,
       }}>
         <div style={{ minWidth: 200 }}>
-          <label style={FILTER_LABEL_STYLE}>Action</label>
+          <label style={FILTER_LABEL_STYLE}>{t('auditLog.action')}</label>
           <select
             className="form-select"
             value={filters.action_type}
@@ -427,16 +398,16 @@ function FullAuditLogView() {
           </select>
         </div>
         <div style={{ minWidth: 140 }}>
-          <label style={FILTER_LABEL_STYLE}>User</label>
+          <label style={FILTER_LABEL_STYLE}>{t('dashboard.user')}</label>
           <input
             className="form-input"
-            placeholder="username"
+            placeholder={t('auditLog.usernamePlaceholder')}
             value={filters.user_id}
             onChange={(e) => updateFilter('user_id', e.target.value)}
           />
         </div>
         <div>
-          <label style={FILTER_LABEL_STYLE}>From</label>
+          <label style={FILTER_LABEL_STYLE}>{t('webhooks.from')}</label>
           <input
             className="form-input"
             type="date"
@@ -445,7 +416,7 @@ function FullAuditLogView() {
           />
         </div>
         <div>
-          <label style={FILTER_LABEL_STYLE}>To</label>
+          <label style={FILTER_LABEL_STYLE}>{t('webhooks.to')}</label>
           <input
             className="form-input"
             type="date"
@@ -454,7 +425,7 @@ function FullAuditLogView() {
           />
         </div>
         {hasFilters && (
-          <button className="btn btn-sm" onClick={clearFilters}>Clear</button>
+          <button className="btn btn-sm" onClick={clearFilters}>{t('webhooks.clearFilters')}</button>
         )}
       </div>
 
@@ -485,7 +456,7 @@ function FullAuditLogView() {
 const AUDIT_COLUMNS = [
   {
     key: 'created_at',
-    label: 'When',
+    labelKey: 'auditLog.when',
     sortable: true,
     render: (r) => (
       <span className="mono" style={{ fontSize: 12, color: 'var(--text-secondary)' }}>
@@ -495,19 +466,19 @@ const AUDIT_COLUMNS = [
   },
   {
     key: 'action_type',
-    label: 'Action',
+    labelKey: 'auditLog.action',
     sortable: true,
     render: (r) => <ActionBadge action={r.action_type} />,
   },
   {
     key: 'entity_type',
-    label: 'Entity',
+    labelKey: 'auditLog.entity',
     sortable: true,
     render: (r) => <EntityCell row={r} />,
   },
   {
     key: 'user_id',
-    label: 'User',
+    labelKey: 'dashboard.user',
     sortable: true,
     render: (r) => (
       <span style={{ display: 'inline-flex', alignItems: 'baseline', gap: 6 }}>
@@ -527,7 +498,7 @@ const AUDIT_COLUMNS = [
   },
   {
     key: 'details',
-    label: 'Details',
+    labelKey: 'common.details',
     render: (r) => <DetailsChips row={r} />,
   },
 ];
@@ -552,6 +523,7 @@ function AuditTable({
 }
 
 function AuditDetailModal({ entry, onClose }) {
+  const { t } = useLocale();
   const details = parseDetails(entry.details);
   const hasDetails = details && Object.keys(details).length > 0;
 
@@ -562,9 +534,9 @@ function AuditDetailModal({ entry, onClose }) {
 
   return (
     <Modal
-      title="Audit log entry"
+      title={t('auditLog.entryTitle')}
       onClose={onClose}
-      footer={<button className="btn" onClick={onClose}>Close</button>}
+      footer={<button className="btn" onClick={onClose}>{t('common.close')}</button>}
     >
       <div style={{
         display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap',
@@ -581,7 +553,7 @@ function AuditDetailModal({ entry, onClose }) {
         display: 'grid', gridTemplateColumns: '110px 1fr',
         gap: '8px 14px', fontSize: 13, marginBottom: 16,
       }}>
-        <KV label="Entity">
+        <KV label={t('auditLog.entity')}>
           <EntityCell row={entry} />
           {entry.entity_id ? (
             <span className="mono" style={{
@@ -591,20 +563,20 @@ function AuditDetailModal({ entry, onClose }) {
             </span>
           ) : null}
         </KV>
-        <KV label="User">
+        <KV label={t('dashboard.user')}>
           <span className="mono">{entry.username || entry.user_id || '-'}</span>
         </KV>
         {entry.device_id && (
-          <KV label="Device">
+          <KV label={t('auditLog.device')}>
             <span className="mono" style={{ fontSize: 12 }}>{entry.device_id}</span>
           </KV>
         )}
         {entry.warehouse_code && (
-          <KV label="Warehouse">
+          <KV label={t('common.warehouse')}>
             <span className="mono" style={{ fontSize: 12 }}>{entry.warehouse_code}</span>
           </KV>
         )}
-        <KV label="Log ID">
+        <KV label={t('auditLog.logId')}>
           <span className="mono" style={{ fontSize: 11, color: 'var(--text-tertiary)' }}>
             #{entry.log_id}
           </span>
@@ -621,10 +593,10 @@ function AuditDetailModal({ entry, onClose }) {
               fontSize: 11, color: 'var(--text-secondary)',
               textTransform: 'uppercase', letterSpacing: 0.5, fontWeight: 600,
             }}>
-              Event details
+              {t('auditLog.eventDetails')}
             </h4>
-            <button className="btn btn-sm" onClick={copyJson} title="Copy JSON to clipboard">
-              Copy JSON
+            <button className="btn btn-sm" onClick={copyJson} title={t('auditLog.copyJsonTooltip')}>
+              {t('auditLog.copyJson')}
             </button>
           </div>
           <div style={{

@@ -3,14 +3,16 @@ import { api } from '../api.js';
 import { useWarehouse } from '../warehouse.jsx';
 import DataTable from '../components/DataTable.jsx';
 import PageHeader from '../components/PageHeader.jsx';
+import { useLocale } from '../i18n/locale.jsx';
 
 // Renders one address as a 2-line summary -- street on line 1, city
 // state postal on line 2. Used inline in the fraud row so the CSR
 // can eyeball the mismatch without opening anything.
 function AddressSummary({ line1, line2, city, state, postalCode }) {
+  const { t } = useLocale();
   const street = [line1, line2].filter(Boolean).join(', ');
   const cityLine = [city, state, postalCode].filter(Boolean).join(' ');
-  if (!street && !cityLine) return <span style={{ color: '#999' }}>(blank)</span>;
+  if (!street && !cityLine) return <span style={{ color: 'var(--text-secondary)' }}>{t('fraud.blank')}</span>;
   return (
     <div style={{ fontSize: 12, lineHeight: 1.35 }}>
       {street && <div>{street}</div>}
@@ -20,6 +22,7 @@ function AddressSummary({ line1, line2, city, state, postalCode }) {
 }
 
 function MemoCell({ soId, initial, onSaved }) {
+  const { t } = useLocale();
   const [value, setValue] = useState(initial || '');
   const [savedValue, setSavedValue] = useState(initial || '');
   const [saving, setSaving] = useState(false);
@@ -32,7 +35,7 @@ function MemoCell({ soId, initial, onSaved }) {
     const res = await api.patch(`/admin/sales-orders/${soId}/memo`, { memo: value });
     setSaving(false);
     if (!res?.ok) {
-      setError('Save failed');
+      setError(t('fraud.saveFailed'));
       return;
     }
     setSavedValue(value);
@@ -47,16 +50,17 @@ function MemoCell({ soId, initial, onSaved }) {
         value={value}
         onChange={(e) => setValue(e.target.value)}
         onBlur={commit}
-        placeholder="CSR notes…"
+        placeholder={t('fraud.memoPlaceholder')}
         style={{ width: '100%', minWidth: 240, fontSize: 12, resize: 'vertical' }}
       />
-      {saving && <div style={{ fontSize: 11, color: '#666' }}>Saving…</div>}
+      {saving && <div style={{ fontSize: 11, color: 'var(--text-secondary)' }}>{t('common.saving')}</div>}
       {error && <div className="form-error" style={{ fontSize: 11 }}>{error}</div>}
     </div>
   );
 }
 
 export default function Fraud() {
+  const { t } = useLocale();
   const { warehouseId } = useWarehouse();
   const [orders, setOrders] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -84,18 +88,18 @@ export default function Fraud() {
     setActionError('');
     const res = await api.post(`/admin/sales-orders/${soId}/push-to-queue`);
     if (!res?.ok) {
-      setActionError(`Could not push order ${soId} to queue.`);
+      setActionError(t('fraud.pushFailed', { so: soId }));
       return;
     }
     setOrders((prev) => prev.filter((o) => o.so_id !== soId));
   }
 
   const columns = [
-    { key: 'so_number', label: 'SO Number', mono: true },
-    { key: 'customer_name', label: 'Customer' },
+    { key: 'so_number', labelKey: 'salesOrders.number', mono: true },
+    { key: 'customer_name', labelKey: 'common.customer' },
     {
       key: 'billing',
-      label: 'Billing',
+      labelKey: 'fraud.billingAddress',
       render: (r) => (
         <AddressSummary
           line1={r.billing_address_line1}
@@ -108,7 +112,7 @@ export default function Fraud() {
     },
     {
       key: 'shipping',
-      label: 'Shipping',
+      labelKey: 'fraud.shippingAddress',
       render: (r) => (
         <AddressSummary
           line1={r.shipping_address_line1}
@@ -121,7 +125,7 @@ export default function Fraud() {
     },
     {
       key: 'memo',
-      label: 'Memo',
+      labelKey: 'fraud.memo',
       render: (r) => (
         <MemoCell
           soId={r.so_id}
@@ -142,14 +146,14 @@ export default function Fraud() {
             e.stopPropagation();
             pushToQueue(r.so_id);
           }}
-        >Push to queue</button>
+        >{t('fraud.pushToQueue')}</button>
       ),
     },
   ];
 
   return (
     <div>
-      <PageHeader title="Fraud Review" />
+      <PageHeader title={t('fraud.title')} />
       {actionError && (
         <div className="section">
           <div className="form-error">{actionError}</div>
@@ -157,12 +161,14 @@ export default function Fraud() {
       )}
       <div className="section">
         <div className="section-title">
-          Orders flagged at ingest{!loading && ` (${orders.length})`}
+          {loading
+            ? t('fraud.flaggedAtIngest')
+            : t('fraud.flaggedAtIngestCount', { count: orders.length })}
         </div>
         <DataTable
           columns={columns}
           data={orders}
-          emptyMessage={loading ? 'Loading…' : 'No flagged orders'}
+          emptyMessageKey={loading ? 'common.loading' : 'fraud.noFlaggedOrders'}
         />
       </div>
     </div>

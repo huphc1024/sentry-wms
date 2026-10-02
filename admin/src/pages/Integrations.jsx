@@ -3,8 +3,11 @@ import { api } from '../api.js';
 import { useWarehouse } from '../warehouse.jsx';
 import PageHeader from '../components/PageHeader.jsx';
 import { friendlyError } from '../utils/friendlyError.js';
+import { useLocale } from '../i18n/locale.jsx';
+import RichText from '../i18n/RichText.jsx';
 
 export default function Integrations() {
+  const { t } = useLocale();
   const { warehouseId } = useWarehouse();
 
   const [connectors, setConnectors] = useState([]);
@@ -58,18 +61,22 @@ export default function Integrations() {
   }
 
   function syncStateColor(state) {
-    if (!state) return '#999';
+    if (!state) return 'var(--text-secondary)';
     if (state.sync_status === 'error') return 'var(--danger)';
-    if (state.consecutive_errors > 0) return '#d29922';
+    if (state.consecutive_errors > 0) return 'var(--warning)';
     return 'var(--success)';
   }
 
   function syncStateLabel(state) {
     if (!state) return 'Never synced';
     if (state.sync_status === 'running') return 'Running...';
-    if (state.sync_status === 'error') return `Error (${state.consecutive_errors} failures)`;
-    if (state.consecutive_errors > 0) return `Last attempt failed (${state.consecutive_errors})`;
-    return 'Healthy';
+    if (state.sync_status === 'error') {
+      return t('integrations.errorFailures', { n: state.consecutive_errors });
+    }
+    if (state.consecutive_errors > 0) {
+      return t('integrations.lastAttemptFailed', { n: state.consecutive_errors });
+    }
+    return t('integrations.healthy');
   }
 
   async function triggerSync(syncType) {
@@ -88,7 +95,7 @@ export default function Integrations() {
         const data = await res.json().catch(() => ({}));
         setCredError(friendlyError(data, 'Sync failed. Please try again.'));
       }
-    } catch { setCredError('Sync error'); }
+    } catch { setCredError(t('integrations.syncError')); }
     setSyncingTypes((prev) => ({ ...prev, [syncType]: false }));
   }
 
@@ -110,7 +117,7 @@ export default function Integrations() {
         const data = await res.json().catch(() => ({}));
         setCredError(friendlyError(data, 'Failed to save credentials.'));
       }
-    } catch { setCredError('Connection error'); }
+    } catch { setCredError(t('integrations.connectionError')); }
     setCredSaving(false);
   }
 
@@ -127,38 +134,50 @@ export default function Integrations() {
         setTestResult(data);
       } else {
         const data = await res.json().catch(() => ({}));
-        setTestResult({ connected: false, message: friendlyError(data, 'Connection test failed.') });
+        setTestResult({ connected: false, message: friendlyError(data, t('integrations.testFailed')) });
       }
-    } catch { setTestResult({ connected: false, message: 'Connection error' }); }
+    } catch { setTestResult({ connected: false, message: t('integrations.connectionError') }); }
     setTesting(false);
   }
 
   async function deleteConnectorCredentials() {
     if (!selectedConnector || !warehouseId) return;
-    if (!confirm('Delete all credentials for this connector?')) return;
+    if (!confirm(t('integrations.deleteCredsConfirm'))) return;
     try {
       const res = await api.delete(`/admin/connectors/${selectedConnector.name}/credentials`);
       if (res?.ok) {
         setCredMsg('Credentials deleted');
         setStoredKeys([]);
       }
-    } catch { setCredError('Failed to delete'); }
+    } catch { setCredError(t('integrations.deleteFailed')); }
   }
 
   return (
     <div>
-      <PageHeader title="Integrations" />
+      <PageHeader title={t('nav.integrations')} />
 
       <div className="settings-section">
-        <h3>Available integrations</h3>
+        <h3>{t('integrations.available')}</h3>
         <p className="settings-note">
-          Connect Sentry to external ERPs and commerce platforms. Credentials are encrypted at rest and scoped per warehouse.
+          {t('integrations.intro')}
         </p>
         {connectors.length === 0 ? (
-          <p style={{ color: '#666', fontSize: 14 }}>
-            No connectors registered. Drop a connector module into{' '}
-            <span className="mono">api/connectors/</span> and restart the API to make it
-            available here. See the <a href="https://hightower-systems.github.io/sentry-wms/connectors/" target="_blank" rel="noopener noreferrer">connector framework guide</a>.
+          <p style={{ color: 'var(--text-secondary)', fontSize: 14 }}>
+            <RichText
+              text={t('integrations.noConnectors')}
+              values={{
+                path: <span className="mono">api/connectors/</span>, /* i18n-ignore: a path */
+                guide: (
+                  <a
+                    href="https://hightower-systems.github.io/sentry-wms/connectors/"
+                    target="_blank"
+                    rel="noopener noreferrer"
+                  >
+                    {t('integrations.frameworkGuide')}
+                  </a>
+                ),
+              }}
+            />
           </p>
         ) : (
           <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginBottom: 16 }}>
@@ -175,15 +194,17 @@ export default function Integrations() {
         )}
 
         {selectedConnector && (
-          <div style={{ border: '1px solid var(--border)', borderRadius: 8, padding: 16, background: 'var(--card-bg)' }}>
+          <div style={{ border: '1px solid var(--border)', borderRadius: 8, padding: 16, background: 'var(--panel)' }}>
             <h4 style={{ marginTop: 0 }}>{selectedConnector.name}</h4>
-            <p style={{ fontSize: 12, color: '#666' }}>
-              Capabilities: {selectedConnector.capabilities.join(', ')}
+            <p style={{ fontSize: 12, color: 'var(--text-secondary)' }}>
+              {t('integrations.capabilities', {
+                list: selectedConnector.capabilities.join(', '),
+              })}
             </p>
 
             {storedKeys.length > 0 && (
               <div style={{ marginBottom: 16 }}>
-                <strong style={{ fontSize: 13 }}>Stored credentials:</strong>
+                <strong style={{ fontSize: 13 }}>{t('integrations.storedCredentials')}</strong>
                 <div style={{ marginTop: 4 }}>
                   {storedKeys.map((k) => (
                     <div key={k.key} style={{ fontSize: 13, fontFamily: 'monospace' }}>
@@ -195,7 +216,7 @@ export default function Integrations() {
             )}
 
             <div style={{ marginBottom: 16 }}>
-              <strong style={{ fontSize: 13 }}>Sync Health</strong>
+              <strong style={{ fontSize: 13 }}>{t('integrations.syncHealth')}</strong>
               <div style={{ marginTop: 8, display: 'grid', gap: 8 }}>
                 {['orders', 'items', 'inventory'].map((syncType) => {
                   const state = syncStates.find((s) => s.sync_type === syncType);
@@ -225,10 +246,12 @@ export default function Integrations() {
                         }}
                       />
                       <strong style={{ minWidth: 90, textTransform: 'capitalize' }}>{syncType}</strong>
-                      <span style={{ color: '#666', flex: 1 }}>{label}</span>
+                      <span style={{ color: 'var(--text-secondary)', flex: 1 }}>{label}</span>
                       {state?.last_synced_at && (
-                        <span style={{ color: '#999', fontSize: 11 }}>
-                          Last: {new Date(state.last_synced_at).toLocaleString()}
+                        <span style={{ color: 'var(--text-secondary)', fontSize: 11 }}>
+                          {t('integrations.lastSynced', {
+                            when: new Date(state.last_synced_at).toLocaleString(),
+                          })}
                         </span>
                       )}
                       <button
@@ -236,7 +259,7 @@ export default function Integrations() {
                         onClick={() => triggerSync(syncType)}
                         disabled={isRunning}
                       >
-                        {isRunning ? 'Syncing...' : 'Sync Now'}
+                        {t(isRunning ? 'integrations.syncing' : 'integrations.syncNow')}
                       </button>
                     </div>
                   );
@@ -272,13 +295,13 @@ export default function Integrations() {
 
             <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
               <button className="btn btn-primary" onClick={saveCredentials} disabled={credSaving || Object.keys(credForm).length === 0}>
-                {credSaving ? 'Saving...' : 'Save Credentials'}
+                {t(credSaving ? 'common.saving' : 'integrations.saveCredentials')}
               </button>
               <button className="btn" onClick={testConnectorConnection} disabled={testing}>
-                {testing ? 'Testing...' : 'Test Connection'}
+                {t(testing ? 'integrations.testing' : 'integrations.testConnection')}
               </button>
               {storedKeys.length > 0 && (
-                <button className="btn btn-danger" onClick={deleteConnectorCredentials}>Delete Credentials</button>
+                <button className="btn btn-danger" onClick={deleteConnectorCredentials}>{t('integrations.deleteCredentials')}</button>
               )}
             </div>
 
@@ -286,7 +309,9 @@ export default function Integrations() {
             {credError && <p style={{ color: 'var(--danger)', fontSize: 13, marginTop: 8 }}>{credError}</p>}
             {testResult && (
               <p style={{ color: testResult.connected ? 'var(--success)' : 'var(--danger)', fontSize: 13, marginTop: 8 }}>
-                {testResult.connected ? 'Connected' : 'Failed'}: {testResult.message}
+                {t(testResult.connected ? 'integrations.connected' : 'integrations.failed')}
+                {': '}
+                {testResult.message}
               </p>
             )}
           </div>

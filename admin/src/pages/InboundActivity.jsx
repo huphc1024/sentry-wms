@@ -3,6 +3,7 @@ import { api } from '../api.js';
 import DataTable from '../components/DataTable.jsx';
 import PageHeader from '../components/PageHeader.jsx';
 import Modal from '../components/Modal.jsx';
+import { useLocale } from '../i18n/locale.jsx';
 
 // v1.7.0 plan §4.2: read-only Inbound observability page. Lists the
 // last N rows across all five inbound_<resource> staging tables with
@@ -14,18 +15,18 @@ import Modal from '../components/Modal.jsx';
 // actually needed.
 
 const RESOURCE_OPTIONS = [
-  { value: '', label: 'All resources' },
-  { value: 'sales_orders', label: 'sales_orders' },
-  { value: 'items', label: 'items' },
-  { value: 'customers', label: 'customers' },
-  { value: 'vendors', label: 'vendors' },
-  { value: 'purchase_orders', label: 'purchase_orders' },
+  { value: '', labelKey: 'inboundActivity.allResources' },
+  { value: 'sales_orders' },
+  { value: 'items' },
+  { value: 'customers' },
+  { value: 'vendors' },
+  { value: 'purchase_orders' },
 ];
 
 const STATUS_OPTIONS = [
-  { value: '', label: 'All statuses' },
-  { value: 'applied', label: 'applied' },
-  { value: 'superseded', label: 'superseded' },
+  { value: '', labelKey: 'dashboard.allStatuses' },
+  { value: 'applied' },
+  { value: 'superseded' },
 ];
 
 function fmtTimestamp(iso) {
@@ -38,6 +39,7 @@ function fmtTimestamp(iso) {
 }
 
 export default function InboundActivity() {
+  const { t } = useLocale();
   const [rows, setRows] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
@@ -81,7 +83,7 @@ export default function InboundActivity() {
       setDetail({ summary: row, full: data });
     } else {
       const body = await res?.json();
-      setDetail({ summary: row, error: body?.error || 'Failed to load detail' });
+      setDetail({ summary: row, error: body?.error || t('inboundActivity.detailFailed') });
     }
     setDetailLoading(false);
   }
@@ -89,7 +91,7 @@ export default function InboundActivity() {
   const columns = [
     {
       key: 'received_at',
-      label: 'Received',
+      labelKey: 'inboundActivity.received',
       render: (r) => (
         <span className="mono" style={{ fontSize: 12 }}>
           {fmtTimestamp(r.received_at)}
@@ -98,22 +100,22 @@ export default function InboundActivity() {
     },
     {
       key: 'resource',
-      label: 'Resource',
+      labelKey: 'inboundActivity.resource',
       render: (r) => <span className="mono" style={{ fontSize: 12 }}>{r.resource}</span>,
     },
     {
       key: 'source_system',
-      label: 'Source system',
+      labelKey: 'salesOrders.sourceSystem',
       render: (r) => <span className="mono" style={{ fontSize: 12 }}>{r.source_system}</span>,
     },
     {
       key: 'external_id',
-      label: 'External ID',
+      labelKey: 'inboundActivity.externalId',
       render: (r) => <span className="mono" style={{ fontSize: 12 }}>{r.external_id}</span>,
     },
     {
       key: 'external_version',
-      label: 'Version',
+      labelKey: 'settings.version',
       render: (r) => (
         <span className="mono" style={{ fontSize: 12, color: 'var(--text-secondary)' }}>
           {r.external_version}
@@ -122,7 +124,7 @@ export default function InboundActivity() {
     },
     {
       key: 'status',
-      label: 'Status',
+      labelKey: 'common.status',
       render: (r) => (
         <span style={{
           fontSize: 11,
@@ -141,7 +143,7 @@ export default function InboundActivity() {
           className="btn btn-sm"
           onClick={(e) => { e.stopPropagation(); openDetail(r); }}
         >
-          View
+          {t('inboundActivity.view')}
         </button>
       ),
     },
@@ -149,9 +151,9 @@ export default function InboundActivity() {
 
   return (
     <div>
-      <PageHeader title="Inbound activity">
+      <PageHeader title={t('nav.inboundActivity')}>
         <button className="btn" onClick={load} disabled={loading}>
-          {loading ? 'Loading…' : 'Refresh'}
+          {t(loading ? 'common.loading' : 'common.refresh')}
         </button>
       </PageHeader>
 
@@ -170,7 +172,7 @@ export default function InboundActivity() {
       }}>
         <div style={{ flex: 1 }}>
           <label style={{ display: 'block', fontSize: 12, fontWeight: 600, marginBottom: 4 }}>
-            Source system
+            {t('salesOrders.sourceSystem')}
           </label>
           <input
             className="form-input"
@@ -181,7 +183,7 @@ export default function InboundActivity() {
         </div>
         <div>
           <label style={{ display: 'block', fontSize: 12, fontWeight: 600, marginBottom: 4 }}>
-            Resource
+            {t('inboundActivity.resource')}
           </label>
           <select
             className="form-input"
@@ -189,13 +191,13 @@ export default function InboundActivity() {
             onChange={(e) => setFilters({ ...filters, resource: e.target.value })}
           >
             {RESOURCE_OPTIONS.map((o) => (
-              <option key={o.value} value={o.value}>{o.label}</option>
+              <option key={o.value} value={o.value}>{o.labelKey ? t(o.labelKey) : o.value}</option>
             ))}
           </select>
         </div>
         <div>
           <label style={{ display: 'block', fontSize: 12, fontWeight: 600, marginBottom: 4 }}>
-            Status
+            {t('common.status')}
           </label>
           <select
             className="form-input"
@@ -203,49 +205,52 @@ export default function InboundActivity() {
             onChange={(e) => setFilters({ ...filters, status: e.target.value })}
           >
             {STATUS_OPTIONS.map((o) => (
-              <option key={o.value} value={o.value}>{o.label}</option>
+              <option key={o.value} value={o.value}>{o.labelKey ? t(o.labelKey) : o.value}</option>
             ))}
           </select>
         </div>
-        <button className="btn btn-primary" onClick={load}>Apply</button>
+        <button className="btn btn-primary" onClick={load}>{t('inboundActivity.apply')}</button>
       </div>
 
       <DataTable
         columns={columns}
         data={rows}
-        emptyMessage={loading ? 'Loading…' : 'No inbound activity matches the current filters.'}
+        emptyMessageKey={loading ? 'common.loading' : 'inboundActivity.empty'}
       />
 
       {detail && (
         <Modal
-          title={`Inbound row: ${detail.summary.resource} #${detail.summary.inbound_id}`}
+          title={t('inboundActivity.rowTitle', {
+            resource: detail.summary.resource,
+            id: detail.summary.inbound_id,
+          })}
           onClose={() => setDetail(null)}
-          footer={<button className="btn" onClick={() => setDetail(null)}>Close</button>}
+          footer={<button className="btn" onClick={() => setDetail(null)}>{t('common.close')}</button>}
         >
-          {detailLoading && <div>Loading…</div>}
+          {detailLoading && <div>{t('common.loading')}</div>}
           {detail.error && <div className="form-error">{detail.error}</div>}
           {detail.full && (
             <div>
               <div style={{ display: 'grid', gridTemplateColumns: '160px 1fr', gap: 6, marginBottom: 12, fontSize: 13 }}>
-                <div style={{ color: 'var(--text-secondary)' }}>Received at</div>
+                <div style={{ color: 'var(--text-secondary)' }}>{t('inboundActivity.receivedAt')}</div>
                 <div className="mono">{fmtTimestamp(detail.full.received_at)}</div>
-                <div style={{ color: 'var(--text-secondary)' }}>Status</div>
+                <div style={{ color: 'var(--text-secondary)' }}>{t('common.status')}</div>
                 <div className="mono">{detail.full.status}</div>
-                <div style={{ color: 'var(--text-secondary)' }}>Superseded at</div>
+                <div style={{ color: 'var(--text-secondary)' }}>{t('inboundActivity.supersededAt')}</div>
                 <div className="mono">{fmtTimestamp(detail.full.superseded_at)}</div>
-                <div style={{ color: 'var(--text-secondary)' }}>Source system</div>
+                <div style={{ color: 'var(--text-secondary)' }}>{t('salesOrders.sourceSystem')}</div>
                 <div className="mono">{detail.full.source_system}</div>
-                <div style={{ color: 'var(--text-secondary)' }}>External ID</div>
+                <div style={{ color: 'var(--text-secondary)' }}>{t('inboundActivity.externalId')}</div>
                 <div className="mono">{detail.full.external_id}</div>
-                <div style={{ color: 'var(--text-secondary)' }}>External version</div>
+                <div style={{ color: 'var(--text-secondary)' }}>{t('inboundActivity.externalVersion')}</div>
                 <div className="mono">{detail.full.external_version}</div>
-                <div style={{ color: 'var(--text-secondary)' }}>Canonical ID</div>
+                <div style={{ color: 'var(--text-secondary)' }}>{t('inboundActivity.canonicalId')}</div>
                 <div className="mono" style={{ wordBreak: 'break-all' }}>{detail.full.canonical_id}</div>
-                <div style={{ color: 'var(--text-secondary)' }}>Token ID</div>
+                <div style={{ color: 'var(--text-secondary)' }}>{t('inboundActivity.tokenId')}</div>
                 <div className="mono">{detail.full.ingested_via_token_id}</div>
               </div>
-              <PayloadBlock title="Source payload" value={detail.full.source_payload} />
-              <PayloadBlock title="Canonical payload" value={detail.full.canonical_payload} />
+              <PayloadBlock title={t('inboundActivity.sourcePayload')} value={detail.full.source_payload} />
+              <PayloadBlock title={t('inboundActivity.canonicalPayload')} value={detail.full.canonical_payload} />
             </div>
           )}
         </Modal>

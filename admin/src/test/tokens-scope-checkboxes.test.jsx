@@ -150,9 +150,13 @@ describe('Tokens create-modal checkbox scope pickers (#159)', () => {
     expect(within(container).getByText('receipt.completed')).toBeInTheDocument();
     expect(within(container).getByText('ship.confirmed')).toBeInTheDocument();
 
-    // Endpoint slugs.
-    expect(within(container).getByText('events.poll')).toBeInTheDocument();
-    expect(within(container).getByText('snapshot.inventory')).toBeInTheDocument();
+    // Endpoint slugs. Bind to the checkbox rather than the bare text:
+    // the customer-scoping hint lower in the same modal also prints
+    // "snapshot.inventory" (as the fallback when the catalog carries no
+    // customer_scoped_endpoints), so getByText finds two nodes and the
+    // assertion fails without either one being wrong.
+    expect(within(container).getByRole('checkbox', { name: 'events.poll' })).toBeInTheDocument();
+    expect(within(container).getByRole('checkbox', { name: 'snapshot.inventory' })).toBeInTheDocument();
   });
 
   it('All button selects every option for its list', async () => {

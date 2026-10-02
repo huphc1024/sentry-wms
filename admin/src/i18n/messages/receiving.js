@@ -1,0 +1,51 @@
+/**
+ * Strings owned by the receiving page.
+ */
+
+export const en = {
+  'receiving.byWhom': 'by {who}',
+  'receiving.disabledHint': 'PO status is {status}; receiving is disabled until the PO is OPEN or PARTIAL.',
+  'receiving.hideReceipts': 'Hide receipts ({n})',
+  'receiving.lineError': 'Line {line}:',
+  'receiving.noPos': 'No purchase orders',
+  'receiving.onWhen': 'on {when}',
+  'receiving.openOrPartial': 'Open / Partial',
+  'receiving.pickBin': 'Pick a bin',
+  'receiving.poTitle': 'PO {po}',
+  'receiving.reasonExample': 'e.g. double scan',
+  'receiving.reasonOptional': 'Reason (optional, audit-logged)',
+  'receiving.reverseExplain': 'Reverse {qty} units of {sku} ({item}) received to bin {bin}',
+  'receiving.reverseTooltip': 'Reverse this receipt',
+  'receiving.serialN': 'serial {serial}',
+  'receiving.showReceipts': 'Show receipts ({n})',
+  'receiving.unreceiveExplain': "Inventory decrements from the warehouse pool (preferring the receipt's original bin; falls through to other bins holding this item if the goods have already been put away). The PO line counter and PO status update in step, and a receipt.cancelled event fires so a downstream subscriber reverses the inbound count.",
+  'receiving.unreceiveTitle': 'Unreceive: {sku}',
+  'receiving.receive': 'Receive',
+  'receiving.receiving': 'Receiving…',
+  'receiving.reversing': 'Reversing…',
+  'receiving.unreceive': 'Unreceive',
+};
+
+export const vi = {
+  'receiving.byWhom': 'bởi {who}',
+  'receiving.disabledHint': 'Đơn mua đang ở trạng thái {status}; không nhận hàng được cho tới khi đơn ở MỞ hoặc MỘT PHẦN.',
+  'receiving.hideReceipts': 'Ẩn phiếu nhận ({n})',
+  'receiving.lineError': 'Dòng {line}:',
+  'receiving.noPos': 'Không có đơn mua nào',
+  'receiving.onWhen': 'lúc {when}',
+  'receiving.openOrPartial': 'Mở / Một phần',
+  'receiving.pickBin': 'Hãy chọn ô chứa',
+  'receiving.poTitle': 'Đơn mua {po}',
+  'receiving.reasonExample': 'ví dụ: quét trùng hai lần',
+  'receiving.reasonOptional': 'Lý do (không bắt buộc, có ghi nhật ký)',
+  'receiving.reverseExplain': 'Hoàn tác {qty} đơn vị của {sku} ({item}) đã nhận vào ô {bin}',
+  'receiving.reverseTooltip': 'Hoàn tác phiếu nhận này',
+  'receiving.serialN': 'sê-ri {serial}',
+  'receiving.showReceipts': 'Xem phiếu nhận ({n})',
+  'receiving.unreceiveExplain': 'Tồn kho sẽ giảm từ lượng chung của kho (ưu tiên ô gốc của phiếu nhận; nếu hàng đã cất rồi thì trừ sang các ô khác đang giữ mặt hàng này). Bộ đếm dòng đơn mua và trạng thái đơn cập nhật theo, đồng thời một sự kiện receipt.cancelled được bắn ra để bên nhận hạ số hàng nhập tương ứng.',
+  'receiving.unreceiveTitle': 'Hoàn tác nhận: {sku}',
+  'receiving.receive': 'Nhận hàng',
+  'receiving.receiving': 'Đang nhận…',
+  'receiving.reversing': 'Đang hoàn…',
+  'receiving.unreceive': 'Hủy nhận',
+};

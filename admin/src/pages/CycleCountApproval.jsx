@@ -1,8 +1,10 @@
 import { useState, useEffect } from 'react';
 import { api } from '../api.js';
 import PageHeader from '../components/PageHeader.jsx';
+import { useLocale } from '../i18n/locale.jsx';
 
 export default function CycleCountApproval() {
+  const { t } = useLocale();
   const [adjustments, setAdjustments] = useState([]);
   const [decisions, setDecisions] = useState({});
   const [message, setMessage] = useState('');
@@ -83,47 +85,47 @@ export default function CycleCountApproval() {
 
   return (
     <div>
-      <PageHeader title="Count Approvals" />
+      <PageHeader title={t('nav.approvals')} />
 
       {message && (
         <div style={{ marginBottom: 12, fontSize: 13, color: 'var(--success)' }}>{message}</div>
       )}
 
       {adjustments.length === 0 ? (
-        <p style={{ fontSize: 13, color: 'var(--text-secondary)' }}>No pending adjustments</p>
+        <p style={{ fontSize: 13, color: 'var(--text-secondary)' }}>{t('countApproval.noPending')}</p>
       ) : (
         <>
           <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 12, fontSize: 12, color: 'var(--text-secondary)' }}>
-            <span>Sort by</span>
+            <span>{t('countApproval.sortBy')}</span>
             <button
               className={`btn btn-sm${sortBy === 'count' ? ' btn-primary' : ''}`}
               onClick={() => setSortBy('count')}
             >
-              Count #
+              {t('countApproval.countNumber')}
             </button>
             <button
               className={`btn btn-sm${sortBy === 'bin' ? ' btn-primary' : ''}`}
               onClick={() => setSortBy('bin')}
             >
-              Bin
+              {t('common.bin')}
             </button>
           </div>
           {sortedGroups.map(([countId, items]) => (
             <div key={countId} className="card" style={{ marginBottom: 16 }}>
               <div style={{ fontWeight: 600, fontSize: 14, marginBottom: 12 }}>
-                Count #{countId} - {items[0].bin_code}
+                {t('cycleCounts.countTitle', { id: countId, bin: items[0].bin_code })}
               </div>
               <table style={{ width: '100%', fontSize: 13, borderCollapse: 'collapse' }}>
                 <thead>
                   <tr style={{ borderBottom: '1px solid var(--border)' }}>
-                    <th style={thStyle}>SKU</th>
-                    <th style={thStyle}>Item Name</th>
-                    <th style={thStyle}>Bin</th>
-                    <th style={{ ...thStyle, textAlign: 'right' }}>Expected</th>
-                    <th style={{ ...thStyle, textAlign: 'right' }}>Scanned</th>
-                    <th style={{ ...thStyle, textAlign: 'right' }}>Variance</th>
-                    <th style={thStyle}>Counted By</th>
-                    <th style={thStyle}>Decision</th>
+                    <th style={thStyle}>{t('common.sku')}</th>
+                    <th style={thStyle}>{t('common.itemName')}</th>
+                    <th style={thStyle}>{t('common.bin')}</th>
+                    <th style={{ ...thStyle, textAlign: 'right' }}>{t('cycleCounts.expected')}</th>
+                    <th style={{ ...thStyle, textAlign: 'right' }}>{t('countApproval.scanned')}</th>
+                    <th style={{ ...thStyle, textAlign: 'right' }}>{t('purchaseOrders.variance')}</th>
+                    <th style={thStyle}>{t('countApproval.countedBy')}</th>
+                    <th style={thStyle}>{t('countApproval.decision')}</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -149,7 +151,7 @@ export default function CycleCountApproval() {
                               onChange={() => setDecision(a.adjustment_id, 'approve')}
                               style={{ marginRight: 4 }}
                             />
-                            Approve
+                            {t('transferOrders.approve')}
                           </label>
                           <label style={{ fontSize: 12, cursor: 'pointer' }}>
                             <input
@@ -159,7 +161,7 @@ export default function CycleCountApproval() {
                               onChange={() => setDecision(a.adjustment_id, 'reject')}
                               style={{ marginRight: 4 }}
                             />
-                            Reject
+                            {t('transferOrders.reject')}
                           </label>
                         </td>
                       </tr>
@@ -169,10 +171,10 @@ export default function CycleCountApproval() {
               </table>
               <div style={{ display: 'flex', gap: 8, marginTop: 12 }}>
                 <button className="btn btn-primary btn-sm" onClick={() => submitGroup(countId)} disabled={submitting}>
-                  {submitting ? 'Submitting...' : 'Submit'}
+                  {t(submitting ? 'interTransfers.submitting' : 'transferOrders.submit')}
                 </button>
-                <button className="btn btn-sm" onClick={() => approveAll(countId)}>Approve All</button>
-                <button className="btn btn-sm" onClick={() => rejectAll(countId)}>Reject All</button>
+                <button className="btn btn-sm" onClick={() => approveAll(countId)}>{t('countApproval.approveAll')}</button>
+                <button className="btn btn-sm" onClick={() => rejectAll(countId)}>{t('countApproval.rejectAll')}</button>
               </div>
             </div>
           ))}

@@ -20,7 +20,7 @@ const DHL = 'DHL';
 
 // The carrier a free-text ship-method name implies, or null when the name
 // claims no carrier ("Local Pickup", "Standard Shipping", "Expedited").
-// Mirrors the carrier vocabulary on the Sentry side (carrier_from_ship_method
+// Mirrors the carrier vocabulary on the WMS side (carrier_from_ship_method
 // + CarrierEngine.current_carrier).
 export function carrierFromShipMethod(method) {
   const h = (method || '').toLowerCase();

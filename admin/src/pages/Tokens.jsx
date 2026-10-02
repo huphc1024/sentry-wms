@@ -3,18 +3,20 @@ import { api } from '../api.js';
 import DataTable from '../components/DataTable.jsx';
 import PageHeader from '../components/PageHeader.jsx';
 import Modal from '../components/Modal.jsx';
+import { useLocale } from '../i18n/locale.jsx';
+import RichText from '../i18n/RichText.jsx';
 
 // Rotation badges computed server-side, rendered client-side.
 const ROTATION_BADGE = {
   none: null,
-  recommended: { label: 'rotation recommended', color: '#c49100' },
-  overdue: { label: 'rotation overdue', color: 'var(--danger)' },
+  recommended: { labelKey: 'tokens.rotationRecommended', color: 'var(--warning)' },
+  overdue: { labelKey: 'tokens.rotationOverdue', color: 'var(--danger)' },
 };
 
 const STATUS_BADGE = {
-  active: { label: 'active', color: 'var(--text-secondary)' },
-  revoked: { label: 'revoked', color: 'var(--danger)' },
-  expired: { label: 'expired', color: 'var(--danger)' },
+  active: { labelKey: 'tokens.statusActive', color: 'var(--text-secondary)' },
+  revoked: { labelKey: 'tokens.statusRevoked', color: 'var(--danger)' },
+  expired: { labelKey: 'tokens.statusExpired', color: 'var(--danger)' },
 };
 
 function Badge({ label, color }) {
@@ -45,6 +47,7 @@ function renderCsv(list) {
 // new array. "All" / "None" buttons are inline so the common case
 // (grant everything / deny everything) is a single click.
 function ScopeCheckboxList({ options, value, onChange, renderLabel, keyOf }) {
+  const { t } = useLocale();
   const selected = new Set(value);
   const allKeys = options.map(keyOf);
   const allSelected = allKeys.length > 0 && allKeys.every((k) => selected.has(k));
@@ -60,13 +63,13 @@ function ScopeCheckboxList({ options, value, onChange, renderLabel, keyOf }) {
     <div>
       <div style={{ display: 'flex', gap: 8, marginBottom: 6 }}>
         <button type="button" className="btn btn-sm" onClick={selectAll} disabled={allSelected}>
-          All
+          {t('common.all')}
         </button>
         <button type="button" className="btn btn-sm" onClick={selectNone} disabled={selected.size === 0}>
-          None
+          {t('common.none')}
         </button>
         <span style={{ fontSize: 12, color: 'var(--text-secondary)', alignSelf: 'center' }}>
-          {selected.size} / {allKeys.length} selected
+          {t('webhooks.selectedCount', { n: selected.size, total: allKeys.length })}
         </span>
       </div>
       <div
@@ -79,7 +82,7 @@ function ScopeCheckboxList({ options, value, onChange, renderLabel, keyOf }) {
         }}
       >
         {options.length === 0 ? (
-          <span style={{ fontSize: 12, color: 'var(--text-secondary)' }}>No options available.</span>
+          <span style={{ fontSize: 12, color: 'var(--text-secondary)' }}>{t('webhooks.noOptions')}</span>
         ) : (
           options.map((opt) => {
             const k = keyOf(opt);
@@ -115,6 +118,10 @@ const EMPTY_FORM = {
   source_system: '',
   inbound_resources: [],
   mapping_override: false,
+  // Phase 6 (mig 089): bind the token to one customer. '' = an
+  // operator-owned token, which is every token issued before this
+  // existed and still the right default for connector tokens.
+  customer_id: '',
   advancedMode: false,
   advancedWarehouseIds: '',
   advancedEventTypes: '',
@@ -122,6 +129,7 @@ const EMPTY_FORM = {
 };
 
 export default function Tokens() {
+  const { t } = useLocale();
   const [tokens, setTokens] = useState([]);
   const [loading, setLoading] = useState(true);
   const [showCreate, setShowCreate] = useState(false);
@@ -141,6 +149,9 @@ export default function Tokens() {
     endpoints: [],
     inbound_resources: [],
     source_systems: [],
+    customers: [],
+    customer_scoped_endpoints: [],
+    customer_forbidden_inbound_resources: [],
   });
   const [warehouses, setWarehouses] = useState([]);
 
@@ -176,6 +187,10 @@ export default function Tokens() {
         endpoints: data.endpoints || [],
         inbound_resources: data.inbound_resources || [],
         source_systems: data.source_systems || [],
+        customers: data.customers || [],
+        customer_scoped_endpoints: data.customer_scoped_endpoints || [],
+        customer_forbidden_inbound_resources:
+          data.customer_forbidden_inbound_resources || [],
       });
     }
     if (warehousesRes?.ok) {
@@ -218,7 +233,7 @@ export default function Tokens() {
 
   async function submitCreate() {
     setCreateError('');
-    if (!form.token_name.trim()) { setCreateError('Name is required'); return; }
+    if (!form.token_name.trim()) { setCreateError(t('tokens.nameRequired')); return; }
 
     // #159: in advanced mode, parse text inputs at submit time so
     // the admin can tweak right up to the Create click. In
@@ -266,6 +281,32 @@ export default function Tokens() {
       );
       return;
     }
+    // Phase 6: a customer-bound token only reaches surfaces that can
+    // filter on the owning customer. Mirrored server-side in
+    // schemas/tokens.py; checked here so the operator sees it before
+    // the round-trip.
+    if (form.customer_id) {
+      const allowed = scopeCatalog.customer_scoped_endpoints;
+      const unscopable = endpoints.filter((s) => !allowed.includes(s));
+      if (unscopable.length > 0) {
+        setCreateError(
+          t('tokens.cannotCarry', {
+            list: unscopable.join(', '),
+            allowed: allowed.join(', ') || t('tokens.noneLower'),
+          })
+        );
+        return;
+      }
+      const forbidden = form.inbound_resources.filter(
+        (r) => scopeCatalog.customer_forbidden_inbound_resources.includes(r)
+      );
+      if (forbidden.length > 0) {
+        setCreateError(
+          t('tokens.cannotWriteMaster', { list: forbidden.join(', ') })
+        );
+        return;
+      }
+    }
     const payload = {
       token_name: form.token_name.trim(),
       warehouse_ids: wh_ids,
@@ -274,6 +315,7 @@ export default function Tokens() {
       source_system: form.source_system || null,
       inbound_resources: form.inbound_resources,
       mapping_override: form.mapping_override,
+      customer_id: form.customer_id || null,
     };
     const res = await api.post('/admin/tokens', payload);
     const body = await res?.json();
@@ -336,39 +378,52 @@ export default function Tokens() {
   }
 
   const columns = [
-    { key: 'token_name', label: 'Name' },
+    { key: 'token_name', labelKey: 'common.name' },
     {
       key: 'status',
-      label: 'Status',
+      labelKey: 'common.status',
       render: (r) => {
         const b = STATUS_BADGE[r.status];
-        return b ? <Badge label={b.label} color={b.color} /> : r.status;
+        return b ? <Badge label={t(b.labelKey)} color={b.color} /> : r.status;
       },
     },
     {
       key: 'rotation_status',
-      label: 'Rotation',
+      labelKey: 'tokens.rotation',
       render: (r) => {
         const b = ROTATION_BADGE[r.rotation_status];
         if (!b) return <span style={{ color: 'var(--text-secondary)' }}>—</span>;
-        return <Badge label={b.label} color={b.color} />;
+        return <Badge label={t(b.labelKey)} color={b.color} />;
       },
     },
-    { key: 'warehouse_ids', label: 'Warehouses', render: (r) => renderCsv(r.warehouse_ids) },
-    { key: 'event_types', label: 'Event types', render: (r) => renderCsv(r.event_types) },
-    { key: 'endpoints', label: 'Endpoints', render: (r) => renderCsv(r.endpoints) },
+    { key: 'warehouse_ids', labelKey: 'users.warehouses', render: (r) => renderCsv(r.warehouse_ids) },
+    { key: 'event_types', labelKey: 'tokens.eventTypes', render: (r) => renderCsv(r.event_types) },
+    { key: 'endpoints', labelKey: 'tokens.endpoints', render: (r) => renderCsv(r.endpoints) },
+    {
+      key: 'customer_id',
+      labelKey: 'common.customer',
+      render: (r) =>
+        r.customer_id
+          ? (
+            <span className="mono" style={{ fontSize: 12 }}
+                  title={r.customer_name || ''}>
+              {r.customer_code || r.customer_id}
+            </span>
+          )
+          : <span style={{ color: 'var(--text-secondary)' }}>{t('tokens.operator')}</span>,
+    },
     {
       key: 'source_system',
-      label: 'Source',
+      labelKey: 'tokens.source',
       render: (r) =>
         r.source_system
           ? <span className="mono" style={{ fontSize: 12 }}>{r.source_system}</span>
           : <span style={{ color: 'var(--text-secondary)' }}>—</span>,
     },
-    { key: 'inbound_resources', label: 'Inbound', render: (r) => renderCsv(r.inbound_resources) },
+    { key: 'inbound_resources', labelKey: 'tokens.inbound', render: (r) => renderCsv(r.inbound_resources) },
     {
       key: 'expires_at',
-      label: 'Expires',
+      labelKey: 'tokens.expires',
       render: (r) => r.expires_at ? new Date(r.expires_at).toLocaleDateString() : '—',
     },
     {
@@ -377,11 +432,11 @@ export default function Tokens() {
       render: (r) => (
         <div style={{ display: 'flex', gap: 4 }}>
           <button className="btn btn-sm" onClick={(e) => { e.stopPropagation(); rotate(r); }}
-                  disabled={r.status !== 'active'} title="Rotate">↻</button>
+                  disabled={r.status !== 'active'} title={t('tokens.rotate')}>↻</button>
           <button className="btn btn-sm btn-danger" onClick={(e) => { e.stopPropagation(); setConfirmRevoke(r); }}
-                  disabled={r.status !== 'active'} title="Revoke">⊘</button>
+                  disabled={r.status !== 'active'} title={t('tokens.revoke')}>⊘</button>
           <button className="btn btn-sm btn-danger" onClick={(e) => { e.stopPropagation(); setConfirmDelete(r); }}
-                  aria-label="Delete" title="Delete">&#128465;</button>
+                  aria-label={t('common.delete')} title={t('common.delete')}>&#128465;</button>
         </div>
       ),
     },
@@ -389,8 +444,8 @@ export default function Tokens() {
 
   return (
     <div>
-      <PageHeader title="API tokens">
-        <button className="btn btn-primary" onClick={openCreate}>New token</button>
+      <PageHeader title={t('nav.apiTokens')}>
+        <button className="btn btn-primary" onClick={openCreate}>{t('tokens.newToken')}</button>
       </PageHeader>
 
       {pageError && <div className="form-error" style={{ marginBottom: 12 }}>{pageError}</div>}
@@ -398,23 +453,23 @@ export default function Tokens() {
       <DataTable
         columns={columns}
         data={tokens}
-        emptyMessage={loading ? 'Loading…' : 'No API tokens issued yet'}
+        emptyMessageKey={loading ? 'common.loading' : 'tokens.noTokens'}
       />
 
       {showCreate && (
         <Modal
-          title="New API token"
+          title={t('tokens.newTokenTitle')}
           onClose={() => setShowCreate(false)}
           footer={
             <>
-              <button className="btn" onClick={() => setShowCreate(false)}>Cancel</button>
-              <button className="btn btn-primary" onClick={submitCreate}>Create</button>
+              <button className="btn" onClick={() => setShowCreate(false)}>{t('common.cancel')}</button>
+              <button className="btn btn-primary" onClick={submitCreate}>{t('common.create')}</button>
             </>
           }
         >
           {createError && <div className="form-error" style={{ marginBottom: 12 }}>{createError}</div>}
           <div className="form-group">
-            <label>Name</label>
+            <label>{t('common.name')}</label>
             <input
               className="form-input"
               value={form.token_name}
@@ -428,7 +483,7 @@ export default function Tokens() {
           {!form.advancedMode && (
             <>
               <div className="form-group">
-                <label>Warehouses</label>
+                <label>{t('users.warehouses')}</label>
                 <ScopeCheckboxList
                   options={warehouses}
                   value={form.warehouse_ids}
@@ -442,11 +497,11 @@ export default function Tokens() {
                   )}
                 />
                 <div style={{ fontSize: 12, color: 'var(--text-secondary)', marginTop: 4 }}>
-                  Empty selection denies access to every warehouse.
+                  {t('tokens.emptyDeniesWarehouses')}
                 </div>
               </div>
               <div className="form-group">
-                <label>Event types</label>
+                <label>{t('tokens.eventTypes')}</label>
                 <ScopeCheckboxList
                   options={scopeCatalog.event_types}
                   value={form.event_types}
@@ -455,11 +510,11 @@ export default function Tokens() {
                   renderLabel={(t) => <span className="mono">{t}</span>}
                 />
                 <div style={{ fontSize: 12, color: 'var(--text-secondary)', marginTop: 4 }}>
-                  Empty selection denies every event_type.
+                  {t('tokens.emptyDeniesEvents')}
                 </div>
               </div>
               <div className="form-group">
-                <label>Endpoints</label>
+                <label>{t('tokens.endpoints')}</label>
                 <ScopeCheckboxList
                   options={scopeCatalog.endpoints}
                   value={form.endpoints}
@@ -468,7 +523,7 @@ export default function Tokens() {
                   renderLabel={(s) => <span className="mono">{s}</span>}
                 />
                 <div style={{ fontSize: 12, color: 'var(--text-secondary)', marginTop: 4 }}>
-                  Outbound v1 routes. Leave empty for an inbound-only token.
+                  {t('tokens.outboundRoutesHint')}
                 </div>
               </div>
 
@@ -477,15 +532,15 @@ export default function Tokens() {
                   /admin/scope-catalog; admins cannot type a value the
                   FK would reject. */}
               <div className="form-group" style={{ marginTop: 12, borderTop: '1px solid var(--border)', paddingTop: 12 }}>
-                <label htmlFor="token-source-system">Source system (inbound)</label>
+                <label htmlFor="token-source-system">{t('tokens.sourceSystem')}</label>
                 <select
                   id="token-source-system"
-                  aria-label="Source system"
+                  aria-label={t('tokens.sourceSystemLabel')}
                   className="form-input"
                   value={form.source_system}
                   onChange={(e) => setForm((f) => ({ ...f, source_system: e.target.value }))}
                 >
-                  <option value="">— None (outbound-only token) —</option>
+                  <option value="">{t('tokens.noneOutboundOnly')}</option>
                   {scopeCatalog.source_systems.map((s) => (
                     <option key={s.source_system} value={s.source_system}>
                       {s.source_system} ({s.kind})
@@ -498,7 +553,7 @@ export default function Tokens() {
                 </div>
               </div>
               <div className="form-group">
-                <label>Inbound resources</label>
+                <label>{t('tokens.inboundResources')}</label>
                 <ScopeCheckboxList
                   options={scopeCatalog.inbound_resources}
                   value={form.inbound_resources}
@@ -518,7 +573,7 @@ export default function Tokens() {
                     checked={form.mapping_override}
                     onChange={(e) => setForm((f) => ({ ...f, mapping_override: e.target.checked }))}
                   />
-                  <span>Allow mapping_overrides (capability flag)</span>
+                  <span>{t('tokens.allowMappingOverrides')}</span>
                 </label>
                 <div style={{ fontSize: 12, color: 'var(--text-secondary)', marginTop: 4 }}>
                   Reserved for v1.7.1. Granting this capability has no effect in
@@ -527,6 +582,40 @@ export default function Tokens() {
               </div>
             </>
           )}
+
+          {/* Phase 6 (mig 089): tenant binding. Applies to both the
+              checkbox and advanced paths, so it sits outside that
+              branch. Leaving it on "Operator" reproduces every
+              pre-phase-6 token exactly. */}
+          <div className="form-group" style={{ marginTop: 12, borderTop: '1px solid var(--border)', paddingTop: 12 }}>
+            <label htmlFor="token-customer">{t('tokens.customerBinding')}</label>
+            <select
+              id="token-customer"
+              aria-label={t('tokens.customerBinding')}
+              className="form-input"
+              value={form.customer_id}
+              onChange={(e) => setForm((f) => ({ ...f, customer_id: e.target.value }))}
+            >
+              <option value="">{t('tokens.operatorNoScope')}</option>
+              {scopeCatalog.customers.map((c) => (
+                <option key={c.customer_id} value={c.customer_id}>
+                  {c.customer_code}{c.customer_name ? ` - ${c.customer_name}` : ''}
+                </option>
+              ))}
+            </select>
+            <div style={{ fontSize: 12, color: 'var(--text-secondary)', marginTop: 4 }}>
+              <RichText
+                text={t('tokens.customerBindingHint')}
+                values={{
+                  endpoints: (
+                    <span className="mono">
+                      {scopeCatalog.customer_scoped_endpoints.join(', ') || 'snapshot.inventory'}
+                    </span>
+                  ),
+                }}
+              />
+            </div>
+          </div>
 
           {/* #159: advanced escape hatch. Collapsed by default so
               the common case stays checkbox-driven. Shown when the
@@ -537,15 +626,15 @@ export default function Tokens() {
                 type="checkbox"
                 checked={form.advancedMode}
                 onChange={toggleAdvanced}
-                aria-label="Advanced: paste comma-separated values"
+                aria-label={t('tokens.advancedPaste')}
               />
-              <span style={{ fontSize: 13 }}>Advanced: paste comma-separated values</span>
+              <span style={{ fontSize: 13 }}>{t('tokens.advancedPaste')}</span>
             </label>
           </div>
           {form.advancedMode && (
             <>
               <div className="form-group">
-                <label>Warehouse IDs</label>
+                <label>{t('tokens.warehouseIds')}</label>
                 <input
                   className="form-input"
                   value={form.advancedWarehouseIds}
@@ -553,28 +642,28 @@ export default function Tokens() {
                   placeholder="1, 2"
                 />
                 <div style={{ fontSize: 12, color: 'var(--text-secondary)', marginTop: 4 }}>
-                  Comma-separated integer IDs. Empty = no warehouse access.
+                  {t('tokens.warehouseIdsHint')}
                 </div>
               </div>
               <div className="form-group">
-                <label>Event types</label>
+                <label>{t('tokens.eventTypes')}</label>
                 <input
                   className="form-input"
                   value={form.advancedEventTypes}
                   onChange={(e) => setForm({ ...form, advancedEventTypes: e.target.value })}
-                  placeholder="receipt.completed, ship.confirmed"
+                  placeholder={t('tokens.eventTypesExample')}
                 />
               </div>
               <div className="form-group">
-                <label>Endpoints</label>
+                <label>{t('tokens.endpoints')}</label>
                 <input
                   className="form-input"
                   value={form.advancedEndpoints}
                   onChange={(e) => setForm({ ...form, advancedEndpoints: e.target.value })}
-                  placeholder="events.poll, snapshot.inventory"
+                  placeholder={t('tokens.endpointsExample')}
                 />
                 <div style={{ fontSize: 12, color: 'var(--text-secondary)', marginTop: 4 }}>
-                  Required. Comma-separated slugs; the token can hit only the v1 routes listed.
+                  {t('tokens.endpointsHint')}
                 </div>
               </div>
             </>
@@ -584,22 +673,22 @@ export default function Tokens() {
 
       {reveal && (
         <Modal
-          title={reveal.kind === 'issued' ? 'Token issued' : 'Token rotated'}
+          title={t(reveal.kind === 'issued' ? 'tokens.issued' : 'tokens.rotated')}
           onClose={() => { /* reveal modal must be explicitly acknowledged */ }}
           footer={
             <button
               className="btn btn-primary"
               onClick={() => setReveal(null)}
               disabled={!revealAcked}
-              title={revealAcked ? 'Close' : 'Confirm you have saved the token first'}
+              title={t(revealAcked ? 'common.close' : 'tokens.confirmSavedFirst')}
             >
-              Close
+              {t('common.close')}
             </button>
           }
         >
           <p style={{ fontSize: 13, fontWeight: 600 }}>
             {reveal.token_name}: this value is shown exactly once. Copy it to
-            your connector's configuration now. Sentry stores only the hash;
+            your connector's configuration now. Sơn Lộc WMS stores only the hash;
             if you lose this value you must rotate.
           </p>
           <div style={{
@@ -615,7 +704,7 @@ export default function Tokens() {
             {reveal.token}
           </div>
           <div style={{ display: 'flex', gap: 8, marginTop: 12 }}>
-            <button className="btn" onClick={copyToken}>Copy to clipboard</button>
+            <button className="btn" onClick={copyToken}>{t('webhooks.copyToClipboard')}</button>
           </div>
           <div className="form-group" style={{ marginTop: 16 }}>
             <label style={{ display: 'flex', alignItems: 'center', gap: 8, cursor: 'pointer' }}>
@@ -624,7 +713,7 @@ export default function Tokens() {
                 checked={revealAcked}
                 onChange={(e) => setRevealAcked(e.target.checked)}
               />
-              I have saved this token in a secure location.
+              {t('tokens.savedAck')}
             </label>
           </div>
         </Modal>
@@ -632,42 +721,36 @@ export default function Tokens() {
 
       {confirmRevoke && (
         <Modal
-          title="Revoke token"
+          title={t('tokens.revokeTitle')}
           onClose={() => setConfirmRevoke(null)}
           footer={
             <>
-              <button className="btn" onClick={() => setConfirmRevoke(null)}>Cancel</button>
+              <button className="btn" onClick={() => setConfirmRevoke(null)}>{t('common.cancel')}</button>
               <button className="btn btn-primary" style={{ background: 'var(--copper)' }}
-                      onClick={() => revoke(confirmRevoke)}>Revoke</button>
+                      onClick={() => revoke(confirmRevoke)}>{t('tokens.revoke')}</button>
             </>
           }
         >
           <p style={{ fontSize: 13, fontWeight: 600 }}>
-            Revoke {confirmRevoke.token_name}? The token stops authenticating
-            within seconds across every API worker (Redis pubsub eviction);
-            the 60-second cache TTL is the backstop if the pubsub channel
-            is unavailable. The row remains in the list with status=revoked;
-            delete it separately when you want it removed.
+            {t('tokens.revokeConfirm', { name: confirmRevoke.token_name })}
           </p>
         </Modal>
       )}
 
       {confirmDelete && (
         <Modal
-          title="Delete token"
+          title={t('tokens.deleteTitle')}
           onClose={() => setConfirmDelete(null)}
           footer={
             <>
-              <button className="btn" onClick={() => setConfirmDelete(null)}>Cancel</button>
+              <button className="btn" onClick={() => setConfirmDelete(null)}>{t('common.cancel')}</button>
               <button className="btn btn-primary" style={{ background: 'var(--copper)' }}
-                      onClick={() => del(confirmDelete)}>Delete</button>
+                      onClick={() => del(confirmDelete)}>{t('common.delete')}</button>
             </>
           }
         >
           <p style={{ fontSize: 13, fontWeight: 600, color: 'var(--danger)' }}>
-            Permanently delete {confirmDelete.token_name}? This removes the
-            row entirely. Prefer Revoke if you only need to stop access;
-            revoked rows preserve the audit trail.
+            {t('tokens.deleteConfirm', { name: confirmDelete.token_name })}
           </p>
         </Modal>
       )}

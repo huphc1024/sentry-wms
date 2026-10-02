@@ -1,3 +1,5 @@
+import { useLocale } from '../i18n/locale.jsx';
+
 const STATUS_MAP = {
   OPEN: 'tag-info',
   'Ready to pick': 'tag-info',
@@ -16,10 +18,13 @@ const STATUS_MAP = {
   LOW: 'tag-danger',
   VARIANCE: 'tag-danger',
   SHORT: 'tag-danger',
+  ARCHIVED: 'tag-gray',
 };
 
 export default function StatusTag({ status }) {
+  const { t } = useLocale();
   if (!status) return null;
   const cls = STATUS_MAP[status] || 'tag-gray';
-  return <span className={`tag ${cls}`}>{status}</span>;
+  const label = t(`status.${status}`, status);
+  return <span className={`tag ${cls}`}>{label}</span>;
 }

@@ -4,20 +4,15 @@ import { useWarehouse } from '../warehouse.jsx';
 import PageHeader from '../components/PageHeader.jsx';
 import Modal from '../components/Modal.jsx';
 import { useDirtyFormGuard } from '../hooks/useDirtyFormGuard.js';
+import { useLocale } from '../i18n/locale.jsx';
+import RichText from '../i18n/RichText.jsx';
 
 export default function Settings() {
+  const { t } = useLocale();
   const { warehouseId } = useWarehouse();
   const [warehouse, setWarehouse] = useState(null);
   const [whForm, setWhForm] = useState({});
   const [editingWh, setEditingWh] = useState(false);
-  const [showPO, setShowPO] = useState(false);
-  const [showSO, setShowSO] = useState(false);
-  const [poForm, setPoForm] = useState({ po_number: '', vendor_name: '', vendor_address: '', warehouse_id: null, lines: [{ sku: '', quantity_ordered: '' }] });
-  const [soForm, setSoForm] = useState({ order_number: '', customer_name: '', address_line_1: '', address_line_2: '', city: '', state: '', zip: '', phone: '', warehouse_id: null, lines: [{ sku: '', quantity_ordered: '' }] });
-  const [itemsBySku, setItemsBySku] = useState(new Map());
-  const [itemsLoaded, setItemsLoaded] = useState(false);
-  const [formError, setFormError] = useState('');
-  const [formSuccess, setFormSuccess] = useState('');
 
   // Settings with save button
   const [savedSettings, setSavedSettings] = useState({});
@@ -168,216 +163,46 @@ export default function Settings() {
     }
   }
 
-  // v1.4.2 #93: cache SKU -> item_id lookup so the PO/SO manual-entry
-  // lines can accept an SKU (what operators memorize) instead of a
-  // raw item_id (a database autoincrement). Loaded lazily when either
-  // modal opens so Settings' first paint does not fetch /admin/items.
-  //
-  // The cache holds the first 1000 active items for instant typeahead
-  // and autocomplete; catalogues larger than 1000 fall back to a
-  // per-SKU server lookup in resolveSku so a less-common SKU at line
-  // submit time still resolves correctly instead of silently failing.
-  async function ensureItemsLoaded() {
-    if (itemsLoaded) return;
-    const res = await api.get('/admin/items?per_page=1000&active=true', { silentPermissionDenied: true });
-    if (res?.ok) {
-      const data = await res.json();
-      const map = new Map();
-      for (const it of data.items || []) {
-        if (it.sku) map.set(String(it.sku).trim().toLowerCase(), it.item_id);
-      }
-      setItemsBySku(map);
-      setItemsLoaded(true);
-    }
-  }
-
-  async function resolveSku(sku) {
-    const key = String(sku || '').trim().toLowerCase();
-    if (!key) return null;
-    if (itemsBySku.has(key)) return itemsBySku.get(key);
-    // Cache miss: catalogue > 1000 items or the SKU is brand new. A
-    // narrow server-side query backs the cache so submit does not
-    // depend on the pre-loaded slice.
-    const res = await api.get(`/admin/items?q=${encodeURIComponent(sku)}&per_page=10&active=true`);
-    if (!res?.ok) return null;
-    const data = await res.json();
-    const match = (data.items || []).find(
-      (i) => String(i.sku || '').trim().toLowerCase() === key,
-    );
-    return match ? match.item_id : null;
-  }
-
-  function openPoModal() {
-    setShowPO(true);
-    setFormError('');
-    ensureItemsLoaded();
-  }
-
-  function openSoModal() {
-    setShowSO(true);
-    setFormError('');
-    ensureItemsLoaded();
-  }
-
-  // v1.4.2 #92: reset modal state on every Cancel/close. Without this,
-  // a second "Create PO" click reopens the modal with stale fields
-  // from the previous attempt -- either data that was already
-  // submitted or a half-filled form the user abandoned.
-  function closePoModal() {
-    setShowPO(false);
-    setPoForm({ po_number: '', vendor_name: '', vendor_address: '', warehouse_id: warehouseId, lines: [{ sku: '', quantity_ordered: '' }] });
-    setFormError('');
-  }
-
-  function closeSoModal() {
-    setShowSO(false);
-    setSoForm({ order_number: '', customer_name: '', address_line_1: '', address_line_2: '', city: '', state: '', zip: '', phone: '', warehouse_id: warehouseId, lines: [{ sku: '', quantity_ordered: '' }] });
-    setFormError('');
-  }
-
-  // PO lines
-  function addPOLine() { setPoForm({ ...poForm, lines: [...poForm.lines, { sku: '', quantity_ordered: '' }] }); }
-  function updatePOLine(i, key, val) {
-    const lines = [...poForm.lines];
-    lines[i] = { ...lines[i], [key]: val };
-    setPoForm({ ...poForm, lines });
-  }
-
-  async function createPO() {
-    setFormError(''); setFormSuccess('');
-    const entries = poForm.lines.filter((x) => x.sku);
-    // Resolve all SKUs in parallel so a multi-line PO does not pay
-    // a round-trip per line when the cache misses.
-    const ids = await Promise.all(entries.map((l) => resolveSku(l.sku)));
-    const resolved = [];
-    for (let i = 0; i < entries.length; i++) {
-      const itemId = ids[i];
-      if (!itemId) {
-        setFormError(`Unknown SKU: ${entries[i].sku}`);
-        return;
-      }
-      resolved.push({ item_id: itemId, quantity_ordered: Number(entries[i].quantity_ordered) });
-    }
-    const body = {
-      po_number: poForm.po_number,
-      warehouse_id: poForm.warehouse_id || warehouseId,
-      vendor_name: poForm.vendor_name || null,
-      notes: poForm.vendor_address ? `Vendor address: ${poForm.vendor_address}` : null,
-      lines: resolved,
-    };
-    const res = await api.post('/admin/purchase-orders', body);
-    if (res?.ok) {
-      setFormSuccess('PO created');
-      setShowPO(false);
-      setPoForm({ po_number: '', vendor_name: '', vendor_address: '', warehouse_id: warehouseId, lines: [{ sku: '', quantity_ordered: '' }] });
-    } else {
-      const data = await res?.json();
-      setFormError(data?.error || 'Failed to create PO');
-    }
-  }
-
-  // SO lines
-  function addSOLine() { setSoForm({ ...soForm, lines: [...soForm.lines, { sku: '', quantity_ordered: '' }] }); }
-  function updateSOLine(i, key, val) {
-    const lines = [...soForm.lines];
-    lines[i] = { ...lines[i], [key]: val };
-    setSoForm({ ...soForm, lines });
-  }
-
-  async function createSO() {
-    setFormError(''); setFormSuccess('');
-    const shipAddress = [soForm.address_line_1, soForm.address_line_2, soForm.city, soForm.state, soForm.zip].filter(Boolean).join(', ');
-    const entries = soForm.lines.filter((x) => x.sku);
-    const ids = await Promise.all(entries.map((l) => resolveSku(l.sku)));
-    const resolved = [];
-    for (let i = 0; i < entries.length; i++) {
-      const itemId = ids[i];
-      if (!itemId) {
-        setFormError(`Unknown SKU: ${entries[i].sku}`);
-        return;
-      }
-      resolved.push({ item_id: itemId, quantity_ordered: Number(entries[i].quantity_ordered) });
-    }
-    const body = {
-      so_number: soForm.order_number,
-      customer_name: soForm.customer_name || null,
-      customer_phone: soForm.phone || null,
-      customer_address: shipAddress || null,
-      ship_address: shipAddress || null,
-      warehouse_id: soForm.warehouse_id || warehouseId,
-      lines: resolved,
-    };
-    const res = await api.post('/admin/sales-orders', body);
-    if (res?.ok) {
-      setFormSuccess('SO created');
-      setShowSO(false);
-      setSoForm({ order_number: '', customer_name: '', address_line_1: '', address_line_2: '', city: '', state: '', zip: '', phone: '', warehouse_id: warehouseId, lines: [{ sku: '', quantity_ordered: '' }] });
-    } else {
-      const data = await res?.json();
-      setFormError(data?.error || 'Failed to create SO');
-    }
-  }
-
   const toBool = (v) => v !== 'false' && v !== false;
 
   return (
     <div>
-      {/* v1.4.2 #93: shared SKU datalist for the PO + SO manual-entry
-          line inputs. Lives outside the modals so the <input list>
-          reference resolves whether either modal is open. */}
-      <datalist id="settings-sku-datalist">
-        {Array.from(itemsBySku.keys()).map((k) => (
-          <option key={k} value={k.toUpperCase()} />
-        ))}
-      </datalist>
-      <PageHeader title="Settings" />
-
-      {formSuccess && <div style={{ marginBottom: 12, padding: '8px 12px', background: 'var(--success-bg)', color: 'var(--success)', borderRadius: 'var(--radius)', fontSize: 13 }}>{formSuccess}</div>}
+      <PageHeader title={t('nav.settings')} />
 
       {/* Warehouse config */}
       <div className="settings-section">
-        <h3>Warehouse</h3>
+        <h3>{t('common.warehouse')}</h3>
         {warehouse && !editingWh && (
           <div>
             <div className="detail-grid" style={{ marginBottom: 12 }}>
-              <span className="detail-label">Name</span><span>{warehouse.warehouse_name}</span>
-              <span className="detail-label">Code</span><span className="mono">{warehouse.warehouse_code}</span>
-              <span className="detail-label">Address</span><span>{warehouse.address || '-'}</span>
+              <span className="detail-label">{t('common.name')}</span><span>{warehouse.warehouse_name}</span>
+              <span className="detail-label">{t('bins.code')}</span><span className="mono">{warehouse.warehouse_code}</span>
+              <span className="detail-label">{t('warehouses.address')}</span><span>{warehouse.address || '-'}</span>
             </div>
-            <button className="btn btn-sm" onClick={() => setEditingWh(true)}>Edit</button>
+            <button className="btn btn-sm" onClick={() => setEditingWh(true)}>{t('common.edit')}</button>
           </div>
         )}
         {editingWh && (
           <div>
             <div className="form-group">
-              <label>Name</label>
+              <label>{t('common.name')}</label>
               <input className="form-input" value={whForm.warehouse_name || ''} onChange={(e) => setWhForm({ ...whForm, warehouse_name: e.target.value })} />
             </div>
             <div className="form-group">
-              <label>Address</label>
+              <label>{t('warehouses.address')}</label>
               <input className="form-input" value={whForm.address || ''} onChange={(e) => setWhForm({ ...whForm, address: e.target.value })} />
             </div>
             <div style={{ display: 'flex', gap: 8 }}>
-              <button className="btn" onClick={() => setEditingWh(false)}>Cancel</button>
-              <button className="btn btn-primary" onClick={saveWarehouse}>Save</button>
+              <button className="btn" onClick={() => setEditingWh(false)}>{t('common.cancel')}</button>
+              <button className="btn btn-primary" onClick={saveWarehouse}>{t('common.save')}</button>
             </div>
           </div>
         )}
       </div>
 
-      {/* Manual PO/SO */}
-      <div className="settings-section">
-        <h3>Manual Entry</h3>
-        <p className="settings-note">For standalone deployments or testing only. In production, POs and SOs come from your ERP.</p>
-        <div style={{ display: 'flex', gap: 8 }}>
-          <button className="btn" onClick={openPoModal}>Create Purchase Order</button>
-          <button className="btn" onClick={openSoModal}>Create Sales Order</button>
-        </div>
-      </div>
-
       {/* Fulfillment Workflow */}
       <div className="settings-section">
-        <h3>Fulfillment Workflow</h3>
+        <h3>{t('settings.fulfillmentWorkflow')}</h3>
         <div style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '8px 0' }}>
           <label style={{ display: 'flex', alignItems: 'center', gap: 8, cursor: 'pointer', fontSize: 13 }}>
             <input
@@ -385,25 +210,25 @@ export default function Settings() {
               checked={toBool(draftSettings.require_packing_before_shipping)}
               onChange={(e) => updateDraft('require_packing_before_shipping', String(e.target.checked))}
             />
-            Require packing before shipping
+            {t('settings.requirePacking')}
           </label>
         </div>
-        <p className="settings-note">When enabled, orders must be packed before they can be shipped. When disabled, picked orders can be shipped directly.</p>
+        <p className="settings-note">{t('settings.requirePackingNote')}</p>
         <div style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '8px 0', marginTop: 8 }}>
-          <label style={{ fontSize: 13, whiteSpace: 'nowrap' }}>Default Receiving Bin</label>
+          <label style={{ fontSize: 13, whiteSpace: 'nowrap' }}>{t('settings.defaultReceivingBin')}</label>
           <select
             className="form-select"
             style={{ width: 200 }}
             value={draftSettings.default_receiving_bin || ''}
             onChange={(e) => updateDraft('default_receiving_bin', e.target.value)}
           >
-            <option value="">Select bin...</option>
+            <option value="">{t('settings.selectBin')}</option>
             {receivingBins.map((b) => (
               <option key={b.bin_id} value={String(b.bin_id)}>{b.bin_code}</option>
             ))}
           </select>
         </div>
-        <p className="settings-note">The default bin where received items are staged. Mobile users can override this per session.</p>
+        <p className="settings-note">{t('settings.defaultReceivingBinNote')}</p>
         <div style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '8px 0', marginTop: 8 }}>
           <label style={{ display: 'flex', alignItems: 'center', gap: 8, cursor: 'pointer', fontSize: 13 }}>
             <input
@@ -411,15 +236,15 @@ export default function Settings() {
               checked={toBool(draftSettings.allow_over_receiving)}
               onChange={(e) => updateDraft('allow_over_receiving', String(e.target.checked))}
             />
-            Allow over-receiving
+            {t('settings.allowOverReceiving')}
           </label>
         </div>
-        <p className="settings-note">When enabled, users can receive more than the PO quantity (with a warning). When disabled, over-receiving is blocked.</p>
+        <p className="settings-note">{t('settings.allowOverReceivingNote')}</p>
       </div>
 
       {/* Mobile App Settings */}
       <div className="settings-section">
-        <h3>Mobile App</h3>
+        <h3>{t('settings.mobileApp')}</h3>
         <div style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '8px 0' }}>
           <label style={{ display: 'flex', alignItems: 'center', gap: 8, cursor: 'pointer', fontSize: 13 }}>
             <input
@@ -427,15 +252,15 @@ export default function Settings() {
               checked={toBool(draftSettings.count_show_expected)}
               onChange={(e) => updateDraft('count_show_expected', String(e.target.checked))}
             />
-            Show expected quantities during cycle counts
+            {t('settings.showExpected')}
           </label>
         </div>
-        <p className="settings-note">When disabled, counters won't see expected quantities - useful for blind counts.</p>
+        <p className="settings-note">{t('settings.showExpectedNote')}</p>
       </div>
 
       {/* Inventory */}
       <div className="settings-section">
-        <h3>Inventory</h3>
+        <h3>{t('nav.inventory')}</h3>
         <div style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '8px 0' }}>
           <label style={{ display: 'flex', alignItems: 'center', gap: 8, cursor: 'pointer', fontSize: 13 }}>
             <input
@@ -443,14 +268,14 @@ export default function Settings() {
               checked={toBool(draftSettings.require_count_approval_separation)}
               onChange={(e) => updateDraft('require_count_approval_separation', String(e.target.checked))}
             />
-            Require separate approver for cycle count adjustments
+            {t('settings.separateApprover')}
           </label>
         </div>
-        <p className="settings-note">When enabled, the admin who performed a cycle count cannot approve the resulting adjustments. A different admin must review and approve.</p>
+        <p className="settings-note">{t('settings.separateApproverNote')}</p>
       </div>
 
       <div className="settings-section">
-        <h3>POS</h3>
+        <h3>{t('settings.section.pos')}</h3>
         <div style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '8px 0' }}>
           <label style={{ display: 'flex', alignItems: 'center', gap: 8, cursor: 'pointer', fontSize: 13 }}>
             <input
@@ -458,14 +283,14 @@ export default function Settings() {
               checked={toBool(draftSettings.pos_activity_enabled)}
               onChange={(e) => updateDraft('pos_activity_enabled', String(e.target.checked))}
             />
-            Show the POS Activity dashboard
+            {t('settings.showPosDashboard')}
           </label>
         </div>
-        <p className="settings-note">Adds a POS Activity tab to the Outbound nav with point-of-sale order activity and daily KPIs. Off by default; enable it for deployments that use the POS checkout surface.</p>
+        <p className="settings-note">{t('settings.showPosDashboardNote')}</p>
       </div>
 
       <div className="settings-section">
-        <h3>Fraud Review</h3>
+        <h3>{t('fraud.title')}</h3>
         <div style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '8px 0' }}>
           <label style={{ display: 'flex', alignItems: 'center', gap: 8, cursor: 'pointer', fontSize: 13 }}>
             <input
@@ -473,21 +298,19 @@ export default function Settings() {
               checked={toBool(draftSettings.fraud_review_billing_shipping)}
               onChange={(e) => updateDraft('fraud_review_billing_shipping', String(e.target.checked))}
             />
-            Auto-flag orders where billing and shipping addresses differ
+            {t('settings.autoFlagAddressMismatch')}
           </label>
         </div>
-        <p className="settings-note">One built-in heuristic for the Outbound &gt; Fraud queue: when on, an inbound order whose billing and shipping addresses diverge (street / city / state / postal, both sides populated) lands in FRAUD_REVIEW and is held out of picking until a CSR clears it. Off by default. A CSR can always flag or clear an order manually regardless of this setting.</p>
+        <p className="settings-note">{t('settings.autoFlagNote')}</p>
       </div>
 
       <div className="settings-section">
-        <h3>Marketplace Health</h3>
+        <h3>{t('dashboard.marketplaceHealth')}</h3>
         <p className="settings-note">
-          Channels shown on the Dashboard &gt; Marketplace Health view. Origin is
-          matched verbatim against each sales order's <code>order_origin</code>
-          value (the label the inbound channel mapping writes, or
-          &quot;Phone Order&quot; for POS phone orders); Label is the display name
-          on the bubble. With no channels configured the view shows nothing -- add
-          one row per channel you want a health bubble for.
+          <RichText
+            text={t('settings.marketplaceNote')}
+            values={{ field: <code>order_origin</code> }}
+          />
         </p>
         {bubbleRows().map((b, i) => (
           <div key={i} style={{ display: 'flex', gap: 8, padding: '4px 0', maxWidth: 560, alignItems: 'center' }}>
@@ -496,36 +319,35 @@ export default function Settings() {
               style={{ flex: 1 }}
               value={b.origin || ''}
               onChange={(e) => updateBubble(i, 'origin', e.target.value)}
-              placeholder="order_origin value (e.g. AMAZON)"
+              placeholder={t('settings.originPlaceholder')}
             />
             <input
               className="form-input"
               style={{ flex: 1 }}
               value={b.label || ''}
               onChange={(e) => updateBubble(i, 'label', e.target.value)}
-              placeholder="Display label (e.g. Amazon)"
+              placeholder={t('settings.labelPlaceholder')}
             />
             <button type="button" className="btn btn-secondary" onClick={() => removeBubble(i)}>
-              Remove
+              {t('settings.remove')}
             </button>
           </div>
         ))}
         <div style={{ padding: '8px 0' }}>
           <button type="button" className="btn btn-secondary" onClick={addBubble}>
-            Add channel
+            {t('settings.addChannel')}
           </button>
         </div>
       </div>
 
       {/* Picking Ticket branding */}
       <div className="settings-section">
-        <h3>Picking Ticket</h3>
+        <h3>{t('settings.pickingTicket')}</h3>
         <p className="settings-note">
-          Branding for the printable packing slip (Outbound &gt; Picking Tickets).
-          All fields are optional; leave them blank for a clean, unbranded slip.
+          {t('settings.brandingNote')}
         </p>
         <div style={{ display: 'flex', flexDirection: 'column', gap: 4, padding: '8px 0', maxWidth: 480 }}>
-          <label style={{ fontSize: 13 }}>Company name</label>
+          <label style={{ fontSize: 13 }}>{t('settings.companyName')}</label>
           <input
             className="form-input"
             value={draftSettings.picking_ticket_company_name || ''}
@@ -534,7 +356,7 @@ export default function Settings() {
           />
         </div>
         <div style={{ display: 'flex', flexDirection: 'column', gap: 4, padding: '8px 0', maxWidth: 480 }}>
-          <label style={{ fontSize: 13 }}>Company address</label>
+          <label style={{ fontSize: 13 }}>{t('settings.companyAddress')}</label>
           <textarea
             className="form-input"
             rows={4}
@@ -544,17 +366,17 @@ export default function Settings() {
           />
         </div>
         <div style={{ display: 'flex', flexDirection: 'column', gap: 4, padding: '8px 0', maxWidth: 480 }}>
-          <label style={{ fontSize: 13 }}>Logo URL</label>
+          <label style={{ fontSize: 13 }}>{t('settings.logoUrl')}</label>
           <input
             className="form-input"
             value={draftSettings.picking_ticket_logo_url || ''}
             onChange={(e) => updateDraft('picking_ticket_logo_url', e.target.value)}
-            placeholder="/picking-tickets/logo.png or https://..."
+            placeholder={t('settings.logoPlaceholder')}
           />
-          <p className="settings-note">Path or URL to a logo image shown in the slip header. Blank hides it.</p>
+          <p className="settings-note">{t('settings.logoNote')}</p>
         </div>
         <div style={{ display: 'flex', flexDirection: 'column', gap: 4, padding: '8px 0', maxWidth: 480 }}>
-          <label style={{ fontSize: 13 }}>Returns text</label>
+          <label style={{ fontSize: 13 }}>{t('settings.returnsText')}</label>
           <textarea
             className="form-input"
             rows={3}
@@ -568,123 +390,23 @@ export default function Settings() {
       {/* Save button */}
       <div className="settings-section" style={{ display: 'flex', gap: 12, alignItems: 'center' }}>
         <button className="btn btn-primary" onClick={saveSettings} disabled={!hasUnsavedChanges || settingsSaving}>
-          {settingsSaving ? 'Saving...' : 'Save Settings'}
+          {t(settingsSaving ? 'common.saving' : 'settings.saveSettings')}
         </button>
-        {hasUnsavedChanges && <span style={{ fontSize: 12, color: 'var(--copper)' }}>Unsaved changes</span>}
+        {hasUnsavedChanges && <span style={{ fontSize: 12, color: 'var(--copper)' }}>{t('settings.unsavedChanges')}</span>}
         {settingsSuccess && <span style={{ fontSize: 12, color: 'var(--success)' }}>{settingsSuccess}</span>}
         {settingsError && <span style={{ fontSize: 12, color: 'var(--danger)' }}>{settingsError}</span>}
       </div>
 
       {/* About */}
       <div className="settings-section">
-        <h3>About</h3>
+        <h3>{t('settings.about')}</h3>
         <div className="detail-grid">
-          <span className="detail-label">Version</span><span className="mono">1.29.1</span>
-          <span className="detail-label">Repository</span><span><a href="https://github.com/hightower-systems/sentry-wms" target="_blank" rel="noopener noreferrer">github.com/hightower-systems/sentry-wms</a></span>
+          <span className="detail-label">{t('settings.version')}</span><span className="mono">1.29.1</span>
+          <span className="detail-label">{t('settings.repository')}</span><span><a href="https://github.com/hightower-systems/sentry-wms" target="_blank" rel="noopener noreferrer">github.com/hightower-systems/sentry-wms</a></span>
         </div>
       </div>
 
       {/* PO Modal */}
-      {showPO && (
-        <Modal title="Create Purchase Order" onClose={closePoModal}
-          footer={<><button className="btn" onClick={closePoModal}>Cancel</button><button className="btn btn-primary" onClick={createPO}>Create PO</button></>}
-        >
-          {formError && <div className="form-error" style={{ marginBottom: 12 }}>{formError}</div>}
-          <div className="form-row">
-            <div className="form-group">
-              <label>PO Number</label>
-              <input className="form-input" value={poForm.po_number} onChange={(e) => setPoForm({ ...poForm, po_number: e.target.value })} />
-            </div>
-            <div className="form-group">
-              <label>Vendor</label>
-              <input className="form-input" value={poForm.vendor_name} onChange={(e) => setPoForm({ ...poForm, vendor_name: e.target.value })} />
-            </div>
-          </div>
-          <div className="form-group">
-            <label>Vendor Address</label>
-            <input className="form-input" value={poForm.vendor_address} onChange={(e) => setPoForm({ ...poForm, vendor_address: e.target.value })} placeholder="Optional" />
-          </div>
-          <div style={{ marginTop: 12 }}>
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
-              <label style={{ fontSize: 12, fontWeight: 500, color: 'var(--text-secondary)' }}>Lines</label>
-              <button className="btn btn-sm" onClick={addPOLine}>+ Line</button>
-            </div>
-            {poForm.lines.map((line, i) => (
-              <div className="form-row" key={i} style={{ marginBottom: 8 }}>
-                <div className="form-group" style={{ marginBottom: 0 }}>
-                  <input className="form-input" list="settings-sku-datalist" placeholder="SKU" value={line.sku} onChange={(e) => updatePOLine(i, 'sku', e.target.value)} />
-                </div>
-                <div className="form-group" style={{ marginBottom: 0 }}>
-                  <input className="form-input" type="number" placeholder="Qty ordered" value={line.quantity_ordered} onChange={(e) => updatePOLine(i, 'quantity_ordered', e.target.value)} />
-                </div>
-              </div>
-            ))}
-          </div>
-        </Modal>
-      )}
-
-      {/* SO Modal */}
-      {showSO && (
-        <Modal title="Create Sales Order" onClose={closeSoModal}
-          footer={<><button className="btn" onClick={closeSoModal}>Cancel</button><button className="btn btn-primary" onClick={createSO}>Create SO</button></>}
-        >
-          {formError && <div className="form-error" style={{ marginBottom: 12 }}>{formError}</div>}
-          <div className="form-row">
-            <div className="form-group">
-              <label>SO Number</label>
-              <input className="form-input" value={soForm.order_number} onChange={(e) => setSoForm({ ...soForm, order_number: e.target.value })} />
-            </div>
-            <div className="form-group">
-              <label>Customer</label>
-              <input className="form-input" value={soForm.customer_name} onChange={(e) => setSoForm({ ...soForm, customer_name: e.target.value })} />
-            </div>
-          </div>
-          <div className="form-group">
-            <label>Address Line 1</label>
-            <input className="form-input" value={soForm.address_line_1} onChange={(e) => setSoForm({ ...soForm, address_line_1: e.target.value })} />
-          </div>
-          <div className="form-group">
-            <label>Address Line 2</label>
-            <input className="form-input" value={soForm.address_line_2} onChange={(e) => setSoForm({ ...soForm, address_line_2: e.target.value })} />
-          </div>
-          <div className="form-row">
-            <div className="form-group">
-              <label>City</label>
-              <input className="form-input" value={soForm.city} onChange={(e) => setSoForm({ ...soForm, city: e.target.value })} />
-            </div>
-            <div className="form-group">
-              <label>State</label>
-              <input className="form-input" value={soForm.state} onChange={(e) => setSoForm({ ...soForm, state: e.target.value })} />
-            </div>
-          </div>
-          <div className="form-row">
-            <div className="form-group">
-              <label>Zip</label>
-              <input className="form-input" value={soForm.zip} onChange={(e) => setSoForm({ ...soForm, zip: e.target.value })} />
-            </div>
-            <div className="form-group">
-              <label>Phone</label>
-              <input className="form-input" value={soForm.phone} onChange={(e) => setSoForm({ ...soForm, phone: e.target.value })} />
-            </div>
-          </div>
-          <div style={{ marginTop: 12 }}>
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
-              <label style={{ fontSize: 12, fontWeight: 500, color: 'var(--text-secondary)' }}>Lines</label>
-              <button className="btn btn-sm" onClick={addSOLine}>+ Line</button>
-            </div>
-            {soForm.lines.map((line, i) => (
-              <div className="form-row" key={i} style={{ marginBottom: 8 }}>
-                <div className="form-group" style={{ marginBottom: 0 }}>
-                  <input className="form-input" list="settings-sku-datalist" placeholder="SKU" value={line.sku} onChange={(e) => updateSOLine(i, 'sku', e.target.value)} />
-                </div>
-                <div className="form-group" style={{ marginBottom: 0 }}>
-                  <input className="form-input" type="number" placeholder="Quantity" value={line.quantity_ordered} onChange={(e) => updateSOLine(i, 'quantity_ordered', e.target.value)} />
-                </div>
-              </div>
-            ))}
-          </div>
-        </Modal>
-      )}
 
     </div>
   );

@@ -2,10 +2,12 @@ import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { api } from '../api.js';
 import { useAuth } from '../auth.jsx';
+import { useLocale } from '../i18n/locale.jsx';
 import { friendlyError } from '../utils/friendlyError.js';
 
 export default function ChangePassword() {
   const { user, logout } = useAuth();
+  const { t } = useLocale();
   const navigate = useNavigate();
   const [currentPassword, setCurrentPassword] = useState('');
   const [newPassword, setNewPassword] = useState('');
@@ -20,7 +22,7 @@ export default function ChangePassword() {
     setError('');
 
     if (newPassword !== confirmPassword) {
-      setError('New passwords do not match.');
+      setError(t('auth.passwordsMismatch'));
       return;
     }
 
@@ -32,28 +34,18 @@ export default function ChangePassword() {
 
     if (!res || !res.ok) {
       const data = res ? await res.json().catch(() => ({})) : {};
-      setError(friendlyError(data, 'Could not change password. Please try again.'));
+      setError(friendlyError(data, t('auth.changePasswordFailed')));
       setSubmitting(false);
       return;
     }
 
-    // v1.4.2 #98: /auth/change-password intentionally invalidates the
-    // session token server-side. Calling refreshUser() (/auth/me) with
-    // the now-dead token 401s and leaves the stale must_change_password
-    // flag in context; the router guard then bounces the operator back
-    // to /change-password and the screen appears twice. Reuse logout()
-    // to clear local auth state (one function owns auth reset) and send
-    // the operator to /login with a success message. sessionStorage
-    // carries the message so it survives the AuthProvider state flip
-    // that logout() triggers; Login reads + clears it on mount.
     try {
       sessionStorage.setItem(
         'login_flash_message',
         'Password changed. Please sign in with your new password.',
       );
     } catch {
-      // Private mode or disabled storage: operator still gets a
-      // working /login page, just without the confirmation banner.
+      // Private mode or disabled storage
     }
     await logout();
     navigate('/login', { replace: true });
@@ -66,8 +58,8 @@ export default function ChangePassword() {
           role="alert"
           className="forced-change-banner"
           style={{
-            background: '#8e2716',
-            color: '#fdf4e3',
+            background: 'var(--danger)',
+            color: 'var(--on-accent)',
             padding: '14px 18px',
             borderRadius: 6,
             marginBottom: 20,
@@ -75,17 +67,17 @@ export default function ChangePassword() {
             lineHeight: 1.4,
           }}
         >
-          <strong>First-time setup:</strong> please choose a new admin password before continuing.
+          <strong>{t('auth.firstTimeSetup')}</strong> {t('auth.chooseNewPassword')}
         </div>
       )}
 
-      <h2 style={{ marginTop: 0, marginBottom: 20 }}>Change Password</h2>
+      <h2 style={{ marginTop: 0, marginBottom: 20 }}>{t('auth.changePassword')}</h2>
 
       {error && <div className="login-error" style={{ marginBottom: 16 }}>{error}</div>}
 
       <form onSubmit={handleSubmit}>
         <div className="form-group">
-          <label>Current password</label>
+          <label>{t('auth.currentPassword')}</label>
           <input
             className="form-input"
             type="password"
@@ -98,7 +90,7 @@ export default function ChangePassword() {
         </div>
 
         <div className="form-group">
-          <label>New password</label>
+          <label>{t('auth.newPassword')}</label>
           <input
             className="form-input"
             type="password"
@@ -108,12 +100,12 @@ export default function ChangePassword() {
             required
           />
           <div style={{ fontSize: 12, color: 'rgba(0,0,0,0.55)', marginTop: 6 }}>
-            At least 8 characters, one letter and one digit. Cannot be "admin".
+            {t('auth.passwordHint')}
           </div>
         </div>
 
         <div className="form-group">
-          <label>Confirm new password</label>
+          <label>{t('auth.confirmPassword')}</label>
           <input
             className="form-input"
             type="password"
@@ -126,7 +118,7 @@ export default function ChangePassword() {
 
         <div style={{ display: 'flex', gap: 10, marginTop: 20 }}>
           <button type="submit" className="btn btn-primary" disabled={submitting}>
-            {submitting ? 'Saving...' : 'Change password'}
+            {submitting ? t('common.saving') : t('auth.changePassword')}
           </button>
           {!forced && (
             <button
@@ -135,7 +127,7 @@ export default function ChangePassword() {
               onClick={() => navigate(-1)}
               disabled={submitting}
             >
-              Cancel
+              {t('common.cancel')}
             </button>
           )}
         </div>

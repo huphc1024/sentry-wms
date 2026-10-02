@@ -6,6 +6,8 @@ import { useAuth } from '../auth.jsx';
 import PageHeader from '../components/PageHeader.jsx';
 import Modal from '../components/Modal.jsx';
 import StatusTag from '../components/StatusTag.jsx';
+import { useLocale } from '../i18n/locale.jsx';
+import RichText from '../i18n/RichText.jsx';
 
 // v1.8.0 (#299) productivity dashboard. Reads /api/v1/dashboard/
 // productivity for the warehouse-scoped per-user metrics, and
@@ -14,24 +16,24 @@ import StatusTag from '../components/StatusTag.jsx';
 // SalesOrders.jsx + TransferOrders.jsx; the single-file layout was
 // kept for codebase uniformity.
 
-const COLOR_TOP = '#8e2715';   // Sentry red (top performer per card)
+const COLOR_TOP = '#8e2715';   // Brand red (top performer per card)
 const COLOR_OTHER = '#c4722a'; // Copper (every other user)
 
 const EVENT_LABELS = {
   // picking is measured in distinct orders, not units.
-  picking:       { title: 'Picking',      unit: 'orders' },
-  packing:       { title: 'Packing',      unit: 'units' },
-  shipped:       { title: 'Shipped',      unit: 'orders' },
-  received_skus: { title: 'Received',     unit: 'unique SKUs' },
-  putaway_skus:  { title: 'Put Away',     unit: 'unique SKUs' },
+  picking:       { titleKey: 'dashboard.picking',  unitKey: 'dashboard.orders' },
+  packing:       { titleKey: 'dashboard.packing',  unitKey: 'dashboard.units' },
+  shipped:       { titleKey: 'dashboard.shipped',  unitKey: 'dashboard.orders' },
+  received_skus: { titleKey: 'dashboard.received', unitKey: 'dashboard.uniqueSkus' },
+  putaway_skus:  { titleKey: 'dashboard.putAway',  unitKey: 'dashboard.uniqueSkus' },
 };
 
 const RANGE_PRESETS = [
-  { key: 'today',     label: 'Today' },
-  { key: 'yesterday', label: 'Yesterday' },
-  { key: 'last_7d',   label: 'Last 7d' },
-  { key: 'last_30d',  label: 'Last 30d' },
-  { key: 'custom',    label: 'Custom' },
+  { key: 'today',     labelKey: 'dashboard.today' },
+  { key: 'yesterday', labelKey: 'dashboard.yesterday' },
+  { key: 'last_7d',   labelKey: 'dashboard.last7d' },
+  { key: 'last_30d',  labelKey: 'dashboard.last30d' },
+  { key: 'custom',    labelKey: 'dashboard.custom' },
 ];
 
 function isoDate(d) {
@@ -84,6 +86,7 @@ function downloadProductivityCsv(payload) {
 }
 
 function EventCard({ slug, payload, onExpand, isExpanded }) {
+  const { t } = useLocale();
   const total = payload.totals_per_event?.[slug] ?? 0;
   const users = (payload.users || []).filter((u) => (u.metrics?.[slug] ?? 0) > 0);
   users.sort((a, b) => (b.metrics[slug] || 0) - (a.metrics[slug] || 0));
@@ -98,12 +101,12 @@ function EventCard({ slug, payload, onExpand, isExpanded }) {
       tabIndex={0}
     >
       <div style={styles.cardHeader}>
-        <span style={styles.cardTitle}>{meta.title}</span>
+        <span style={styles.cardTitle}>{t(meta.titleKey)}</span>
         <span style={styles.cardTotal}>{total}</span>
       </div>
-      <div style={styles.cardSubheader}>{meta.unit}</div>
+      <div style={styles.cardSubheader}>{t(meta.unitKey)}</div>
       {users.length === 0 ? (
-        <div style={styles.cardEmpty}>No data for this range.</div>
+        <div style={styles.cardEmpty}>{t('dashboard.noDataRange')}</div>
       ) : (
         <div style={styles.barChart}>
           {users.map((u, idx) => {
@@ -127,18 +130,19 @@ function EventCard({ slug, payload, onExpand, isExpanded }) {
 }
 
 function ProductivityTable({ payload }) {
+  const { t } = useLocale();
   const events = payload.events_visible || [];
   return (
     <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
       <thead>
         <tr style={{ borderBottom: '1px solid var(--border)' }}>
-          <th style={{ ...styles.th, textAlign: 'left' }}>User</th>
+          <th style={{ ...styles.th, textAlign: 'left' }}>{t('dashboard.user')}</th>
           {events.map((slug) => (
             <th key={slug} style={{ ...styles.th, textAlign: 'right' }}>
               {EVENT_LABELS[slug]?.title || slug}
             </th>
           ))}
-          <th style={{ ...styles.th, textAlign: 'right' }}>Total</th>
+          <th style={{ ...styles.th, textAlign: 'right' }}>{t('dashboard.total')}</th>
         </tr>
       </thead>
       <tbody>
@@ -158,7 +162,7 @@ function ProductivityTable({ payload }) {
         {(payload.users || []).length === 0 && (
           <tr>
             <td colSpan={events.length + 2} style={{ ...styles.td, color: 'var(--text-secondary)' }}>
-              No data for this range.
+              {t('dashboard.noDataRange')}
             </td>
           </tr>
         )}
@@ -174,39 +178,40 @@ function ProductivityTable({ payload }) {
 // local-only state (no URL persistence yet -- can be added once
 // stakeholders show they want shareable deep links).
 export default function Dashboard() {
+  const { t } = useLocale();
   const { warehouseId } = useWarehouse();
   const [tab, setTab] = useState('productivity');
   return (
     <div>
-      <PageHeader title="Dashboard" />
+      <PageHeader title={t('nav.dashboard')} />
       <div className="data-tabs" style={{ marginBottom: 16 }}>
         <button
           type="button"
           className={`data-tab${tab === 'productivity' ? ' active' : ''}`}
           onClick={() => setTab('productivity')}
         >
-          Productivity
+          {t('dashboard.productivity')}
         </button>
         <button
           type="button"
           className={`data-tab${tab === 'received' ? ' active' : ''}`}
           onClick={() => setTab('received')}
         >
-          Received
+          {t('dashboard.received')}
         </button>
         <button
           type="button"
           className={`data-tab${tab === 'shipping' ? ' active' : ''}`}
           onClick={() => setTab('shipping')}
         >
-          Marketplace Health
+          {t('dashboard.marketplaceHealth')}
         </button>
         <button
           type="button"
           className={`data-tab${tab === 'local-pickup' ? ' active' : ''}`}
           onClick={() => setTab('local-pickup')}
         >
-          Local Pickup
+          {t('dashboard.localPickup')}
         </button>
       </div>
       {tab === 'productivity' && <ProductivityView warehouseId={warehouseId} />}
@@ -218,6 +223,7 @@ export default function Dashboard() {
 }
 
 function ProductivityView({ warehouseId }) {
+  const { t } = useLocale();
   const [payload, setPayload] = useState(null);
   const [error, setError] = useState('');
   const [preferences, setPreferences] = useState({
@@ -318,7 +324,7 @@ function ProductivityView({ warehouseId }) {
               className={`btn btn-sm${rangePreset === p.key ? ' btn-primary' : ''}`}
               onClick={() => setRangePreset(p.key)}
             >
-              {p.label}
+              {t(p.labelKey)}
             </button>
           ))}
         </div>
@@ -331,7 +337,7 @@ function ProductivityView({ warehouseId }) {
               value={customStart}
               onChange={(e) => setCustomStart(e.target.value)}
             />
-            <span style={{ fontSize: 13, color: 'var(--text-secondary)' }}>to</span>
+            <span style={{ fontSize: 13, color: 'var(--text-secondary)' }}>{t('dashboard.to')}</span>
             <input
               type="date"
               className="form-input"
@@ -346,28 +352,28 @@ function ProductivityView({ warehouseId }) {
             className={`btn btn-sm${view === 'charts' ? ' btn-primary' : ''}`}
             onClick={() => setView('charts')}
           >
-            Charts
+            {t('dashboard.charts')}
           </button>
           <button
             className={`btn btn-sm${view === 'table' ? ' btn-primary' : ''}`}
             onClick={() => setView('table')}
           >
-            Table
+            {t('dashboard.table')}
           </button>
           {view === 'table' && payload && (
             <button
               className="btn btn-sm"
               onClick={() => downloadProductivityCsv(payload)}
-              title="Download CSV"
+              title={t('dashboard.downloadCsv')}
             >
-              Export CSV
+              {t('common.exportCsv')}
             </button>
           )}
           <button
             className="btn btn-sm"
             onClick={() => setShowSettings(true)}
-            title="Dashboard settings"
-            aria-label="Dashboard settings"
+            title={t('dashboard.settings')}
+            aria-label={t('dashboard.settings')}
           >
             &#9881;
           </button>
@@ -378,14 +384,14 @@ function ProductivityView({ warehouseId }) {
 
       {!payload ? (
         <div style={{ padding: 32, textAlign: 'center', color: 'var(--text-secondary)' }}>
-          Loading...
+          {t('common.loading')}
         </div>
       ) : view === 'table' ? (
         <ProductivityTable payload={payload} />
       ) : expandedSlug ? (
         <div>
           <button className="btn btn-sm" onClick={() => setExpandedSlug(null)} style={{ marginBottom: 12 }}>
-            &larr; Back to grid
+            &larr; {t('dashboard.backToGrid')}
           </button>
           <div style={styles.expandedShell}>
             <EventCard
@@ -411,38 +417,38 @@ function ProductivityView({ warehouseId }) {
 
       {showSettings && (
         <Modal
-          title="Dashboard settings"
+          title={t('dashboard.settings')}
           onClose={() => setShowSettings(false)}
-          footer={<button className="btn" onClick={() => setShowSettings(false)}>Close</button>}
+          footer={<button className="btn" onClick={() => setShowSettings(false)}>{t('common.close')}</button>}
         >
           <p style={{ fontSize: 12, color: 'var(--text-secondary)', marginBottom: 12 }}>
-            Per-user preferences. Saves on every change. {savingPrefs && '(saving...)'}
+            {t('dashboard.prefsNote')} {savingPrefs && t('dashboard.savingSuffix')}
           </p>
           <div className="form-group">
-            <label>Default range</label>
+            <label>{t('dashboard.defaultRange')}</label>
             <select
               className="form-select"
               value={preferences.default_range}
               onChange={(e) => savePreferences({ default_range: e.target.value })}
             >
               {RANGE_PRESETS.map((p) => (
-                <option key={p.key} value={p.key}>{p.label}</option>
+                <option key={p.key} value={p.key}>{t(p.labelKey)}</option>
               ))}
             </select>
           </div>
           <div className="form-group">
-            <label>Default view</label>
+            <label>{t('dashboard.defaultView')}</label>
             <select
               className="form-select"
               value={preferences.default_view}
               onChange={(e) => savePreferences({ default_view: e.target.value })}
             >
-              <option value="charts">Charts</option>
-              <option value="table">Table</option>
+              <option value="charts">{t('dashboard.charts')}</option>
+              <option value="table">{t('dashboard.table')}</option>
             </select>
           </div>
           <div className="form-group">
-            <label>Chart order</label>
+            <label>{t('dashboard.chartOrder')}</label>
             <ul style={{ listStyle: 'none', padding: 0, margin: 0 }}>
               {(preferences.chart_order || []).map((slug, idx) => (
                 <li
@@ -460,13 +466,13 @@ function ProductivityView({ warehouseId }) {
                     className="btn btn-sm"
                     onClick={() => reorderChart(slug, -1)}
                     disabled={idx === 0}
-                    aria-label="Move up"
+                    aria-label={t('dashboard.moveUp')}
                   >&#8593;</button>
                   <button
                     className="btn btn-sm"
                     onClick={() => reorderChart(slug, 1)}
                     disabled={idx === preferences.chart_order.length - 1}
-                    aria-label="Move down"
+                    aria-label={t('dashboard.moveDown')}
                   >&#8595;</button>
                 </li>
               ))}
@@ -488,7 +494,7 @@ const styles = {
     maxWidth: 800,
   },
   card: (expanded) => ({
-    background: 'var(--card-bg, #fff)',
+    background: 'var(--panel)',
     border: '1px solid var(--border)',
     borderRadius: 8,
     padding: 16,
@@ -524,6 +530,7 @@ function RangeControls({
   customStart, setCustomStart, customEnd, setCustomEnd,
   loading, onRefresh, trailingChildren,
 }) {
+  const { t } = useLocale();
   return (
     <div style={{
       display: 'flex', alignItems: 'center', gap: 12,
@@ -536,7 +543,7 @@ function RangeControls({
             className={`btn btn-sm${rangePreset === p.key ? ' btn-primary' : ''}`}
             onClick={() => setRangePreset(p.key)}
           >
-            {p.label}
+            {t(p.labelKey)}
           </button>
         ))}
       </div>
@@ -549,7 +556,7 @@ function RangeControls({
             value={customStart}
             onChange={(e) => setCustomStart(e.target.value)}
           />
-          <span style={{ fontSize: 13, color: 'var(--text-secondary)' }}>to</span>
+          <span style={{ fontSize: 13, color: 'var(--text-secondary)' }}>{t('dashboard.to')}</span>
           <input
             type="date"
             className="form-input"
@@ -562,7 +569,7 @@ function RangeControls({
       <div style={{ marginLeft: 'auto', display: 'flex', gap: 4, alignItems: 'center' }}>
         {trailingChildren}
         <button className="btn btn-sm" onClick={onRefresh} disabled={loading}>
-          {loading ? 'Loading…' : 'Refresh'}
+          {loading ? t('common.loading') : t('common.refresh')}
         </button>
       </div>
     </div>
@@ -573,6 +580,7 @@ function RangeControls({
 // ── Received ───────────────────────────────────────────────────────────────
 
 function ReceivedTodayView({ warehouseId }) {
+  const { t } = useLocale();
   const [rows, setRows] = useState([]);
   const [loading, setLoading] = useState(false);
   const [rangePreset, setRangePreset] = useState('today');
@@ -619,15 +627,15 @@ function ReceivedTodayView({ warehouseId }) {
         display: 'flex', gap: 16, marginBottom: 16, fontSize: 13,
         color: 'var(--text-secondary)', flexWrap: 'wrap', alignItems: 'center',
       }}>
-        <span><strong style={{ color: 'var(--text)' }}>{rows.length}</strong> POs received</span>
-        <span><strong style={{ color: 'var(--text)' }}>{totalLines}</strong> lines</span>
-        <span><strong style={{ color: 'var(--text)' }}>{totalUnits}</strong> units</span>
-        <span><strong style={{ color: 'var(--text)' }}>{distinctReceivers.size}</strong> receivers active</span>
+        <span><strong style={{ color: 'var(--text)' }}>{rows.length}</strong> {t('dashboard.posReceived')}</span>
+        <span><strong style={{ color: 'var(--text)' }}>{totalLines}</strong> {t('dashboard.lines')}</span>
+        <span><strong style={{ color: 'var(--text)' }}>{totalUnits}</strong> {t('dashboard.units')}</span>
+        <span><strong style={{ color: 'var(--text)' }}>{distinctReceivers.size}</strong> {t('dashboard.receiversActive')}</span>
       </div>
 
       {!loading && rows.length === 0 && (
         <p style={{ fontSize: 13, color: 'var(--text-secondary)' }}>
-          No POs received units in this range.
+          {t('dashboard.noPosReceived')}
         </p>
       )}
 
@@ -635,13 +643,13 @@ function ReceivedTodayView({ warehouseId }) {
         <table className="data-table">
           <thead>
             <tr>
-              <th>PO #</th>
-              <th>Vendor</th>
-              <th>Status</th>
-              <th style={{ textAlign: 'right' }}>Lines</th>
-              <th style={{ textAlign: 'right' }}>Units</th>
-              <th>Receiver(s)</th>
-              <th>Last received</th>
+              <th>{t('dashboard.poNumber')}</th>
+              <th>{t('common.vendor')}</th>
+              <th>{t('common.status')}</th>
+              <th style={{ textAlign: 'right' }}>{t('dashboard.lines')}</th>
+              <th style={{ textAlign: 'right' }}>{t('dashboard.units')}</th>
+              <th>{t('dashboard.receivers')}</th>
+              <th>{t('dashboard.lastReceived')}</th>
             </tr>
           </thead>
           <tbody>
@@ -677,6 +685,7 @@ function ReceivedTodayView({ warehouseId }) {
 // and the UI translates them to display labels here.
 
 function ShippingHealthView({ warehouseId }) {
+  const { t } = useLocale();
   const [data, setData] = useState({ by_source: [] });
   const [loading, setLoading] = useState(false);
   const [rangePreset, setRangePreset] = useState('today');
@@ -719,7 +728,7 @@ function ShippingHealthView({ warehouseId }) {
       />
 
       <h3 style={{ fontSize: 14, fontWeight: 600, margin: '0 0 12px 0' }}>
-        Marketplace Breakdown
+        {t('dashboard.marketplaceBreakdown')}
       </h3>
 
       {rows.length === 0 && !loading && (
@@ -750,7 +759,7 @@ function ShippingHealthView({ warehouseId }) {
       }} />
 
       <h3 style={{ fontSize: 14, fontWeight: 600, margin: '0 0 12px 0' }}>
-        Orders that need to ship today
+        {t('dashboard.needToShipToday')}
       </h3>
 
       <div style={{
@@ -770,27 +779,27 @@ function ShippingHealthView({ warehouseId }) {
 
       {focused && (
         <Modal
-          title={`${focused.label} - orders that need to ship today`}
+          title={t('dashboard.channelShipToday', { channel: focused.label })}
           onClose={() => setFocused(null)}
           size="wide"
           footer={
             <button className="btn btn-primary" onClick={() => setFocused(null)}>
-              Close
+              {t('common.close')}
             </button>
           }
         >
           {(focused.orders || []).length === 0 ? (
             <p style={{ fontSize: 13, color: 'var(--text-secondary)' }}>
-              No orders to show.
+              {t('dashboard.noOrdersToShow')}
             </p>
           ) : (
             <table className="lines-table">
               <thead>
                 <tr>
-                  <th>SO #</th>
-                  <th>Customer</th>
-                  <th>Status</th>
-                  <th>Ship by</th>
+                  <th>{t('dashboard.soNumber')}</th>
+                  <th>{t('common.customer')}</th>
+                  <th>{t('common.status')}</th>
+                  <th>{t('dashboard.shipBy')}</th>
                 </tr>
               </thead>
               <tbody>
@@ -818,6 +827,7 @@ function ShippingHealthView({ warehouseId }) {
 // reads this for channel-mix context; the action signal lives in the
 // bubble row below.
 function MarketplaceTotalsCard({ row }) {
+  const { t } = useLocale();
   return (
     <div className="card" style={{ padding: 16 }}>
       <div style={{
@@ -844,7 +854,7 @@ function MarketplaceTotalsCard({ row }) {
             color: 'var(--text-secondary)',
             textTransform: 'uppercase', letterSpacing: 0.4,
           }}>
-            Orders Received
+            {t('dashboard.ordersReceived')}
           </div>
         </div>
         <div style={{ textAlign: 'center' }}>
@@ -861,7 +871,7 @@ function MarketplaceTotalsCard({ row }) {
             color: 'var(--text-secondary)',
             textTransform: 'uppercase', letterSpacing: 0.4,
           }}>
-            Orders Shipped
+            {t('dashboard.ordersShipped')}
           </div>
         </div>
       </div>
@@ -874,6 +884,7 @@ function MarketplaceTotalsCard({ row }) {
 // number the desk acts on. Click a non-zero bubble to open the SO
 // list; zero renders as a green check, non-interactive.
 function ShipTodayBubble({ row, onClick }) {
+  const { t } = useLocale();
   const needToShip = row.need_to_ship_today || 0;
   const sharedStyle = {
     padding: 20,
@@ -882,7 +893,7 @@ function ShipTodayBubble({ row, onClick }) {
     border: needToShip > 0
       ? '2px solid var(--accent)'
       : '1px solid var(--border-dark)',
-    background: 'var(--white)',
+    background: 'var(--panel)',
     fontFamily: 'inherit',
     textAlign: 'center',
   };
@@ -898,7 +909,7 @@ function ShipTodayBubble({ row, onClick }) {
         className="card"
         onClick={onClick}
         style={{ ...sharedStyle, cursor: 'pointer' }}
-        title="Show the SO list behind this count"
+        title={t('dashboard.showSoList')}
       >
         {label}
         <span style={{
@@ -918,10 +929,10 @@ function ShipTodayBubble({ row, onClick }) {
       <span
         style={{
           fontSize: 44, lineHeight: 1, fontWeight: 700,
-          color: '#1f9d55',
+          color: 'var(--success)',
         }}
-        aria-label="caught up"
-        title="No orders need to ship for this channel"
+        aria-label={t('dashboard.caughtUp')}
+        title={t('dashboard.caughtUpTooltip')}
       >
         &#10003;
       </span>
@@ -946,17 +957,18 @@ function ShipTodayBubble({ row, onClick }) {
 // 'Open + Picked' (OPEN,PICKED) is the active pickup worklist on one screen --
 // the comma-separated value rides the backend's multi-status IN filter.
 const LOCAL_PICKUP_STATUS_OPTIONS = [
-  { label: 'All statuses', value: 'All' },
-  { label: 'Open + Picked', value: 'OPEN,PICKED' },
-  { label: 'OPEN', value: 'OPEN' },
-  { label: 'PICKED', value: 'PICKED' },
-  { label: 'PACKED', value: 'PACKED' },
-  { label: 'SHIPPED', value: 'SHIPPED' },
-  { label: 'CANCELLED', value: 'CANCELLED' },
+  { labelKey: 'dashboard.allStatuses', value: 'All' },
+  { labelKey: 'dashboard.openPlusPicked', value: 'OPEN,PICKED' },
+  { labelKey: 'status.OPEN', value: 'OPEN' },
+  { labelKey: 'status.PICKED', value: 'PICKED' },
+  { labelKey: 'status.PACKED', value: 'PACKED' },
+  { labelKey: 'status.SHIPPED', value: 'SHIPPED' },
+  { labelKey: 'status.CANCELLED', value: 'CANCELLED' },
 ];
 const SHIPPABLE_STATUSES = new Set(['PICKED', 'PACKED']);
 
 function LocalPickupView({ warehouseId }) {
+  const { t } = useLocale();
   const { user } = useAuth();
   const isAdmin = user?.role === 'ADMIN';
   const hasSOFullEdit = isAdmin || (user?.allowed_overrides || []).includes('so-full-edit');
@@ -1000,7 +1012,7 @@ function LocalPickupView({ warehouseId }) {
     if (!res) return;
     if (res.status === 403) { setForbidden(true); setRows([]); setTotal(0); return; }
     setForbidden(false);
-    if (!res.ok) { setError('Could not load local pickup orders.'); return; }
+    if (!res.ok) { setError(t('dashboard.loadPickupFailed')); return; }
     const data = await res.json();
     setRows(data.sales_orders || []);
     setTotal(data.total ?? (data.sales_orders || []).length);
@@ -1012,17 +1024,15 @@ function LocalPickupView({ warehouseId }) {
   function requestPickup(so) {
     if (!(isAdmin || hasSOFullEdit)) {
       setAlertMsg({
-        title: 'Permission needed',
-        message: `You can't mark ${so.so_number} picked up. This needs the `
-          + 'ADMIN role or the so-full-edit override on your account.',
+        title: t('dashboard.permissionNeeded'),
+        message: t('dashboard.pickupNeedsOverride', { so: so.so_number }),
       });
       return;
     }
     if (!SHIPPABLE_STATUSES.has(so.status)) {
       setAlertMsg({
-        title: 'Not ready for pickup',
-        message: `${so.so_number} is ${so.status}, not picked yet. An order `
-          + 'must be PICKED or PACKED before it can be marked picked up.',
+        title: t('dashboard.notReadyForPickup'),
+        message: t('dashboard.notPickedYet', { so: so.so_number, status: so.status }),
       });
       return;
     }
@@ -1044,10 +1054,13 @@ function LocalPickupView({ warehouseId }) {
     if (!res.ok) {
       const data = await res.json().catch(() => ({}));
       setAlertMsg({
-        title: 'Could not mark picked up',
+        title: t('dashboard.pickupFailed'),
         message: res.status === 403
-          ? `Not allowed: marking ${so.so_number} picked up needs ADMIN or the so-full-edit override.`
-          : (data.error || `Could not mark ${so.so_number} picked up (status ${res.status}).`),
+          ? t('dashboard.pickupForbidden', { so: so.so_number })
+          : (data.error || t('dashboard.pickupFailedStatus', {
+            so: so.so_number,
+            status: res.status,
+          })),
       });
       return;
     }
@@ -1055,7 +1068,7 @@ function LocalPickupView({ warehouseId }) {
   }
 
   if (!warehouseId) {
-    return <div style={{ padding: 24, color: 'var(--text-secondary)' }}>Select a warehouse.</div>;
+    return <div style={{ padding: 24, color: 'var(--text-secondary)' }}>{t('dashboard.selectWarehouse')}</div>;
   }
   if (forbidden) {
     return (
@@ -1073,7 +1086,7 @@ function LocalPickupView({ warehouseId }) {
         <input
           className="form-input"
           style={{ width: 280 }}
-          placeholder="Search by customer or order #"
+          placeholder={t('dashboard.searchPickup')}
           value={search}
           onChange={(e) => setSearch(e.target.value)}
         />
@@ -1084,33 +1097,37 @@ function LocalPickupView({ warehouseId }) {
           onChange={(e) => setStatusFilter(e.target.value)}
         >
           {LOCAL_PICKUP_STATUS_OPTIONS.map((o) => (
-            <option key={o.value} value={o.value}>{o.label}</option>
+            <option key={o.value} value={o.value}>{t(o.labelKey)}</option>
           ))}
         </select>
         <span style={{ marginLeft: 'auto', fontSize: 13, color: 'var(--text-secondary)' }}>
-          {loading ? 'Loading…' : `${rows.length} order${rows.length === 1 ? '' : 's'}`}
+          {loading
+            ? t('common.loading')
+            : t(rows.length === 1 ? 'dashboard.orderCountOne' : 'dashboard.orderCountMany', {
+              n: rows.length,
+            })}
         </span>
-        <button className="btn btn-sm" onClick={load} disabled={loading}>Refresh</button>
+        <button className="btn btn-sm" onClick={load} disabled={loading}>{t('common.refresh')}</button>
       </div>
 
       {error && <div className="form-error" style={{ marginBottom: 12 }}>{error}</div>}
       {total > rows.length && (
         <div style={{ fontSize: 12, color: 'var(--text-secondary)', marginBottom: 12 }}>
-          Showing {rows.length} of {total}. Narrow with the status filter or search.
+          {t('dashboard.showingOf', { n: rows.length, total })}
         </div>
       )}
 
       {!loading && rows.length === 0 ? (
-        <p style={{ fontSize: 13, color: 'var(--text-secondary)' }}>No local pickup orders match.</p>
+        <p style={{ fontSize: 13, color: 'var(--text-secondary)' }}>{t('dashboard.noPickupMatch')}</p>
       ) : (
         <table className="data-table">
           <thead>
             <tr>
-              <th>Order #</th>
-              <th>Customer</th>
-              <th>Status</th>
-              <th>Order Date</th>
-              <th style={{ textAlign: 'right' }}>Actions</th>
+              <th>{t('dashboard.orderNumber')}</th>
+              <th>{t('common.customer')}</th>
+              <th>{t('common.status')}</th>
+              <th>{t('dashboard.orderDate')}</th>
+              <th style={{ textAlign: 'right' }}>{t('common.actions')}</th>
             </tr>
           </thead>
           <tbody>
@@ -1132,20 +1149,24 @@ function LocalPickupView({ warehouseId }) {
                       style={{ marginRight: 8 }}
                       onClick={() => setEditing(so)}
                       disabled={!canEdit}
-                      title={canEdit ? 'Edit order' : 'Editing a picked order needs ADMIN or so-full-edit'}
+                      title={t(canEdit
+                        ? 'dashboard.editOrder'
+                        : 'dashboard.editNeedsOverride')}
                     >
-                      Edit
+                      {t('common.edit')}
                     </button>
                     {status === 'SHIPPED' ? (
-                      <span style={{ fontSize: 12, color: '#1f9d55', fontWeight: 600 }}>Picked up &#10003;</span>
+                      <span style={{ fontSize: 12, color: 'var(--success)', fontWeight: 600 }}>{t('dashboard.pickedUp')} &#10003;</span>
                     ) : (
                       <button
                         className="btn btn-sm btn-danger"
                         onClick={() => requestPickup(so)}
                         disabled={shippingId === so.so_id}
-                        title="Mark this order picked up (ships it)"
+                        title={t('dashboard.markPickedUpTooltip')}
                       >
-                        {shippingId === so.so_id ? 'Working…' : 'Picked Up?'}
+                        {shippingId === so.so_id
+                          ? t('dashboard.working')
+                          : t('dashboard.pickedUpQuestion')}
                       </button>
                     )}
                   </td>
@@ -1167,30 +1188,39 @@ function LocalPickupView({ warehouseId }) {
 
       {confirming && (
         <Modal
-          title="Mark picked up?"
+          title={t('dashboard.markPickedUpTitle')}
           onClose={() => (shippingId == null ? setConfirming(null) : null)}
           footer={(
             <>
               <button className="btn" onClick={() => setConfirming(null)} disabled={shippingId != null}>
-                Cancel
+                {t('common.cancel')}
               </button>
               <button
                 className="btn btn-danger"
                 onClick={() => doPickup(confirming)}
                 disabled={shippingId != null}
               >
-                {shippingId != null ? 'Working…' : 'Yes, mark picked up'}
+                {shippingId != null
+                  ? t('dashboard.working')
+                  : t('dashboard.yesMarkPickedUp')}
               </button>
             </>
           )}
         >
           <p style={{ marginTop: 0 }}>
-            Mark order <strong>{confirming.so_number}</strong>
-            {confirming.customer_name ? ` (${confirming.customer_name})` : ''} as picked up?
+            <RichText
+              text={t('dashboard.markOrderConfirm')}
+              values={{
+                so: <strong>{confirming.so_number}</strong>,
+                customer: confirming.customer_name ? ` (${confirming.customer_name})` : '',
+              }}
+            />
           </p>
           <p style={{ color: 'var(--text-secondary)', fontSize: 13, marginBottom: 0 }}>
-            This marks it <strong>SHIPPED</strong> -- it records the handoff and releases the
-            order. It cannot be undone from here.
+            <RichText
+              text={t('dashboard.marksItShipped')}
+              values={{ status: <strong>{t('status.SHIPPED')}</strong> }}
+            />
           </p>
         </Modal>
       )}
@@ -1199,7 +1229,7 @@ function LocalPickupView({ warehouseId }) {
         <Modal
           title={alertMsg.title}
           onClose={() => setAlertMsg(null)}
-          footer={<button className="btn btn-primary" onClick={() => setAlertMsg(null)}>OK</button>}
+          footer={<button className="btn btn-primary" onClick={() => setAlertMsg(null)}>{t('common.ok')}</button>}
         >
           <p style={{ margin: 0 }}>{alertMsg.message}</p>
         </Modal>
@@ -1213,6 +1243,7 @@ function LocalPickupView({ warehouseId }) {
 // header surface (PUT /admin/sales-orders/<id>). Prefills from the list row
 // -- the list already returns every field shown here -- so no extra fetch.
 function LocalPickupEditModal({ so, canEditAll, onClose, onSaved }) {
+  const { t } = useLocale();
   const editable = canEditAll || so.status === 'OPEN';
   const [form, setForm] = useState({
     customer_name: so.customer_name || '',
@@ -1253,53 +1284,53 @@ function LocalPickupEditModal({ so, canEditAll, onClose, onSaved }) {
 
   return (
     <Modal
-      title={`Edit ${so.so_number}`}
+      title={t('dashboard.editTitle', { so: so.so_number })}
       onClose={onClose}
       footer={(
         <>
-          <button className="btn" onClick={onClose}>Cancel</button>
+          <button className="btn" onClick={onClose}>{t('common.cancel')}</button>
           <button className="btn btn-primary" onClick={save} disabled={saving || !editable}>
-            {saving ? 'Saving…' : 'Save'}
+            {saving ? t('common.saving') : t('common.save')}
           </button>
         </>
       )}
     >
       {!editable && (
         <div className="form-error" style={{ marginBottom: 12 }}>
-          This order is {so.status}; editing it needs ADMIN or the so-full-edit override.
+          {t('dashboard.notEditableHint', { status: so.status })}
         </div>
       )}
       {error && <div className="form-error" style={{ marginBottom: 12 }}>{error}</div>}
       <div className="form-group">
-        <label>Customer name</label>
+        <label>{t('dashboard.customerName')}</label>
         <input
           className="form-input" disabled={!editable} value={form.customer_name}
           onChange={(e) => setForm({ ...form, customer_name: e.target.value })}
         />
       </div>
       <div className="form-group">
-        <label>Customer phone</label>
+        <label>{t('dashboard.customerPhone')}</label>
         <input
           className="form-input" disabled={!editable} value={form.customer_phone}
           onChange={(e) => setForm({ ...form, customer_phone: e.target.value })}
         />
       </div>
       <div className="form-group">
-        <label>Ship method</label>
+        <label>{t('dashboard.shipMethod')}</label>
         <input
           className="form-input" disabled={!editable} value={form.ship_method}
           onChange={(e) => setForm({ ...form, ship_method: e.target.value })}
         />
       </div>
       <div className="form-group">
-        <label>Pickup / ship address</label>
+        <label>{t('dashboard.pickupAddress')}</label>
         <input
           className="form-input" disabled={!editable} value={form.ship_address}
           onChange={(e) => setForm({ ...form, ship_address: e.target.value })}
         />
       </div>
       <div className="form-group">
-        <label>Priority</label>
+        <label>{t('dashboard.priority')}</label>
         <input
           type="number" min="0" max="10" className="form-input" disabled={!editable}
           value={form.priority}
@@ -1307,7 +1338,7 @@ function LocalPickupEditModal({ so, canEditAll, onClose, onSaved }) {
         />
       </div>
       <div className="form-group">
-        <label>Memo</label>
+        <label>{t('dashboard.memo')}</label>
         <textarea
           className="form-input" rows={3} disabled={!editable} value={form.memo}
           onChange={(e) => setForm({ ...form, memo: e.target.value })}

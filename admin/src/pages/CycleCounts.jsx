@@ -5,8 +5,10 @@ import DataTable from '../components/DataTable.jsx';
 import PageHeader from '../components/PageHeader.jsx';
 import Modal from '../components/Modal.jsx';
 import StatusTag from '../components/StatusTag.jsx';
+import { useLocale } from '../i18n/locale.jsx';
 
 export default function CycleCounts() {
+  const { t } = useLocale();
   const { warehouseId } = useWarehouse();
   const [counts, setCounts] = useState([]);
   const [showCreate, setShowCreate] = useState(false);
@@ -50,7 +52,7 @@ export default function CycleCounts() {
       warehouse_id: warehouseId,
     });
     if (res?.ok) {
-      setMessage('Cycle count created');
+      setMessage(t('cycleCounts.created'));
       setShowCreate(false);
       loadCounts();
     } else {
@@ -60,51 +62,51 @@ export default function CycleCounts() {
   }
 
   const columns = [
-    { key: 'count_id', label: 'ID', mono: true, render: (r) => `#${r.count_id}` },
-    { key: 'bin_code', label: 'Bin', mono: true },
-    { key: 'status', label: 'Status', render: (r) => <StatusTag status={r.status} /> },
-    { key: 'assigned_to', label: 'Assigned To' },
-    { key: 'lines', label: 'Items', render: (r) => r.lines?.length || 0 },
-    { key: 'variance', label: 'Variances', render: (r) => {
+    { key: 'count_id', labelKey: 'notifications.id', mono: true, render: (r) => `#${r.count_id}` },
+    { key: 'bin_code', labelKey: 'common.bin', mono: true },
+    { key: 'status', labelKey: 'common.status', render: (r) => <StatusTag status={r.status} /> },
+    { key: 'assigned_to', labelKey: 'cycleCounts.assignedTo' },
+    { key: 'lines', labelKey: 'nav.items', render: (r) => r.lines?.length || 0 },
+    { key: 'variance', labelKey: 'cycleCounts.variances', render: (r) => {
       const variances = (r.lines || []).filter((l) => l.variance && l.variance !== 0);
       return variances.length > 0
         ? <span style={{ color: 'var(--copper)', fontWeight: 600 }}>{variances.length}</span>
         : <span style={{ color: 'var(--text-secondary)' }}>0</span>;
     }},
-    { key: 'created_at', label: 'Created', mono: true, render: (r) => r.created_at ? new Date(r.created_at).toLocaleString() : '-' },
+    { key: 'created_at', labelKey: 'salesOrders.created', mono: true, render: (r) => r.created_at ? new Date(r.created_at).toLocaleString() : '-' },
     { key: 'actions', label: '', render: (r) => (
-      <button className="btn btn-sm" onClick={(e) => { e.stopPropagation(); setSelectedCount(r); }}>View</button>
+      <button className="btn btn-sm" onClick={(e) => { e.stopPropagation(); setSelectedCount(r); }}>{t('inboundActivity.view')}</button>
     )},
   ];
 
   return (
     <div>
-      <PageHeader title="Cycle Counts">
-        <button className="btn btn-primary" onClick={openCreate}>New Count</button>
+      <PageHeader title={t('nav.counts')}>
+        <button className="btn btn-primary" onClick={openCreate}>{t('cycleCounts.newCount')}</button>
       </PageHeader>
 
       {message && (
         <div style={{ marginBottom: 12, fontSize: 13, color: 'var(--success)' }}>{message}</div>
       )}
 
-      <DataTable columns={columns} data={counts} emptyMessage="No cycle counts found" />
+      <DataTable columns={columns} data={counts} emptyMessageKey="cycleCounts.empty" />
 
       {/* Create modal */}
       {showCreate && (
         <Modal
-          title="Create Cycle Count"
+          title={t('cycleCounts.createTitle')}
           onClose={() => setShowCreate(false)}
           footer={
             <>
-              <button className="btn" onClick={() => setShowCreate(false)}>Cancel</button>
+              <button className="btn" onClick={() => setShowCreate(false)}>{t('common.cancel')}</button>
               <button className="btn btn-primary" onClick={createCount} disabled={selectedBins.length === 0}>
-                Create Count ({selectedBins.length} bins)
+                {t('cycleCounts.createWithBins', { n: selectedBins.length })}
               </button>
             </>
           }
         >
           <p style={{ fontSize: 13, color: 'var(--text-secondary)', marginBottom: 12 }}>
-            Select bins to count:
+            {t('cycleCounts.selectBins')}
           </p>
           <div style={{ maxHeight: 300, overflow: 'auto' }}>
             {bins.map((bin) => (
@@ -125,17 +127,20 @@ export default function CycleCounts() {
       {/* Detail modal */}
       {selectedCount && (
         <Modal
-          title={`Count #${selectedCount.count_id} - ${selectedCount.bin_code}`}
+          title={t('cycleCounts.countTitle', {
+            id: selectedCount.count_id,
+            bin: selectedCount.bin_code,
+          })}
           onClose={() => setSelectedCount(null)}
-          footer={<button className="btn" onClick={() => setSelectedCount(null)}>Close</button>}
+          footer={<button className="btn" onClick={() => setSelectedCount(null)}>{t('common.close')}</button>}
         >
           <div style={{ marginBottom: 12 }}>
             <div className="detail-grid">
-              <span className="detail-label">Status</span><span><StatusTag status={selectedCount.status} /></span>
-              <span className="detail-label">Assigned To</span><span>{selectedCount.assigned_to || '-'}</span>
-              <span className="detail-label">Created</span><span className="mono">{selectedCount.created_at ? new Date(selectedCount.created_at).toLocaleString() : '-'}</span>
+              <span className="detail-label">{t('common.status')}</span><span><StatusTag status={selectedCount.status} /></span>
+              <span className="detail-label">{t('cycleCounts.assignedTo')}</span><span>{selectedCount.assigned_to || '-'}</span>
+              <span className="detail-label">{t('salesOrders.created')}</span><span className="mono">{selectedCount.created_at ? new Date(selectedCount.created_at).toLocaleString() : '-'}</span>
               {selectedCount.completed_at && (
-                <><span className="detail-label">Completed</span><span className="mono">{new Date(selectedCount.completed_at).toLocaleString()}</span></>
+                <><span className="detail-label">{t('webhooks.colCompleted')}</span><span className="mono">{new Date(selectedCount.completed_at).toLocaleString()}</span></>
               )}
             </div>
           </div>
@@ -144,11 +149,11 @@ export default function CycleCounts() {
             <table style={{ width: '100%', fontSize: 13, borderCollapse: 'collapse' }}>
               <thead>
                 <tr style={{ borderBottom: '1px solid var(--border)' }}>
-                  <th style={{ textAlign: 'left', padding: '6px 8px', fontSize: 11, color: 'var(--text-secondary)', fontWeight: 600 }}>SKU</th>
-                  <th style={{ textAlign: 'left', padding: '6px 8px', fontSize: 11, color: 'var(--text-secondary)', fontWeight: 600 }}>Item</th>
-                  <th style={{ textAlign: 'right', padding: '6px 8px', fontSize: 11, color: 'var(--text-secondary)', fontWeight: 600 }}>Expected</th>
-                  <th style={{ textAlign: 'right', padding: '6px 8px', fontSize: 11, color: 'var(--text-secondary)', fontWeight: 600 }}>Counted</th>
-                  <th style={{ textAlign: 'right', padding: '6px 8px', fontSize: 11, color: 'var(--text-secondary)', fontWeight: 600 }}>Variance</th>
+                  <th style={{ textAlign: 'left', padding: '6px 8px', fontSize: 11, color: 'var(--text-secondary)', fontWeight: 600 }}>{t('common.sku')}</th>
+                  <th style={{ textAlign: 'left', padding: '6px 8px', fontSize: 11, color: 'var(--text-secondary)', fontWeight: 600 }}>{t('common.item')}</th>
+                  <th style={{ textAlign: 'right', padding: '6px 8px', fontSize: 11, color: 'var(--text-secondary)', fontWeight: 600 }}>{t('cycleCounts.expected')}</th>
+                  <th style={{ textAlign: 'right', padding: '6px 8px', fontSize: 11, color: 'var(--text-secondary)', fontWeight: 600 }}>{t('cycleCounts.counted')}</th>
+                  <th style={{ textAlign: 'right', padding: '6px 8px', fontSize: 11, color: 'var(--text-secondary)', fontWeight: 600 }}>{t('purchaseOrders.variance')}</th>
                 </tr>
               </thead>
               <tbody>
@@ -169,7 +174,7 @@ export default function CycleCounts() {
               </tbody>
             </table>
           ) : (
-            <p style={{ fontSize: 13, color: 'var(--text-secondary)' }}>No line items</p>
+            <p style={{ fontSize: 13, color: 'var(--text-secondary)' }}>{t('salesOrders.noLineItems')}</p>
           )}
         </Modal>
       )}

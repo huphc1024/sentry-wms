@@ -4,17 +4,19 @@ import { useAuth } from '../auth.jsx';
 import DataTable from '../components/DataTable.jsx';
 import PageHeader from '../components/PageHeader.jsx';
 import Modal from '../components/Modal.jsx';
+import { useLocale } from '../i18n/locale.jsx';
 
 const ROLES = ['ADMIN', 'USER'];
 
 const ALL_FUNCTIONS = [
-  { key: 'pick', label: 'Pick' },
-  { key: 'pack', label: 'Pack' },
-  { key: 'ship', label: 'Ship' },
-  { key: 'receive', label: 'Receive' },
-  { key: 'putaway', label: 'Put-Away' },
-  { key: 'count', label: 'Count' },
-  { key: 'transfer', label: 'Transfer' },
+  { key: 'pick', labelKey: 'users.fnPick' },
+  { key: 'pack', labelKey: 'users.fnPack' },
+  { key: 'ship', labelKey: 'users.fnShip' },
+  { key: 'receive', labelKey: 'users.fnReceive' },
+  { key: 'putaway', labelKey: 'users.fnPutAway' },
+  { key: 'count', labelKey: 'users.fnCount' },
+  { key: 'transfer', labelKey: 'users.fnTransfer' },
+  { key: 'map', labelKey: 'users.fnMap' },
 ];
 
 // Web-admin page grants (mig 061). Mirrors the sidebar
@@ -22,59 +24,118 @@ const ALL_FUNCTIONS = [
 // api/constants.py ALL_PAGE_KEYS exactly. ADMIN users bypass the
 // permission table server-side, so checking these for an ADMIN is
 // purely cosmetic - the PUT endpoint no-ops for ADMIN targets.
+
+// Operational personas (Phase 6). DB still only has ADMIN|USER; presets
+// fill allowed_functions + page_keys so go-live users match docs/role-matrix.md.
+const ROLE_PRESETS = [
+  {
+    id: 'supervisor',
+    labelKey: 'users.presetSupervisor',
+    role: 'USER',
+    allowed_functions: ALL_FUNCTIONS.map((fn) => fn.key),
+    page_keys: [
+      'dashboard', 'inventory', 'cycle-counts', 'count-approvals',
+      'purchase-orders', 'receiving', 'putaway',
+      'sales-orders', 'backorders', 'fraud', 'picking-tickets', 'picking-batches',
+      'items', 'vendors', 'adjustments',
+      'warehouses', 'bins', 'zones', 'preferred-bins',
+      'pallets', 'expiry', 'vehicle-movements', 'warehouse-simulation',
+      'notifications', 'audit-log',
+    ],
+  },
+  {
+    id: 'picker',
+    labelKey: 'users.presetPicker',
+    role: 'USER',
+    allowed_functions: ['pick', 'pack', 'ship', 'map'],
+    page_keys: ['dashboard', 'inventory', 'warehouse-simulation'],
+  },
+  {
+    id: 'billing_clerk',
+    labelKey: 'users.presetBillingClerk',
+    role: 'USER',
+    allowed_functions: [],
+    page_keys: ['dashboard', 'billing'],
+  },
+  {
+    id: 'receiver',
+    labelKey: 'users.presetReceiver',
+    role: 'USER',
+    allowed_functions: ['receive', 'putaway', 'map'],
+    page_keys: [
+      'dashboard', 'inventory', 'purchase-orders', 'receiving', 'putaway',
+      'pallets', 'vehicle-movements', 'warehouse-simulation',
+    ],
+  },
+];
+
 const PAGE_GROUPS = [
   {
-    label: 'Floor',
+    labelKey: 'nav.floor',
     pages: [
-      { key: 'inventory', label: 'Inventory' },
-      { key: 'cycle-counts', label: 'Cycle Counts' },
-      { key: 'count-approvals', label: 'Count Approvals' },
+      { key: 'dashboard', labelKey: 'nav.dashboard' },
+      { key: 'inventory', labelKey: 'nav.inventory' },
+      { key: 'warehouse-simulation', labelKey: 'users.pageWarehouseSimulation' },
+      { key: 'cycle-counts', labelKey: 'users.pageCycleCounts' },
+      { key: 'count-approvals', labelKey: 'users.pageCountApprovals' },
     ],
   },
   {
-    label: 'Inbound',
+    labelKey: 'nav.inbound',
     pages: [
-      { key: 'purchase-orders', label: 'Purchase Orders' },
-      { key: 'receiving', label: 'Receiving' },
-      { key: 'putaway', label: 'Put-away' },
+      { key: 'purchase-orders', labelKey: 'nav.purchaseOrders' },
+      { key: 'receiving', labelKey: 'nav.receiving' },
+      { key: 'putaway', labelKey: 'nav.putaway' },
     ],
   },
   {
-    label: 'Outbound',
+    labelKey: 'nav.outbound',
     pages: [
-      { key: 'sales-orders', label: 'Sales Orders' },
-      { key: 'fraud', label: 'Fraud' },
-      // picking/packing/shipping retired in favour of the mobile flow;
-      // their page_keys are gone from ALL_PAGE_KEYS so a stale grant
-      // cannot persist past the next permissions save.
+      { key: 'sales-orders', labelKey: 'nav.salesOrders' },
+      { key: 'backorders', labelKey: 'nav.backorders' },
+      { key: 'fraud', labelKey: 'nav.fraud' },
+      { key: 'picking-tickets', labelKey: 'nav.pickingTickets' },
+      { key: 'picking-batches', labelKey: 'nav.pickingBatches' },
+      { key: 'pos-activity', labelKey: 'nav.posActivity' },
     ],
   },
   {
-    label: 'Warehouse',
+    labelKey: 'nav.warehouse',
     pages: [
-      { key: 'items', label: 'Items' },
-      { key: 'vendors', label: 'Vendors' },
-      { key: 'adjustments', label: 'Inventory Adjustments' },
-      { key: 'inter-warehouse-transfers', label: 'Inventory Transfers' },
-      { key: 'transfer-orders', label: 'Transfer Orders' },
-      { key: 'warehouses', label: 'Warehouses' },
-      { key: 'bins', label: 'Bins' },
-      { key: 'zones', label: 'Zones' },
-      { key: 'preferred-bins', label: 'Preferred Bins' },
+      { key: 'items', labelKey: 'nav.items' },
+      { key: 'vendors', labelKey: 'nav.vendors' },
+      { key: 'adjustments', labelKey: 'nav.adjustments' },
+      { key: 'inter-warehouse-transfers', labelKey: 'nav.transfers' },
+      { key: 'transfer-orders', labelKey: 'nav.transferOrders' },
+      { key: 'warehouses', labelKey: 'nav.warehouses' },
+      { key: 'bins', labelKey: 'nav.bins' },
+      { key: 'zones', labelKey: 'nav.zones' },
+      { key: 'preferred-bins', labelKey: 'nav.preferredBins' },
+      { key: 'pallets', labelKey: 'nav.pallets' },
+      { key: 'expiry', labelKey: 'nav.expiry' },
+      { key: 'vehicle-movements', labelKey: 'nav.vehicleMovements' },
     ],
   },
   {
-    label: 'System',
+    labelKey: 'nav.billing',
     pages: [
-      { key: 'users', label: 'Users' },
-      { key: 'api-tokens', label: 'API Tokens' },
-      { key: 'inbound', label: 'Inbound Activity' },
-      { key: 'consumer-groups', label: 'Consumer Groups' },
-      { key: 'webhooks', label: 'Webhooks' },
-      { key: 'audit-log', label: 'Audit Log' },
-      { key: 'imports', label: 'Imports' },
-      { key: 'integrations', label: 'Integrations' },
-      { key: 'settings', label: 'Settings' },
+      { key: 'billing', labelKey: 'users.pageBilling' },
+    ],
+  },
+  {
+    labelKey: 'nav.system',
+    pages: [
+      { key: 'users', labelKey: 'nav.users' },
+      { key: 'api-tokens', labelKey: 'nav.apiTokens' },
+      { key: 'inbound', labelKey: 'nav.inboundActivity' },
+      { key: 'consumer-groups', labelKey: 'nav.consumerGroups' },
+      { key: 'webhooks', labelKey: 'nav.webhooks' },
+      { key: 'channels', labelKey: 'nav.channels' },
+      { key: 'notifications', labelKey: 'nav.notifications' },
+      { key: 'audit-log', labelKey: 'nav.auditLog' },
+      { key: 'imports', labelKey: 'users.pageImports' },
+      { key: 'integrations', labelKey: 'nav.integrations' },
+      { key: 'settings', labelKey: 'nav.settings' },
     ],
   },
   // Override grants (mig 062): feature-flag grants. Not pages in the
@@ -83,12 +144,11 @@ const PAGE_GROUPS = [
   // SO header/line edits past OPEN). Same storage as page grants so
   // the multi-select reuses the existing pagePermissions array.
   {
-    label: 'Overrides',
+    labelKey: 'users.groupOverrides',
     isOverride: true,
-    pages: [      {
-        key: 'so-full-edit',
-        label: 'Full SO edit (past OPEN, incl. source_system + line CRUD)',
-      },
+    pages: [
+      { key: 'so-full-edit', labelKey: 'users.overrideSoFullEdit' },
+      { key: 'warehouse-map-edit', labelKey: 'users.overrideMapEdit' },
     ],
   },
 ];
@@ -96,6 +156,7 @@ const PAGE_GROUPS = [
 const ALL_PAGE_KEYS = PAGE_GROUPS.flatMap((g) => g.pages.map((p) => p.key));
 
 export default function Users() {
+  const { t } = useLocale();
   const { user: currentUser } = useAuth();
   const [users, setUsers] = useState([]);
   const [warehouses, setWarehouses] = useState([]);
@@ -188,6 +249,17 @@ export default function Users() {
     setPagePermissions([]);
   }
 
+  function applyRolePreset(presetId) {
+    const preset = ROLE_PRESETS.find((p) => p.id === presetId);
+    if (!preset) return;
+    setForm((prev) => ({
+      ...prev,
+      role: preset.role,
+      allowed_functions: [...preset.allowed_functions],
+    }));
+    setPagePermissions([...preset.page_keys]);
+  }
+
   async function save() {
     setError('');
     // UpdateUserRequest does not accept `username` (the user_id is in the
@@ -239,7 +311,7 @@ export default function Users() {
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(null);
 
   async function deleteUser(id) {
-    if (id === currentUser?.user_id) { setError('Cannot delete yourself'); return; }
+    if (id === currentUser?.user_id) { setError(t('users.cannotDeleteSelf')); return; }
     setShowDeleteConfirm(id);
   }
 
@@ -306,15 +378,15 @@ export default function Users() {
   }
 
   const columns = [
-    { key: 'username', label: 'Username', mono: true },
-    { key: 'full_name', label: 'Full Name' },
-    { key: 'role', label: 'Role' },
-    { key: 'warehouse_ids', label: 'Warehouses', render: (r) => warehouseCodes(r.warehouse_ids) },
+    { key: 'username', labelKey: 'common.username', mono: true },
+    { key: 'full_name', labelKey: 'common.fullName' },
+    { key: 'role', labelKey: 'common.role' },
+    { key: 'warehouse_ids', labelKey: 'users.warehouses', render: (r) => warehouseCodes(r.warehouse_ids) },
     { key: 'actions', label: '', render: (r) => (
       <div style={{ display: 'flex', gap: 4 }}>
-        <button className="btn btn-sm" onClick={(e) => { e.stopPropagation(); openEdit(r); }} aria-label="Edit" title="Edit">&#9998;</button>
+        <button className="btn btn-sm" onClick={(e) => { e.stopPropagation(); openEdit(r); }} aria-label={t('common.edit')} title={t('common.edit')}>&#9998;</button>
         {r.user_id !== currentUser?.user_id && (
-          <button className="btn btn-sm btn-danger" onClick={(e) => { e.stopPropagation(); deleteUser(r.user_id); }} aria-label="Delete" title="Delete">&#128465;</button>
+          <button className="btn btn-sm btn-danger" onClick={(e) => { e.stopPropagation(); deleteUser(r.user_id); }} aria-label={t('common.delete')} title={t('common.delete')}>&#128465;</button>
         )}
       </div>
     )},
@@ -322,45 +394,64 @@ export default function Users() {
 
   return (
     <div>
-      <PageHeader title="Users">
-        <button className="btn btn-primary" onClick={openCreate}>New User</button>
+      <PageHeader title={t('nav.users')}>
+        <button className="btn btn-primary" onClick={openCreate}>{t('users.newUser')}</button>
       </PageHeader>
-      <DataTable columns={columns} data={users} emptyMessage="No users found" />
+      <DataTable columns={columns} data={users} emptyMessageKey="users.noUsers" />
 
       {showModal && (
-        <Modal title={editId ? 'Edit User' : 'New User'} onClose={() => setShowModal(false)}
+        <Modal title={editId ? t('users.editUser') : t('users.newUser')} onClose={() => setShowModal(false)}
           size="wide"
           footer={
             <>
-              <button className="btn" onClick={() => setShowModal(false)}>Cancel</button>
-              <button className="btn btn-primary" onClick={save}>Save</button>
+              <button className="btn" onClick={() => setShowModal(false)}>{t('common.cancel')}</button>
+              <button className="btn btn-primary" onClick={save}>{t('common.save')}</button>
             </>
           }
         >
           {error && <div className="form-error" style={{ marginBottom: 12 }}>{error}</div>}
           <div className="form-row">
             <div className="form-group">
-              <label>Username</label>
+              <label>{t('common.username')}</label>
               <input className="form-input" value={form.username || ''} onChange={(e) => setForm({ ...form, username: e.target.value })} />
             </div>
             <div className="form-group">
-              <label>Full Name</label>
+              <label>{t('common.fullName')}</label>
               <input className="form-input" value={form.full_name || ''} onChange={(e) => setForm({ ...form, full_name: e.target.value })} />
             </div>
           </div>
           <div className="form-group">
-            <label>{editId ? 'New Password (leave blank to keep current)' : 'Password'}</label>
+            <label>{editId ? t('users.newPasswordHint') : t('common.password')}</label>
             <input className="form-input" type="password" value={form.password || ''} onChange={(e) => setForm({ ...form, password: e.target.value })} />
           </div>
           <div className="form-group">
-            <label>Role</label>
+            <label>{t('common.role')}</label>
             <select className="form-select" value={form.role || ''} onChange={(e) => setForm({ ...form, role: e.target.value })}>
               {ROLES.map((r) => <option key={r} value={r}>{r}</option>)}
             </select>
           </div>
           <div className="form-group">
+            <label>{t('users.applyPreset')}</label>
+            <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8, padding: '8px 0' }}>
+              {ROLE_PRESETS.map((preset) => (
+                <button
+                  key={preset.id}
+                  type="button"
+                  className="btn btn-sm"
+                  onClick={() => applyRolePreset(preset.id)}
+                  title={t('users.presetTooltip')}
+                >
+                  {t(preset.labelKey)}
+                </button>
+              ))}
+            </div>
+            <p style={{ fontSize: 12, color: 'var(--text-secondary)', margin: 0 }}>
+              {t('users.presetNote')}
+            </p>
+          </div>
+          <div className="form-group">
             <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-              <label>Warehouses</label>
+              <label>{t('users.warehouses')}</label>
               {warehouses.length > 0 && (
                 <span style={{ fontSize: 12 }}>
                   <button
@@ -368,7 +459,7 @@ export default function Users() {
                     onClick={selectAllWarehouses}
                     style={{ background: 'none', border: 'none', color: 'var(--accent)', cursor: 'pointer', padding: 0, fontSize: 12 }}
                   >
-                    Select all
+                    {t('users.selectAll')}
                   </button>
                   <span style={{ color: 'var(--text-tertiary)', margin: '0 6px' }}>/</span>
                   <button
@@ -376,7 +467,7 @@ export default function Users() {
                     onClick={clearWarehouses}
                     style={{ background: 'none', border: 'none', color: 'var(--accent)', cursor: 'pointer', padding: 0, fontSize: 12 }}
                   >
-                    Clear
+                    {t('users.clear')}
                   </button>
                 </span>
               )}
@@ -393,19 +484,19 @@ export default function Users() {
                   <span style={{ color: 'var(--text-secondary)' }}>{wh.warehouse_name}</span>
                 </label>
               ))}
-              {warehouses.length === 0 && <span style={{ color: 'var(--text-secondary)' }}>No warehouses found</span>}
+              {warehouses.length === 0 && <span style={{ color: 'var(--text-secondary)' }}>{t('users.noWarehouses')}</span>}
             </div>
           </div>
           <div className="form-group">
             <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-              <label>Mobile Module Access</label>
+              <label>{t('users.mobileModules')}</label>
               <span style={{ fontSize: 12 }}>
                 <button
                   type="button"
                   onClick={selectAllFunctions}
                   style={{ background: 'none', border: 'none', color: 'var(--accent)', cursor: 'pointer', padding: 0, fontSize: 12 }}
                 >
-                  Select all
+                  {t('users.selectAll')}
                 </button>
                 <span style={{ color: 'var(--text-tertiary)', margin: '0 6px' }}>/</span>
                 <button
@@ -413,7 +504,7 @@ export default function Users() {
                   onClick={clearFunctions}
                   style={{ background: 'none', border: 'none', color: 'var(--accent)', cursor: 'pointer', padding: 0, fontSize: 12 }}
                 >
-                  Clear
+                  {t('users.clear')}
                 </button>
               </span>
             </div>
@@ -425,7 +516,7 @@ export default function Users() {
                     checked={(form.allowed_functions || []).includes(fn.key)}
                     onChange={() => toggleFunction(fn.key)}
                   />
-                  {fn.label}
+                  {t(fn.labelKey)}
                 </label>
               ))}
             </div>
@@ -433,14 +524,14 @@ export default function Users() {
 
           <div className="form-group">
             <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-              <label>Web Admin Page Access</label>
+              <label>{t('users.webPages')}</label>
               <span style={{ fontSize: 12 }}>
                 <button
                   type="button"
                   onClick={selectAllPages}
                   style={{ background: 'none', border: 'none', color: 'var(--accent)', cursor: 'pointer', padding: 0, fontSize: 12 }}
                 >
-                  Select all
+                  {t('users.selectAll')}
                 </button>
                 <span style={{ color: 'var(--text-tertiary)', margin: '0 6px' }}>/</span>
                 <button
@@ -448,13 +539,13 @@ export default function Users() {
                   onClick={clearAllPages}
                   style={{ background: 'none', border: 'none', color: 'var(--accent)', cursor: 'pointer', padding: 0, fontSize: 12 }}
                 >
-                  Clear
+                  {t('users.clear')}
                 </button>
               </span>
             </div>
             {form.role === 'ADMIN' ? (
               <p style={{ fontSize: 12, color: 'var(--text-secondary)', padding: '8px 0' }}>
-                ADMIN role bypasses page permissions - full access to every web admin page.
+                {t('users.adminBypass')}
               </p>
             ) : (
               <div style={{
@@ -472,10 +563,10 @@ export default function Users() {
                     ? { padding: 10, borderLeft: '3px solid var(--copper)' }
                     : { padding: 10 };
                   return (
-                    <div key={group.label} className="card" style={cardStyle}>
+                    <div key={group.labelKey} className="card" style={cardStyle}>
                       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 6 }}>
                         <strong style={{ fontSize: 12, textTransform: 'uppercase', letterSpacing: 0.5, color: group.isOverride ? 'var(--copper)' : undefined }}>
-                          {group.label}
+                          {t(group.labelKey)}
                         </strong>
                         <span style={{ fontSize: 11 }}>
                           <button
@@ -483,7 +574,7 @@ export default function Users() {
                             onClick={() => selectAllPagesInGroup(group)}
                             style={{ background: 'none', border: 'none', color: 'var(--accent)', cursor: 'pointer', padding: 0, fontSize: 11 }}
                           >
-                            All
+                            {t('common.all')}
                           </button>
                           <span style={{ color: 'var(--text-tertiary)', margin: '0 4px' }}>/</span>
                           <button
@@ -491,7 +582,7 @@ export default function Users() {
                             onClick={() => clearPagesInGroup(group)}
                             style={{ background: 'none', border: 'none', color: 'var(--accent)', cursor: 'pointer', padding: 0, fontSize: 11 }}
                           >
-                            None
+                            {t('common.none')}
                           </button>
                         </span>
                       </div>
@@ -502,7 +593,7 @@ export default function Users() {
                             checked={pagePermissions.includes(p.key)}
                             onChange={() => togglePagePermission(p.key)}
                           />
-                          {p.label}
+                          {t(p.labelKey)}
                         </label>
                       ))}
                       {grantedCount > 0 && grantedCount < group.pages.length && (
@@ -520,16 +611,16 @@ export default function Users() {
       )}
 
       {showDeleteConfirm && (
-        <Modal title="Delete User" onClose={() => setShowDeleteConfirm(null)}
+        <Modal title={t('users.deleteUser')} onClose={() => setShowDeleteConfirm(null)}
           footer={
             <>
-              <button className="btn" onClick={() => setShowDeleteConfirm(null)}>Cancel</button>
-              <button className="btn btn-danger" onClick={confirmDeleteUser}>Delete</button>
+              <button className="btn" onClick={() => setShowDeleteConfirm(null)}>{t('common.cancel')}</button>
+              <button className="btn btn-danger" onClick={confirmDeleteUser}>{t('common.delete')}</button>
             </>
           }
         >
-          <p style={{ fontSize: 14, marginBottom: 8 }}>Are you sure? This action cannot be undone.</p>
-          <p style={{ fontSize: 13, color: 'var(--text-secondary)' }}>The user and all associated data will be permanently deleted.</p>
+          <p style={{ fontSize: 14, marginBottom: 8 }}>{t('common.areYouSure')}</p>
+          <p style={{ fontSize: 13, color: 'var(--text-secondary)' }}>{t('users.deleteWarning')}</p>
         </Modal>
       )}
     </div>

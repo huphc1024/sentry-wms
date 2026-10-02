@@ -6,6 +6,7 @@ import DataTable from '../components/DataTable.jsx';
 import PageHeader from '../components/PageHeader.jsx';
 import StatusTag from '../components/StatusTag.jsx';
 import { PRINT_BATCH_LIMIT } from './pickingConstants.js';
+import { useLocale } from '../i18n/locale.jsx';
 
 // Statuses that still have something useful to put on a printed
 // picking ticket. SHIPPED/CANCELLED orders are skipped from the
@@ -24,6 +25,7 @@ function openTicketInNewTab(soId) {
 }
 
 export default function PickingTickets() {
+  const { t } = useLocale();
   const { warehouseId } = useWarehouse();
   const [status, setStatus] = useState('OPEN');
   const [orders, setOrders] = useState([]);
@@ -103,7 +105,7 @@ export default function PickingTickets() {
     const matches = data.sales_orders || [];
     const exact = matches.find((o) => o.so_number === term) || matches[0];
     if (!exact) {
-      setLookupError(`No sales order found matching "${term}".`);
+      setLookupError(t('pickingTickets.noMatch', { term }));
       return;
     }
     openTicketInNewTab(exact.so_id);
@@ -137,28 +139,28 @@ export default function PickingTickets() {
   }
 
   const columns = [
-    { key: 'so_number', label: 'SO Number', mono: true, sortable: true },
-    { key: 'customer_name', label: 'Customer', sortable: true },
+    { key: 'so_number', labelKey: 'salesOrders.number', mono: true, sortable: true },
+    { key: 'customer_name', labelKey: 'common.customer', sortable: true },
     {
       key: 'ship_by_date',
-      label: 'Ship By',
+      labelKey: 'salesOrders.shipBy',
       mono: true,
       sortable: true,
       render: (r) => (r.ship_by_date ? formatDateOnly(r.ship_by_date) : '-'),
     },
-    { key: 'ship_method', label: 'Ship Method', sortable: true, render: (r) => r.ship_method || '-' },
+    { key: 'ship_method', labelKey: 'salesOrders.shipMethod', sortable: true, render: (r) => r.ship_method || '-' },
     {
       // Lowest-pick_sequence preferred bin across the SO's line items.
       // Sorting by this column orders the queue in warehouse-walking
       // order so the picker can fill the cart left-to-right and the
       // shipper unpacks in the same order.
       key: 'primary_bin_code',
-      label: 'Bin',
+      labelKey: 'common.bin',
       mono: true,
       sortable: true,
       render: (r) => r.primary_bin_code || '-',
     },
-    { key: 'status', label: 'Status', sortable: true, render: (r) => <StatusTag status={r.status} /> },
+    { key: 'status', labelKey: 'common.status', sortable: true, render: (r) => <StatusTag status={r.status} /> },
     {
       key: 'actions',
       label: '',
@@ -169,7 +171,7 @@ export default function PickingTickets() {
             e.stopPropagation();
             openTicketInNewTab(r.so_id);
           }}
-        >Print Ticket</button>
+        >{t('pickingTickets.printTicket')}</button>
       ),
     },
   ];
@@ -211,20 +213,20 @@ export default function PickingTickets() {
 
   return (
     <div>
-      <PageHeader title="Picking Tickets" />
+      <PageHeader title={t('nav.pickingTickets')} />
 
       <div className="section">
-        <div className="section-title">Find a ticket</div>
+        <div className="section-title">{t('pickingTickets.findTicket')}</div>
         <div style={{ display: 'flex', gap: 8, alignItems: 'center', maxWidth: 520 }}>
           <input
             className="form-input"
             style={{ flex: 1 }}
-            placeholder="Sales order number, e.g. 648415"
+            placeholder={t('pickingTickets.searchPlaceholder')}
             value={search}
             onChange={(e) => setSearch(e.target.value)}
             onKeyDown={onSearchKey}
           />
-          <button className="btn btn-primary" onClick={openTicket}>Open</button>
+          <button className="btn btn-primary" onClick={openTicket}>{t('pickingTickets.open')}</button>
         </div>
         {lookupError && (
           <div className="form-error" style={{ marginTop: 8 }}>{lookupError}</div>
@@ -241,9 +243,9 @@ export default function PickingTickets() {
             marginBottom: 8,
           }}
         >
-          <div className="section-title" style={{ marginBottom: 0 }}>Orders ready to pick</div>
+          <div className="section-title" style={{ marginBottom: 0 }}>{t('pickingTickets.readyToPick')}</div>
           <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
-            <label style={{ fontSize: 13, color: '#555' }}>Status</label>
+            <label style={{ fontSize: 13, color: 'var(--text-secondary)' }}>{t('common.status')}</label>
             <select
               className="form-input"
               style={{ width: 'auto' }}
@@ -251,19 +253,21 @@ export default function PickingTickets() {
               onChange={(e) => setStatus(e.target.value)}
             >
               {STATUS_OPTIONS.map((s) => (
-                <option key={s} value={s}>{s}</option>
+                <option key={s} value={s}>
+                  {s === 'ALL' ? t('common.all') : t(`status.${s}`)}
+                </option>
               ))}
             </select>
             <label style={{
               display: 'flex', alignItems: 'center', gap: 6,
-              fontSize: 13, color: '#555', cursor: 'pointer',
-            }} title="Hide orders whose picking ticket has already been rendered (mig 064 printed_at)">
+              fontSize: 13, color: 'var(--text-secondary)', cursor: 'pointer',
+            }} title={t('pickingTickets.hidePrintedTooltip')}>
               <input
                 type="checkbox"
                 checked={hidePrinted}
                 onChange={(e) => setHidePrinted(e.target.checked)}
               />
-              Hide Printed
+              {t('pickingTickets.hidePrinted')}
             </label>
             <button
               className="btn btn-secondary"
@@ -271,7 +275,7 @@ export default function PickingTickets() {
               disabled={refreshing}
               title="Re-fetch the list from the server (e.g. to pick up just-pushed customer name + shipping address)"
             >
-              {refreshing ? 'Refreshing…' : 'Refresh'}
+              {t(refreshing ? 'pickingTicketPrint.refreshing' : 'common.refresh')}
             </button>
             <button
               className="btn btn-primary"
@@ -279,20 +283,26 @@ export default function PickingTickets() {
               disabled={orders.length === 0}
               title={
                 orders.length > PRINT_BATCH_LIMIT
-                  ? `Queue has ${orders.length}; one tab prints the top ${PRINT_BATCH_LIMIT} in the current sort. Clear them and Print All again for the rest.`
+                  ? t('pickingTickets.batchTooltip', {
+                    queued: orders.length,
+                    limit: PRINT_BATCH_LIMIT,
+                  })
                   : undefined
               }
             >
               {orders.length > PRINT_BATCH_LIMIT
-                ? `Print First ${PRINT_BATCH_LIMIT} (of ${orders.length})`
-                : `Print All (${orders.length})`}
+                ? t('pickingTickets.printFirst', {
+                  limit: PRINT_BATCH_LIMIT,
+                  total: orders.length,
+                })
+                : t('pickingTickets.printAll', { total: orders.length })}
             </button>
           </div>
         </div>
         <DataTable
           columns={columns}
           data={sortedOrders}
-          emptyMessage="No orders ready for picking"
+          emptyMessageKey="pickingTickets.empty"
           onRowClick={(r) => openTicketInNewTab(r.so_id)}
           sortKey={sortKey}
           sortDir={sortDir}

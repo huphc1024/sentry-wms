@@ -1,16 +1,18 @@
 import { NavLink, Outlet, Navigate, useLocation } from 'react-router-dom';
 import { useAuth } from '../auth.jsx';
+import { useLocale } from '../i18n/locale.jsx';
 
 // Returns consolidates the post-fulfillment goods-in + money-back views under a
 // single /returns parent with a tab strip, mirroring /data. The RMA (return SOs)
 // and Refunds (credit-memo SOs) sub-pages render as Outlet children and keep
 // their own PageHeader + state. Both gate on the sales-orders page key today.
 const TABS = [
-  { to: 'rma', label: 'RMA', pageKey: 'sales-orders' },
-  { to: 'refunds', label: 'Refunds', pageKey: 'sales-orders' },
+  { to: 'rma', labelKey: 'returns.tabRma', pageKey: 'sales-orders' },
+  { to: 'refunds', labelKey: 'returns.tabRefunds', pageKey: 'sales-orders' },
 ];
 
 export default function Returns() {
+  const { t } = useLocale();
   const { user } = useAuth();
   const location = useLocation();
   const allowedPages = user?.allowed_pages;
@@ -24,7 +26,7 @@ export default function Returns() {
     if (visibleTabs.length === 0) {
       return (
         <div style={{ padding: 24, color: 'var(--text-secondary)' }}>
-          No returns pages granted to your account.
+          {t('returns.noPagesGranted')}
         </div>
       );
     }
@@ -40,7 +42,7 @@ export default function Returns() {
             to={tab.to}
             className={({ isActive }) => `data-tab${isActive ? ' active' : ''}`}
           >
-            {tab.label}
+            {t(tab.labelKey)}
           </NavLink>
         ))}
       </div>

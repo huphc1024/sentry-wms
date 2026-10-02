@@ -4,11 +4,12 @@ import { catalogEntry } from '../utils/errorCatalog.js';
 import DataTable from '../components/DataTable.jsx';
 import PageHeader from '../components/PageHeader.jsx';
 import Modal from '../components/Modal.jsx';
+import { useLocale } from '../i18n/locale.jsx';
 
 const STATUS_BADGE = {
-  active: { label: 'active', color: 'var(--text-secondary)' },
-  paused: { label: 'paused', color: '#c49100' },
-  revoked: { label: 'revoked', color: 'var(--danger)' },
+  active: { labelKey: 'webhooks.statusActive', color: 'var(--text-secondary)' },
+  paused: { labelKey: 'webhooks.statusPaused', color: 'var(--warning)' },
+  revoked: { labelKey: 'webhooks.statusRevoked', color: 'var(--danger)' },
 };
 
 function Badge({ label, color }) {
@@ -33,6 +34,7 @@ function Badge({ label, color }) {
 // renderLabel / keyOf shape is just different enough that a shared
 // component would need three configuration props for each call site.
 function ScopeCheckboxList({ options, value, onChange, renderLabel, keyOf }) {
+  const { t } = useLocale();
   const selected = new Set(value);
   const allKeys = options.map(keyOf);
   const allSelected = allKeys.length > 0 && allKeys.every((k) => selected.has(k));
@@ -48,13 +50,13 @@ function ScopeCheckboxList({ options, value, onChange, renderLabel, keyOf }) {
     <div>
       <div style={{ display: 'flex', gap: 8, marginBottom: 6 }}>
         <button type="button" className="btn btn-sm" onClick={selectAll} disabled={allSelected}>
-          All
+          {t('common.all')}
         </button>
         <button type="button" className="btn btn-sm" onClick={selectNone} disabled={selected.size === 0}>
-          None
+          {t('common.none')}
         </button>
         <span style={{ fontSize: 12, color: 'var(--text-secondary)', alignSelf: 'center' }}>
-          {selected.size} / {allKeys.length} selected
+          {t('webhooks.selectedCount', { n: selected.size, total: allKeys.length })}
         </span>
       </div>
       <div
@@ -67,7 +69,7 @@ function ScopeCheckboxList({ options, value, onChange, renderLabel, keyOf }) {
         }}
       >
         {options.length === 0 ? (
-          <span style={{ fontSize: 12, color: 'var(--text-secondary)' }}>No options available.</span>
+          <span style={{ fontSize: 12, color: 'var(--text-secondary)' }}>{t('webhooks.noOptions')}</span>
         ) : (
           options.map((opt) => {
             const k = keyOf(opt);
@@ -129,6 +131,7 @@ const EMPTY_REPLAY_FILTER = {
 };
 
 function DlqPanel({ subscription, onClose }) {
+  const { t } = useLocale();
   const [rows, setRows] = useState([]);
   const [total, setTotal] = useState(0);
   const [limit, setLimit] = useState(50);
@@ -220,7 +223,7 @@ function DlqPanel({ subscription, onClose }) {
       });
       return;
     }
-    setReplayError({ kind: 'other', detail: body?.detail || body?.error || 'Failed to replay batch' });
+    setReplayError({ kind: 'other', detail: body?.detail || body?.error || t('webhooks.replayFailed') });
   }
 
   function closeReplayBatch() {
@@ -234,15 +237,15 @@ function DlqPanel({ subscription, onClose }) {
   const pageEnd = Math.min(offset + limit, total);
 
   const dlqColumns = [
-    { key: 'delivery_id', label: 'Delivery', render: (r) => <span className="mono">{r.delivery_id}</span> },
-    { key: 'event_id', label: 'Event', render: (r) => <span className="mono">{r.event_id ?? '-'}</span> },
-    { key: 'event_type', label: 'Type', render: (r) => <span className="mono" style={{ fontSize: 12 }}>{r.event?.event_type || '-'}</span> },
-    { key: 'attempt_number', label: 'Attempt', render: (r) => r.attempt_number },
-    { key: 'http_status', label: 'HTTP', render: (r) => r.http_status ?? '-' },
-    { key: 'error_kind', label: 'Error', render: (r) => <span className="mono" style={{ fontSize: 12 }}>{r.error_kind || '-'}</span> },
+    { key: 'delivery_id', labelKey: 'webhooks.colDelivery', render: (r) => <span className="mono">{r.delivery_id}</span> },
+    { key: 'event_id', labelKey: 'webhooks.colEvent', render: (r) => <span className="mono">{r.event_id ?? '-'}</span> },
+    { key: 'event_type', labelKey: 'common.type', render: (r) => <span className="mono" style={{ fontSize: 12 }}>{r.event?.event_type || '-'}</span> },
+    { key: 'attempt_number', labelKey: 'webhooks.colAttempt', render: (r) => r.attempt_number },
+    { key: 'http_status', labelKey: 'webhooks.colHttp', render: (r) => r.http_status ?? '-' },
+    { key: 'error_kind', labelKey: 'webhooks.colError', render: (r) => <span className="mono" style={{ fontSize: 12 }}>{r.error_kind || '-'}</span> },
     {
       key: 'error_detail',
-      label: 'Detail',
+      labelKey: 'webhooks.colDetail',
       render: (r) => {
         // Both columns now read from the server-owned catalog. The
         // hover tooltip enriches with the longer description from the
@@ -262,16 +265,16 @@ function DlqPanel({ subscription, onClose }) {
     },
     {
       key: 'completed_at',
-      label: 'Completed',
+      labelKey: 'webhooks.colCompleted',
       render: (r) => r.completed_at ? new Date(r.completed_at).toLocaleString() : '-',
     },
-    { key: 'gen', label: 'Gen', render: (r) => r.secret_generation },
+    { key: 'gen', labelKey: 'webhooks.colGen', render: (r) => r.secret_generation },
     {
       key: 'actions',
       label: '',
       render: (r) => (
-        <button className="btn btn-sm" onClick={() => replaySingle(r.delivery_id)} title="Replay">
-          Replay
+        <button className="btn btn-sm" onClick={() => replaySingle(r.delivery_id)} title={t('webhooks.replay')}>
+          {t('webhooks.replay')}
         </button>
       ),
     },
@@ -279,20 +282,24 @@ function DlqPanel({ subscription, onClose }) {
 
   return (
     <Modal
-      title={`DLQ - ${subscription.display_name}`}
+      title={t('webhooks.dlqTitle', { name: subscription.display_name })}
       onClose={onClose}
       footer={
         <>
-          <button className="btn" onClick={onClose}>Close</button>
+          <button className="btn" onClick={onClose}>{t('common.close')}</button>
         </>
       }
     >
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
         <div style={{ fontSize: 13 }}>
-          {loading ? 'Loading…' : (total === 0 ? 'No DLQ rows' : `${pageStart}-${pageEnd} of ${total}`)}
+          {loading
+            ? t('common.loading')
+            : (total === 0
+              ? t('webhooks.noDlqRows')
+              : t('table.range', { from: pageStart, to: pageEnd, total }))}
         </div>
         <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
-          <label style={{ fontSize: 12, color: 'var(--text-secondary)' }}>Page size</label>
+          <label style={{ fontSize: 12, color: 'var(--text-secondary)' }}>{t('webhooks.pageSize')}</label>
           <select
             className="form-input"
             style={{ width: 80, padding: '2px 6px' }}
@@ -306,22 +313,24 @@ function DlqPanel({ subscription, onClose }) {
             disabled={offset === 0}
             onClick={() => setOffset(Math.max(0, offset - limit))}
           >
-            Prev
+            {t('table.prev')}
           </button>
           <button
             className="btn btn-sm"
             disabled={offset + limit >= total}
             onClick={() => setOffset(offset + limit)}
           >
-            Next
+            {t('table.next')}
           </button>
           <button
             className="btn btn-primary btn-sm"
             onClick={() => setShowReplayBatch(true)}
             disabled={subscription.status === 'revoked'}
-            title={subscription.status === 'revoked' ? 'Subscription is revoked' : 'Replay batch'}
+            title={subscription.status === 'revoked'
+              ? t('webhooks.subscriptionRevoked')
+              : t('webhooks.replayBatch')}
           >
-            Replay batch
+            {t('webhooks.replayBatch')}
           </button>
         </div>
       </div>
@@ -331,23 +340,23 @@ function DlqPanel({ subscription, onClose }) {
       <DataTable
         columns={dlqColumns}
         data={rows}
-        emptyMessage={loading ? 'Loading…' : 'No DLQ rows for this subscription'}
+        emptyMessageKey={loading ? 'common.loading' : 'webhooks.noDlqForSub'}
       />
 
       {showReplayBatch && (
         <Modal
-          title="Replay batch"
+          title={t('webhooks.replayBatch')}
           onClose={closeReplayBatch}
           footer={
             <>
-              <button className="btn" onClick={closeReplayBatch}>Close</button>
+              <button className="btn" onClick={closeReplayBatch}>{t('common.close')}</button>
               {replayError?.kind === 'hard_cap' ? (
                 <button
                   className="btn btn-primary"
                   style={{ background: 'var(--copper)' }}
                   onClick={() => submitReplayBatch(true)}
                 >
-                  Acknowledge and replay {replayError.impact_count}
+                  {t('webhooks.ackAndReplay', { n: replayError.impact_count })}
                 </button>
               ) : (
                 <button
@@ -355,14 +364,14 @@ function DlqPanel({ subscription, onClose }) {
                   onClick={() => submitReplayBatch(false)}
                   disabled={replayResult !== null}
                 >
-                  Replay matching deliveries
+                  {t('webhooks.replayMatching')}
                 </button>
               )}
             </>
           }
         >
           <div className="form-group">
-            <label>Status</label>
+            <label>{t('common.status')}</label>
             <select
               className="form-input"
               value={replayFilter.status}
@@ -371,12 +380,12 @@ function DlqPanel({ subscription, onClose }) {
               {REPLAY_STATUS_OPTIONS.map((s) => <option key={s} value={s}>{s}</option>)}
             </select>
             <div style={{ fontSize: 12, color: 'var(--text-secondary)', marginTop: 4 }}>
-              Source bucket the batch reads from. Default dlq.
+              {t('webhooks.sourceBucketHint')}
             </div>
           </div>
 
           <div className="form-group">
-            <label>Event type (optional)</label>
+            <label>{t('webhooks.eventTypeOptional')}</label>
             <input
               className="form-input"
               value={replayFilter.event_type}
@@ -386,7 +395,7 @@ function DlqPanel({ subscription, onClose }) {
           </div>
 
           <div className="form-group">
-            <label>Warehouse ID (optional)</label>
+            <label>{t('webhooks.warehouseIdOptional')}</label>
             <input
               className="form-input"
               type="number"
@@ -398,7 +407,7 @@ function DlqPanel({ subscription, onClose }) {
 
           <div style={{ display: 'flex', gap: 8 }}>
             <div className="form-group" style={{ flex: 1 }}>
-              <label>Completed from (optional)</label>
+              <label>{t('webhooks.completedFromOptional')}</label>
               <input
                 className="form-input"
                 type="datetime-local"
@@ -407,7 +416,7 @@ function DlqPanel({ subscription, onClose }) {
               />
             </div>
             <div className="form-group" style={{ flex: 1 }}>
-              <label>Completed to (optional)</label>
+              <label>{t('webhooks.completedToOptional')}</label>
               <input
                 className="form-input"
                 type="datetime-local"
@@ -420,14 +429,17 @@ function DlqPanel({ subscription, onClose }) {
           {replayError?.kind === 'hard_cap' && (
             <div className="form-error" style={{ marginTop: 12 }}>
               <div style={{ fontWeight: 600 }}>
-                Matched {replayError.impact_count} deliveries, above the {replayError.hard_cap} hard cap.
+                {t('webhooks.hardCapHit', {
+                  n: replayError.impact_count,
+                  cap: replayError.hard_cap,
+                })}
               </div>
               <div style={{ marginTop: 4, fontSize: 12 }}>{replayError.detail}</div>
             </div>
           )}
           {replayError?.kind === 'throttled' && (
             <div className="form-error" style={{ marginTop: 12 }}>
-              Throttled. Try again in {replayError.seconds_until_retry}s.
+              {t('webhooks.throttled', { s: replayError.seconds_until_retry })}
             </div>
           )}
           {replayError?.kind === 'other' && (
@@ -438,11 +450,13 @@ function DlqPanel({ subscription, onClose }) {
           {replayResult && (
             <div style={{ marginTop: 12, padding: 12, background: 'var(--surface-muted)', borderRadius: 4 }}>
               <div style={{ fontWeight: 600, fontSize: 13 }}>
-                Replayed {replayResult.replayed_count} deliver{replayResult.replayed_count === 1 ? 'y' : 'ies'}.
+                {t(replayResult.replayed_count === 1
+                  ? 'webhooks.replayedOne'
+                  : 'webhooks.replayedMany', { n: replayResult.replayed_count })}
               </div>
               {replayResult.impact_count !== replayResult.replayed_count && (
                 <div style={{ fontSize: 12, color: 'var(--text-secondary)', marginTop: 4 }}>
-                  Server-computed impact: {replayResult.impact_count}.
+                  {t('webhooks.serverImpact', { n: replayResult.impact_count })}
                 </div>
               )}
             </div>
@@ -461,6 +475,7 @@ function formatMs(v) {
 }
 
 function WebhookErrorsPanel({ webhooks, onClose }) {
+  const { t } = useLocale();
   const [rows, setRows] = useState([]);
   const [total, setTotal] = useState(0);
   const [errorKinds, setErrorKinds] = useState([]);
@@ -514,9 +529,9 @@ function WebhookErrorsPanel({ webhooks, onClose }) {
 
   return (
     <Modal
-      title="Webhook errors"
+      title={t('webhooks.errorsTitle')}
       onClose={onClose}
-      footer={<button className="btn" onClick={onClose}>Close</button>}
+      footer={<button className="btn" onClick={onClose}>{t('common.close')}</button>}
     >
       <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginBottom: 12 }}>
         <select
@@ -525,7 +540,7 @@ function WebhookErrorsPanel({ webhooks, onClose }) {
           value={filterSubscription}
           onChange={(e) => { setFilterSubscription(e.target.value); setErrorsOffset(0); }}
         >
-          <option value="">All subscriptions</option>
+          <option value="">{t('webhooks.allSubscriptions')}</option>
           {webhooks.map((w) => (
             <option key={w.subscription_id} value={w.subscription_id}>
               {w.display_name}
@@ -538,7 +553,7 @@ function WebhookErrorsPanel({ webhooks, onClose }) {
           value={filterErrorKind}
           onChange={(e) => { setFilterErrorKind(e.target.value); setErrorsOffset(0); }}
         >
-          <option value="">All error kinds</option>
+          <option value="">{t('webhooks.allErrorKinds')}</option>
           {errorKinds.map((k) => <option key={k} value={k}>{k}</option>)}
         </select>
         <input
@@ -547,7 +562,7 @@ function WebhookErrorsPanel({ webhooks, onClose }) {
           style={{ width: 200 }}
           value={filterFrom}
           onChange={(e) => { setFilterFrom(e.target.value); setErrorsOffset(0); }}
-          placeholder="From"
+          placeholder={t('webhooks.from')}
         />
         <input
           type="datetime-local"
@@ -555,9 +570,9 @@ function WebhookErrorsPanel({ webhooks, onClose }) {
           style={{ width: 200 }}
           value={filterTo}
           onChange={(e) => { setFilterTo(e.target.value); setErrorsOffset(0); }}
-          placeholder="To"
+          placeholder={t('webhooks.to')}
         />
-        <button className="btn btn-sm" onClick={clearFilters}>Clear</button>
+        <button className="btn btn-sm" onClick={clearFilters}>{t('webhooks.clearFilters')}</button>
       </div>
 
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
@@ -570,14 +585,14 @@ function WebhookErrorsPanel({ webhooks, onClose }) {
             disabled={offset === 0}
             onClick={() => setErrorsOffset(Math.max(0, offset - limit))}
           >
-            Prev
+            {t('table.prev')}
           </button>
           <button
             className="btn btn-sm"
             disabled={offset + limit >= total}
             onClick={() => setErrorsOffset(offset + limit)}
           >
-            Next
+            {t('table.next')}
           </button>
         </div>
       </div>
@@ -588,19 +603,19 @@ function WebhookErrorsPanel({ webhooks, onClose }) {
         <thead>
           <tr style={{ borderBottom: '1px solid var(--border)', textAlign: 'left' }}>
             <th style={{ padding: 6 }}></th>
-            <th style={{ padding: 6 }}>Subscription</th>
-            <th style={{ padding: 6 }}>Delivery</th>
-            <th style={{ padding: 6 }}>Kind</th>
-            <th style={{ padding: 6 }}>HTTP</th>
-            <th style={{ padding: 6 }}>Completed</th>
-            <th style={{ padding: 6 }}>Short message</th>
+            <th style={{ padding: 6 }}>{t('webhooks.subscription')}</th>
+            <th style={{ padding: 6 }}>{t('webhooks.colDelivery')}</th>
+            <th style={{ padding: 6 }}>{t('webhooks.kind')}</th>
+            <th style={{ padding: 6 }}>{t('webhooks.colHttp')}</th>
+            <th style={{ padding: 6 }}>{t('webhooks.colCompleted')}</th>
+            <th style={{ padding: 6 }}>{t('webhooks.shortMessage')}</th>
           </tr>
         </thead>
         <tbody>
           {rows.length === 0 && !loading && (
             <tr>
               <td colSpan="7" style={{ padding: 12, color: 'var(--text-secondary)' }}>
-                No matching error rows.
+                {t('webhooks.noMatchingErrors')}
               </td>
             </tr>
           )}
@@ -626,21 +641,21 @@ function WebhookErrorsPanel({ webhooks, onClose }) {
                     <td colSpan="7" style={{ padding: 12 }}>
                       <div style={{ marginBottom: 8 }}>
                         <div style={{ fontSize: 11, color: 'var(--text-secondary)', textTransform: 'uppercase' }}>
-                          What happened
+                          {t('webhooks.whatHappened')}
                         </div>
                         <div style={{ fontSize: 13, marginTop: 2 }}>{r.description}</div>
                       </div>
                       <div style={{ marginBottom: 8 }}>
                         <div style={{ fontSize: 11, color: 'var(--text-secondary)', textTransform: 'uppercase' }}>
-                          Triage hint
+                          {t('webhooks.triageHint')}
                         </div>
                         <div style={{ fontSize: 13, marginTop: 2 }}>{r.triage_hint}</div>
                       </div>
                       <div style={{ display: 'flex', gap: 24, fontSize: 12, color: 'var(--text-secondary)' }}>
-                        <span>Connector: <span className="mono">{r.connector_id}</span></span>
-                        <span>Event: <span className="mono">{r.event_id ?? '-'}</span></span>
-                        <span>Attempt: {r.attempt_number}</span>
-                        <span>Status: {r.status}</span>
+                        <span>{t('webhooks.connector')}: <span className="mono">{r.connector_id}</span></span>
+                        <span>{t('webhooks.colEvent')}: <span className="mono">{r.event_id ?? '-'}</span></span>
+                        <span>{t('webhooks.colAttempt')}: {r.attempt_number}</span>
+                        <span>{t('common.status')}: {r.status}</span>
                       </div>
                     </td>
                   </tr>
@@ -655,6 +670,7 @@ function WebhookErrorsPanel({ webhooks, onClose }) {
 }
 
 function StatsPanel({ subscription, onClose }) {
+  const { t } = useLocale();
   const [window, setStatsWindow] = useState('24h');
   const [stats, setStats] = useState(null);
   const [loading, setLoading] = useState(true);
@@ -682,23 +698,23 @@ function StatsPanel({ subscription, onClose }) {
   }, [subscription.subscription_id, window]);
 
   const counters = [
-    { label: 'Attempts', key: 'attempts_total' },
-    { label: 'Succeeded', key: 'succeeded' },
-    { label: 'Failed', key: 'failed' },
-    { label: 'DLQ', key: 'dlq' },
-    { label: 'In flight', key: 'in_flight' },
-    { label: 'Pending', key: 'pending' },
+    { labelKey: 'webhooks.statAttempts', key: 'attempts_total' },
+    { labelKey: 'webhooks.statSucceeded', key: 'succeeded' },
+    { labelKey: 'webhooks.statFailed', key: 'failed' },
+    { labelKey: 'webhooks.statDlq', key: 'dlq' },
+    { labelKey: 'webhooks.statInFlight', key: 'in_flight' },
+    { labelKey: 'webhooks.statPending', key: 'pending' },
   ];
 
   return (
     <Modal
-      title={`Stats - ${subscription.display_name}`}
+      title={t('webhooks.statsTitle', { name: subscription.display_name })}
       onClose={onClose}
-      footer={<button className="btn" onClick={onClose}>Close</button>}
+      footer={<button className="btn" onClick={onClose}>{t('common.close')}</button>}
     >
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
         <div style={{ fontSize: 12, color: 'var(--text-secondary)' }}>
-          Server caches for 30s; switch windows to force a re-read.
+          {t('webhooks.cacheNote')}
         </div>
         <div style={{ display: 'flex', gap: 4 }}>
           {STATS_WINDOW_OPTIONS.map((w) => (
@@ -716,7 +732,7 @@ function StatsPanel({ subscription, onClose }) {
       {panelError && <div className="form-error" style={{ marginBottom: 12 }}>{panelError}</div>}
 
       {loading && !stats && (
-        <div style={{ fontSize: 13, color: 'var(--text-secondary)' }}>Loading…</div>
+        <div style={{ fontSize: 13, color: 'var(--text-secondary)' }}>{t('common.loading')}</div>
       )}
 
       {stats && (
@@ -744,7 +760,7 @@ function StatsPanel({ subscription, onClose }) {
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: 12, marginBottom: 16 }}>
             <div style={{ border: '1px solid var(--border)', borderRadius: 4, padding: 12 }}>
               <div style={{ fontSize: 11, color: 'var(--text-secondary)', textTransform: 'uppercase' }}>
-                Success rate
+                {t('webhooks.successRate')}
               </div>
               <div className="mono" style={{ fontSize: 20, fontWeight: 600, marginTop: 4 }}>
                 {formatRate(stats.success_rate)}
@@ -752,7 +768,7 @@ function StatsPanel({ subscription, onClose }) {
             </div>
             <div style={{ border: '1px solid var(--border)', borderRadius: 4, padding: 12 }}>
               <div style={{ fontSize: 11, color: 'var(--text-secondary)', textTransform: 'uppercase' }}>
-                Current lag (events)
+                {t('webhooks.currentLag')}
               </div>
               <div className="mono" style={{ fontSize: 20, fontWeight: 600, marginTop: 4 }}>
                 {stats.current_lag ?? 0}
@@ -762,7 +778,7 @@ function StatsPanel({ subscription, onClose }) {
 
           <div style={{ border: '1px solid var(--border)', borderRadius: 4, padding: 12, marginBottom: 16 }}>
             <div style={{ fontSize: 11, color: 'var(--text-secondary)', textTransform: 'uppercase', marginBottom: 8 }}>
-              Response time (succeeded only)
+              {t('webhooks.responseTime')}
             </div>
             <div style={{ display: 'flex', gap: 24 }}>
               <div>
@@ -788,10 +804,10 @@ function StatsPanel({ subscription, onClose }) {
 
           <div style={{ border: '1px solid var(--border)', borderRadius: 4, padding: 12, marginBottom: 16 }}>
             <div style={{ fontSize: 11, color: 'var(--text-secondary)', textTransform: 'uppercase', marginBottom: 8 }}>
-              Top error kinds
+              {t('webhooks.topErrorKinds')}
             </div>
             {(stats.top_error_kinds || []).length === 0 ? (
-              <div style={{ fontSize: 13, color: 'var(--text-secondary)' }}>No errors in window.</div>
+              <div style={{ fontSize: 13, color: 'var(--text-secondary)' }}>{t('webhooks.noErrorsInWindow')}</div>
             ) : (
               <table style={{ width: '100%', fontSize: 13 }}>
                 <tbody>
@@ -807,7 +823,10 @@ function StatsPanel({ subscription, onClose }) {
           </div>
 
           <div style={{ fontSize: 12, color: 'var(--text-secondary)' }}>
-            Window {stats.window}. Generated at {new Date(stats.generated_at * 1000).toLocaleString()}.
+            {t('webhooks.windowGenerated', {
+              window: stats.window,
+              at: new Date(stats.generated_at * 1000).toLocaleString(),
+            })}
           </div>
         </>
       )}
@@ -833,6 +852,7 @@ function formatRate(rate) {
 }
 
 export default function Webhooks() {
+  const { t } = useLocale();
   const [webhooks, setWebhooks] = useState([]);
   const [loading, setLoading] = useState(true);
   const [pageError, setPageError] = useState('');
@@ -921,9 +941,9 @@ export default function Webhooks() {
 
   async function submitCreate() {
     setCreateError('');
-    if (!form.display_name.trim()) { setCreateError('Display name is required'); return; }
-    if (!form.connector_id) { setCreateError('Connector is required'); return; }
-    if (!form.delivery_url.trim()) { setCreateError('Delivery URL is required'); return; }
+    if (!form.display_name.trim()) { setCreateError(t('webhooks.displayNameRequired')); return; }
+    if (!form.connector_id) { setCreateError(t('webhooks.connectorRequired')); return; }
+    if (!form.delivery_url.trim()) { setCreateError(t('webhooks.deliveryUrlRequired')); return; }
     const res = await api.post('/admin/webhooks', buildPayload());
     const body = await res?.json();
     if (res?.status === 409 && body?.error === 'url_reuse_tombstone') {
@@ -1020,8 +1040,8 @@ export default function Webhooks() {
 
   async function submitEdit() {
     if (!editing || !editForm) return;
-    if (!editForm.display_name.trim()) { setEditError('Display name is required'); return; }
-    if (!editForm.delivery_url.trim()) { setEditError('Delivery URL is required'); return; }
+    if (!editForm.display_name.trim()) { setEditError(t('webhooks.displayNameRequired')); return; }
+    if (!editForm.delivery_url.trim()) { setEditError(t('webhooks.deliveryUrlRequired')); return; }
     // PATCH accepts only the keys the admin actually mutated; sending
     // the full form is fine because the backend short-circuits when
     // the supplied value matches the persisted one (no audit row, no
@@ -1054,7 +1074,9 @@ export default function Webhooks() {
       load();
     } else {
       const body = await res?.json();
-      setPageError(body?.error || `Failed to ${next === 'paused' ? 'pause' : 'resume'} webhook`);
+      setPageError(body?.error || t(next === 'paused'
+        ? 'webhooks.pauseFailed'
+        : 'webhooks.resumeFailed'));
     }
   }
 
@@ -1113,36 +1135,36 @@ export default function Webhooks() {
   const editHttpAttempt = (editForm?.delivery_url || '').trim().toLowerCase().startsWith('http://');
 
   const columns = [
-    { key: 'display_name', label: 'Name' },
-    { key: 'connector_id', label: 'Connector', render: (r) => <span className="mono">{r.connector_id}</span> },
+    { key: 'display_name', labelKey: 'common.name' },
+    { key: 'connector_id', labelKey: 'webhooks.connector', render: (r) => <span className="mono">{r.connector_id}</span> },
     {
       key: 'status',
-      label: 'Status',
+      labelKey: 'common.status',
       render: (r) => {
         const b = STATUS_BADGE[r.status];
-        return b ? <Badge label={b.label} color={b.color} /> : r.status;
+        return b ? <Badge label={t(b.labelKey)} color={b.color} /> : r.status;
       },
     },
     {
       key: 'pause_reason',
-      label: 'Pause reason',
+      labelKey: 'webhooks.pauseReason',
       render: (r) => r.pause_reason
         ? <span className="mono" style={{ fontSize: 12 }}>{r.pause_reason}</span>
         : <span style={{ color: 'var(--text-secondary)' }}>-</span>,
     },
     {
       key: 'success_rate_24h',
-      label: 'Success (24h)',
+      labelKey: 'webhooks.success24h',
       render: (r) => formatRate(r.stats?.success_rate_24h),
     },
     {
       key: 'pending_count',
-      label: 'Pending',
+      labelKey: 'webhooks.statPending',
       render: (r) => <span className="mono">{r.stats?.pending_count ?? 0}</span>,
     },
     {
       key: 'delivery_url',
-      label: 'URL',
+      labelKey: 'webhooks.url',
       render: (r) => (
         <span className="mono" style={{ fontSize: 12, wordBreak: 'break-all' }}>
           {r.delivery_url}
@@ -1158,53 +1180,53 @@ export default function Webhooks() {
             className="btn btn-sm"
             onClick={(e) => { e.stopPropagation(); openEdit(r); }}
             disabled={r.status === 'revoked'}
-            title="Edit"
+            title={t('common.edit')}
           >
-            Edit
+            {t('common.edit')}
           </button>
           <button
             className="btn btn-sm"
             onClick={(e) => { e.stopPropagation(); togglePause(r); }}
             disabled={r.status === 'revoked'}
-            title={r.status === 'active' ? 'Pause' : 'Resume'}
+            title={t(r.status === 'active' ? 'webhooks.pause' : 'webhooks.resume')}
           >
-            {r.status === 'active' ? 'Pause' : 'Resume'}
+            {t(r.status === 'active' ? 'webhooks.pause' : 'webhooks.resume')}
           </button>
           <button
             className="btn btn-sm"
             onClick={(e) => { e.stopPropagation(); setConfirmRotate(r); }}
             disabled={r.status === 'revoked'}
-            title="Rotate secret"
+            title={t('webhooks.rotateSecret')}
           >
-            Rotate
+            {t('webhooks.rotate')}
           </button>
           <button
             className="btn btn-sm"
             onClick={(e) => { e.stopPropagation(); setDlqRow(r); }}
-            title="DLQ viewer + replay"
+            title={t('webhooks.dlqTooltip')}
           >
-            DLQ
+            {t('webhooks.statDlq')}
           </button>
           <button
             className="btn btn-sm"
             onClick={(e) => { e.stopPropagation(); setStatsRow(r); }}
-            title="Stats"
+            title={t('webhooks.stats')}
           >
-            Stats
+            {t('webhooks.stats')}
           </button>
           <button
             className="btn btn-sm btn-danger"
             onClick={(e) => { e.stopPropagation(); setConfirmSoftDelete(r); }}
             disabled={r.status === 'revoked'}
-            title="Revoke (soft delete)"
+            title={t('webhooks.revokeTooltip')}
           >
-            Revoke
+            {t('webhooks.revoke')}
           </button>
           <button
             className="btn btn-sm btn-danger"
             onClick={(e) => { e.stopPropagation(); setPurgeError(null); setConfirmPurge(r); }}
-            title="Purge (hard delete + tombstone)"
-            aria-label="Purge"
+            title={t('webhooks.purgeTooltip')}
+            aria-label={t('webhooks.purge')}
           >
             &#128465;
           </button>
@@ -1215,9 +1237,9 @@ export default function Webhooks() {
 
   return (
     <div>
-      <PageHeader title="Webhooks">
-        <button className="btn" onClick={() => setShowErrors(true)}>View errors</button>
-        <button className="btn btn-primary" onClick={openCreate}>New webhook</button>
+      <PageHeader title={t('nav.webhooks')}>
+        <button className="btn" onClick={() => setShowErrors(true)}>{t('webhooks.viewErrors')}</button>
+        <button className="btn btn-primary" onClick={openCreate}>{t('webhooks.newWebhook')}</button>
       </PageHeader>
 
       {pageError && <div className="form-error" style={{ marginBottom: 12 }}>{pageError}</div>}
@@ -1225,22 +1247,22 @@ export default function Webhooks() {
       <DataTable
         columns={columns}
         data={webhooks}
-        emptyMessage={loading ? 'Loading…' : 'No webhook subscriptions yet'}
+        emptyMessageKey={loading ? 'common.loading' : 'webhooks.noSubscriptions'}
       />
 
       {showCreate && (
         <Modal
-          title="New webhook subscription"
+          title={t('webhooks.newSubscription')}
           onClose={() => setShowCreate(false)}
           footer={
             <>
-              <button className="btn" onClick={() => setShowCreate(false)}>Cancel</button>
+              <button className="btn" onClick={() => setShowCreate(false)}>{t('common.cancel')}</button>
               <button
                 className="btn btn-primary"
                 onClick={submitCreate}
                 disabled={!httpsValid && !httpAttempt}
               >
-                Create
+                {t('common.create')}
               </button>
             </>
           }
@@ -1248,7 +1270,7 @@ export default function Webhooks() {
           {createError && <div className="form-error" style={{ marginBottom: 12 }}>{createError}</div>}
 
           <div className="form-group">
-            <label>Display name</label>
+            <label>{t('webhooks.displayName')}</label>
             <input
               className="form-input"
               value={form.display_name}
@@ -1258,13 +1280,13 @@ export default function Webhooks() {
           </div>
 
           <div className="form-group">
-            <label>Connector</label>
+            <label>{t('webhooks.connector')}</label>
             <select
               className="form-input"
               value={form.connector_id}
               onChange={(e) => setForm({ ...form, connector_id: e.target.value })}
             >
-              <option value="">Select a connector…</option>
+              <option value="">{t('webhooks.selectConnector')}</option>
               {connectors.map((c) => (
                 <option key={c.connector_id} value={c.connector_id}>
                   {c.connector_id} - {c.display_name}
@@ -1272,12 +1294,12 @@ export default function Webhooks() {
               ))}
             </select>
             <div style={{ fontSize: 12, color: 'var(--text-secondary)', marginTop: 4 }}>
-              Register a new connector under Consumer groups before it appears here.
+              {t('webhooks.registerConnectorHint')}
             </div>
           </div>
 
           <div className="form-group">
-            <label>Delivery URL</label>
+            <label>{t('webhooks.deliveryUrl')}</label>
             <input
               className="form-input"
               value={form.delivery_url}
@@ -1293,7 +1315,7 @@ export default function Webhooks() {
           </div>
 
           <div className="form-group">
-            <label>Event types (filter)</label>
+            <label>{t('webhooks.eventTypesFilter')}</label>
             <ScopeCheckboxList
               options={scopeCatalog.event_types}
               value={form.event_types}
@@ -1302,12 +1324,12 @@ export default function Webhooks() {
               renderLabel={(t) => <span className="mono">{t}</span>}
             />
             <div style={{ fontSize: 12, color: 'var(--text-secondary)', marginTop: 4 }}>
-              Empty selection = match every event type.
+              {t('webhooks.emptyMatchesAllEvents')}
             </div>
           </div>
 
           <div className="form-group">
-            <label>Warehouses (filter)</label>
+            <label>{t('webhooks.warehousesFilter')}</label>
             <ScopeCheckboxList
               options={warehouses}
               value={form.warehouse_ids}
@@ -1321,55 +1343,55 @@ export default function Webhooks() {
               )}
             />
             <div style={{ fontSize: 12, color: 'var(--text-secondary)', marginTop: 4 }}>
-              Empty selection = match every warehouse.
+              {t('webhooks.emptyMatchesAllWarehouses')}
             </div>
           </div>
 
           <Slider
-            label="Rate limit (req/sec)"
+            label={t('webhooks.rateLimit')}
             min={1}
             max={100}
             step={1}
             value={form.rate_limit_per_second}
             onChange={(v) => setForm({ ...form, rate_limit_per_second: v })}
-            hint="Token-bucket cap on POST throughput per subscription."
+            hint={t('webhooks.rateLimitHint')}
           />
 
           <Slider
-            label="Pending ceiling"
+            label={t('webhooks.pendingCeiling')}
             min={100}
             max={100000}
             step={100}
             value={form.pending_ceiling}
             onChange={(v) => setForm({ ...form, pending_ceiling: v })}
-            hint="Auto-pauses the subscription when pending+in_flight reaches this. Bounded by DISPATCHER_MAX_PENDING_HARD_CAP."
+            hint={t('webhooks.pendingCeilingHint')}
           />
 
           <Slider
-            label="DLQ ceiling"
+            label={t('webhooks.dlqCeiling')}
             min={10}
             max={10000}
             step={10}
             value={form.dlq_ceiling}
             onChange={(v) => setForm({ ...form, dlq_ceiling: v })}
-            hint="Auto-pauses the subscription when DLQ depth reaches this. Bounded by DISPATCHER_MAX_DLQ_HARD_CAP."
+            hint={t('webhooks.dlqCeilingHint')}
           />
         </Modal>
       )}
 
       {urlReuseGate && (
         <Modal
-          title="URL previously used"
+          title={t('webhooks.urlReused')}
           onClose={() => setUrlReuseGate(null)}
           footer={
             <>
-              <button className="btn" onClick={() => setUrlReuseGate(null)}>Cancel</button>
+              <button className="btn" onClick={() => setUrlReuseGate(null)}>{t('common.cancel')}</button>
               <button
                 className="btn btn-primary"
                 style={{ background: 'var(--copper)' }}
                 onClick={confirmUrlReuse}
               >
-                Acknowledge and create
+                {t('webhooks.ackAndCreate')}
               </button>
             </>
           }
@@ -1388,23 +1410,25 @@ export default function Webhooks() {
 
       {reveal && (
         <Modal
-          title={reveal.kind === 'rotated' ? 'Webhook secret rotated' : 'Webhook secret issued'}
+          title={t(reveal.kind === 'rotated'
+            ? 'webhooks.secretRotated'
+            : 'webhooks.secretIssued')}
           onClose={() => { /* reveal modal must be explicitly acknowledged */ }}
           footer={
             <button
               className="btn btn-primary"
               onClick={() => setReveal(null)}
               disabled={!revealAcked}
-              title={revealAcked ? 'Close' : 'Confirm you have saved the secret first'}
+              title={t(revealAcked ? 'common.close' : 'webhooks.confirmSavedFirst')}
             >
-              Close
+              {t('common.close')}
             </button>
           }
         >
           <p style={{ fontSize: 13, fontWeight: 600 }}>
             {reveal.display_name}: this secret (generation {reveal.secret_generation})
             is shown exactly once. Copy it to the consumer's HMAC verifier
-            now. Sentry stores only the encrypted form; if you lose this
+            now. Sơn Lộc WMS stores only the encrypted form; if you lose this
             value you must rotate.
           </p>
           <div style={{
@@ -1420,7 +1444,7 @@ export default function Webhooks() {
             {reveal.secret}
           </div>
           <div style={{ display: 'flex', gap: 8, marginTop: 12 }}>
-            <button className="btn" onClick={copySecret}>Copy to clipboard</button>
+            <button className="btn" onClick={copySecret}>{t('webhooks.copyToClipboard')}</button>
           </div>
           <div className="form-group" style={{ marginTop: 16 }}>
             <label style={{ display: 'flex', alignItems: 'center', gap: 8, cursor: 'pointer' }}>
@@ -1429,7 +1453,7 @@ export default function Webhooks() {
                 checked={revealAcked}
                 onChange={(e) => setRevealAcked(e.target.checked)}
               />
-              I have saved this secret in a secure location.
+              {t('webhooks.secretSavedAck')}
             </label>
           </div>
         </Modal>
@@ -1437,19 +1461,19 @@ export default function Webhooks() {
 
       {editing && editForm && (
         <Modal
-          title={`Edit ${editing.display_name}`}
+          title={t('webhooks.editTitle', { name: editing.display_name })}
           onClose={closeEdit}
           footer={
             <>
-              <button className="btn" onClick={closeEdit}>Cancel</button>
-              <button className="btn btn-primary" onClick={submitEdit}>Save</button>
+              <button className="btn" onClick={closeEdit}>{t('common.cancel')}</button>
+              <button className="btn btn-primary" onClick={submitEdit}>{t('common.save')}</button>
             </>
           }
         >
           {editError && <div className="form-error" style={{ marginBottom: 12 }}>{editError}</div>}
 
           <div className="form-group">
-            <label>Connector</label>
+            <label>{t('webhooks.connector')}</label>
             <input
               className="form-input mono"
               value={editing.connector_id}
@@ -1457,12 +1481,12 @@ export default function Webhooks() {
               disabled
             />
             <div style={{ fontSize: 12, color: 'var(--text-secondary)', marginTop: 4 }}>
-              Connector is fixed at create time. Recreate the subscription to change.
+              {t('webhooks.connectorFixedHint')}
             </div>
           </div>
 
           <div className="form-group">
-            <label>Display name</label>
+            <label>{t('webhooks.displayName')}</label>
             <input
               className="form-input"
               value={editForm.display_name}
@@ -1471,7 +1495,7 @@ export default function Webhooks() {
           </div>
 
           <div className="form-group">
-            <label>Delivery URL</label>
+            <label>{t('webhooks.deliveryUrl')}</label>
             <input
               className="form-input"
               value={editForm.delivery_url}
@@ -1484,12 +1508,12 @@ export default function Webhooks() {
               </div>
             )}
             <div style={{ fontSize: 12, color: 'var(--text-secondary)', marginTop: 4 }}>
-              Changing the URL forces dispatcher session teardown and a fresh DNS resolution on the next dispatch.
+              {t('webhooks.urlChangeHint')}
             </div>
           </div>
 
           <div className="form-group">
-            <label>Event types (filter)</label>
+            <label>{t('webhooks.eventTypesFilter')}</label>
             <ScopeCheckboxList
               options={scopeCatalog.event_types}
               value={editForm.event_types}
@@ -1500,7 +1524,7 @@ export default function Webhooks() {
           </div>
 
           <div className="form-group">
-            <label>Warehouses (filter)</label>
+            <label>{t('webhooks.warehousesFilter')}</label>
             <ScopeCheckboxList
               options={warehouses}
               value={editForm.warehouse_ids}
@@ -1516,7 +1540,7 @@ export default function Webhooks() {
           </div>
 
           <Slider
-            label="Rate limit (req/sec)"
+            label={t('webhooks.rateLimit')}
             min={1}
             max={100}
             step={1}
@@ -1525,7 +1549,7 @@ export default function Webhooks() {
           />
 
           <Slider
-            label="Pending ceiling"
+            label={t('webhooks.pendingCeiling')}
             min={100}
             max={100000}
             step={100}
@@ -1534,7 +1558,7 @@ export default function Webhooks() {
           />
 
           <Slider
-            label="DLQ ceiling"
+            label={t('webhooks.dlqCeiling')}
             min={10}
             max={10000}
             step={10}
@@ -1567,95 +1591,84 @@ export default function Webhooks() {
 
       {confirmRotate && (
         <Modal
-          title="Rotate webhook secret"
+          title={t('webhooks.rotateTitle')}
           onClose={() => setConfirmRotate(null)}
           footer={
             <>
-              <button className="btn" onClick={() => setConfirmRotate(null)}>Cancel</button>
+              <button className="btn" onClick={() => setConfirmRotate(null)}>{t('common.cancel')}</button>
               <button
                 className="btn btn-primary"
                 onClick={() => rotateSecret(confirmRotate)}
               >
-                Rotate
+                {t('webhooks.rotate')}
               </button>
             </>
           }
         >
           <p style={{ fontSize: 13, fontWeight: 600 }}>
-            Rotate the HMAC secret for {confirmRotate.display_name}?
+            {t('webhooks.rotateConfirm', { name: confirmRotate.display_name })}
           </p>
           <p style={{ fontSize: 13 }}>
-            The current secret is demoted to generation 2 with a 24-hour
-            dual-accept window. Consumers can verify against either
-            generation until the window expires; the dispatcher signs new
-            POSTs with the fresh generation 1 immediately. The new
-            plaintext is shown once on the next screen.
+            {t('webhooks.rotateExplain')}
           </p>
           <p style={{ fontSize: 13, color: 'var(--copper)' }}>
-            A second rotation within 24 hours overwrites the demoted
-            secret and shortens the cutover window for any consumer that
-            has not yet picked up the new value.
+            {t('webhooks.rotateWarning')}
           </p>
         </Modal>
       )}
 
       {confirmSoftDelete && (
         <Modal
-          title="Revoke webhook"
+          title={t('webhooks.revokeTitle')}
           onClose={() => setConfirmSoftDelete(null)}
           footer={
             <>
-              <button className="btn" onClick={() => setConfirmSoftDelete(null)}>Cancel</button>
+              <button className="btn" onClick={() => setConfirmSoftDelete(null)}>{t('common.cancel')}</button>
               <button
                 className="btn btn-primary"
                 style={{ background: 'var(--copper)' }}
                 onClick={() => softDelete(confirmSoftDelete)}
               >
-                Revoke
+                {t('webhooks.revoke')}
               </button>
             </>
           }
         >
           <p style={{ fontSize: 13, fontWeight: 600 }}>
-            Revoke {confirmSoftDelete.display_name}? Dispatch stops within
-            seconds (Redis pubsub eviction); the row stays in the list with
-            status=revoked so historical webhook_deliveries keep their FK
-            target. Use Purge to remove the row entirely after the live
-            deliveries terminate.
+            {t('webhooks.revokeConfirm', { name: confirmSoftDelete.display_name })}
           </p>
         </Modal>
       )}
 
       {confirmPurge && (
         <Modal
-          title="Purge webhook"
+          title={t('webhooks.purgeTitle')}
           onClose={() => setConfirmPurge(null)}
           footer={
             <>
-              <button className="btn" onClick={() => setConfirmPurge(null)}>Cancel</button>
+              <button className="btn" onClick={() => setConfirmPurge(null)}>{t('common.cancel')}</button>
               <button
                 className="btn btn-primary"
                 style={{ background: 'var(--danger)' }}
                 onClick={() => hardPurge(confirmPurge)}
               >
-                Purge
+                {t('webhooks.purge')}
               </button>
             </>
           }
         >
           <p style={{ fontSize: 13, fontWeight: 600, color: 'var(--danger)' }}>
-            Permanently delete {confirmPurge.display_name}?
+            {t('webhooks.purgeConfirm', { name: confirmPurge.display_name })}
           </p>
           <p style={{ fontSize: 13 }}>
-            The row is removed and a tombstone is written. The next admin
-            who creates a webhook with the same delivery URL ({confirmPurge.delivery_url})
-            will see the URL-reuse warning. Refused while pending or
-            in_flight deliveries reference this subscription.
+            {t('webhooks.purgeExplain', { url: confirmPurge.delivery_url })}
           </p>
           {purgeError && (
             <div className="form-error" style={{ marginTop: 12 }}>
               <div style={{ fontWeight: 600 }}>
-                {purgeError.live_count} live deliver{purgeError.live_count === 1 ? 'y' : 'ies'} block this purge.
+                {t(purgeError.live_count === 1
+                  ? 'webhooks.purgeBlockedOne'
+                  : 'webhooks.purgeBlockedMany', { n: purgeError.live_count })}
               </div>
               <div style={{ marginTop: 4, fontSize: 12 }}>{purgeError.detail}</div>
             </div>

@@ -1,3 +1,8 @@
+// @vitest-environment node
+// This file never touches the DOM. Building a jsdom for it cost about
+// eighteen seconds of the suite's wall clock and, on a loaded machine,
+// starved the tests that do need one into a timeout.
+
 /**
  * V-046: verify the SRI plugin stays wired into the Vite build config.
  *
@@ -11,7 +16,7 @@
  */
 
 import { describe, it, expect } from 'vitest';
-import { readFileSync } from 'node:fs';
+import { existsSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 
 describe('vite.config.js (V-046 SRI)', () => {
@@ -22,7 +27,28 @@ describe('vite.config.js (V-046 SRI)', () => {
   });
 
   it('invokes sri() inside the plugins array', () => {
-    expect(config).toMatch(/sri\s*\(/);
+    // Anchored to the array: a bare /sri\s*\(/ also matches a commented-out
+    // or unrelated call, which would let the plugin be dropped unnoticed.
+    const plugins = config.match(/plugins:\s*\[([^\]]*)\]/);
+    expect(plugins).not.toBeNull();
+    expect(plugins[1]).toMatch(/(^|[\s,])sri\s*\(\s*\)/);
+  });
+
+  it('keeps vendor chunks out of the entry bundle', () => {
+    // Each chunk the config produces is covered by sri() only because
+    // it is a build output; this pins that the split exists at all.
+    expect(config).toMatch(/codeSplitting/);
+  });
+
+  it('puts integrity on every script and stylesheet in a built index.html', () => {
+    // Only meaningful after `npm run build`; a fresh checkout has no dist.
+    const html = join(process.cwd(), 'dist', 'index.html');
+    if (!existsSync(html)) return;
+    const tags = readFileSync(html, 'utf8').match(
+      /<(?:script[^>]*\ssrc=|link[^>]*\srel="(?:stylesheet|modulepreload)")[^>]*>/g,
+    ) || [];
+    expect(tags.length).toBeGreaterThan(0);
+    expect(tags.filter((t) => !/integrity="sha384-/.test(t))).toEqual([]);
   });
 
   it('package.json pins vite-plugin-sri3 as a devDependency', () => {

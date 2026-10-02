@@ -1,3 +1,6 @@
+// Stays in jsdom although it renders nothing: `friendlyError` resolves a
+// translation at runtime, so it needs the localStorage the suite pins.
+
 /**
  * V-021: tests for the friendly-error helper.
  */

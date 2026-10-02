@@ -5,6 +5,8 @@ import { useWarehouse } from '../warehouse.jsx';
 import DataTable from '../components/DataTable.jsx';
 import PageHeader from '../components/PageHeader.jsx';
 import Modal from '../components/Modal.jsx';
+import RichText from '../i18n/RichText.jsx';
+import { useLocale } from '../i18n/locale.jsx';
 
 // Partial-fulfill / backorders dashboard. Two tabs:
 //   Waiting       - status=WAITING_STOCK, oldest backorder_opened_at
@@ -18,22 +20,32 @@ import Modal from '../components/Modal.jsx';
 // /sales-orders?focus=<so_number>; the SO page reads the focus query
 // param and pops the modal in-place.
 
+// These two tables live at module scope, so they cannot call the hook.
+// They carry keys and the render resolves them; the alternative --
+// moving them inside the component -- would rebuild both arrays on
+// every keystroke in the modal.
 const TABS = [
-  { key: 'waiting', label: 'Waiting' },
-  { key: 'ready-to-ship', label: 'Ready to Ship' },
+  { key: 'waiting', labelKey: 'backorders.tabWaiting' },
+  { key: 'ready-to-ship', labelKey: 'backorders.tabReady' },
 ];
 
 const CANCEL_REASONS = [
-  { value: 'found', label: 'Found in warehouse' },
-  { value: 'customer_asked', label: 'Customer asked to cancel' },
-  { value: 'refunded', label: 'Refunded' },
-  { value: 'other', label: 'Other' },
+  { value: 'found', labelKey: 'backorders.reasonFound' },
+  { value: 'customer_asked', labelKey: 'backorders.reasonCustomerAsked' },
+  { value: 'refunded', labelKey: 'backorders.reasonRefunded' },
+  { value: 'other', labelKey: 'backorders.reasonOther' },
 ];
+
+/** Cancellation reason value -> its message key, for the banner. */
+const REASON_KEY = Object.fromEntries(
+  CANCEL_REASONS.map((r) => [r.value, r.labelKey]),
+);
 
 
 function ItemsCell({ items }) {
+  const { t } = useLocale();
   if (!items || items.length === 0) {
-    return <span style={{ color: 'var(--text-secondary)' }}>(none)</span>;
+    return <span style={{ color: 'var(--text-secondary)' }}>{t('backorders.noItems')}</span>;
   }
   return (
     <div style={{ fontSize: 12, lineHeight: 1.4 }}>
@@ -50,6 +62,7 @@ function ItemsCell({ items }) {
 
 
 export default function Backorders() {
+  const { t } = useLocale();
   const navigate = useNavigate();
   const { warehouseId } = useWarehouse();
   const [tab, setTab] = useState('waiting');
@@ -77,10 +90,10 @@ export default function Backorders() {
       setRows(data.backorders || []);
     } else {
       setRows([]);
-      setActionError('Failed to load backorders.');
+      setActionError(t('backorders.loadFailed'));
     }
     setLoading(false);
-  }, [tab, warehouseId]);
+  }, [t, tab, warehouseId]);
 
   useEffect(() => { load(); }, [load]);
 
@@ -109,12 +122,15 @@ export default function Backorders() {
     if (!res?.ok) {
       let data = null;
       try { data = await res?.json(); } catch (_) { /* non-JSON */ }
-      setCancelError(data?.error || 'Failed to cancel backorder.');
+      setCancelError(data?.error || t('backorders.cancelFailed'));
       return;
     }
     const soNumber = cancelTarget.so_number;
     closeCancel();
-    setSuccessBanner(`Backorder ${soNumber} cancelled (${cancelReason}).`);
+    setSuccessBanner(t('backorders.cancelled', {
+      so: soNumber,
+      reason: t(REASON_KEY[cancelReason] ?? 'backorders.reasonOther'),
+    }));
     setTimeout(() => setSuccessBanner(''), 6000);
     load();
   }
@@ -123,13 +139,13 @@ export default function Backorders() {
   // "Fulfillable since" so the operator can prioritise the longest-
   // waiting ready batch first.
   const baseColumns = [
-    { key: 'so_number', label: 'Backorder #', mono: true },
-    { key: 'parent_so_number', label: 'Parent SO', mono: true,
+    { key: 'so_number', labelKey: 'backorders.number', mono: true },
+    { key: 'parent_so_number', labelKey: 'backorders.parentSo', mono: true,
       render: (r) => r.parent_so_number || <span style={{ color: 'var(--text-secondary)' }}>-</span> },
-    { key: 'customer_name', label: 'Customer',
+    { key: 'customer_name', labelKey: 'common.customer',
       render: (r) => r.customer_name || <span style={{ color: 'var(--text-secondary)' }}>-</span> },
-    { key: 'items', label: 'Items', render: (r) => <ItemsCell items={r.items} /> },
-    { key: 'days_waiting', label: 'Days waiting',
+    { key: 'items', labelKey: 'backorders.items', render: (r) => <ItemsCell items={r.items} /> },
+    { key: 'days_waiting', labelKey: 'backorders.daysWaiting',
       render: (r) => (
         <span className="mono">
           {r.days_waiting}
@@ -140,7 +156,7 @@ export default function Backorders() {
 
   const readyColumn = {
     key: 'fulfillable_since',
-    label: 'Fulfillable since',
+    labelKey: 'backorders.fulfillableSince',
     render: (r) => r.fulfillable_since
       ? new Date(r.fulfillable_since).toLocaleDateString()
       : <span style={{ color: 'var(--text-secondary)' }}>-</span>,
@@ -153,9 +169,9 @@ export default function Backorders() {
       <button
         className="btn btn-sm btn-danger"
         onClick={(e) => { e.stopPropagation(); openCancel(r); }}
-        title="Cancel this backorder"
+        title={t('backorders.cancelTooltip')}
       >
-        Cancel
+        {t('common.cancel')}
       </button>
     ),
   };
@@ -168,22 +184,22 @@ export default function Backorders() {
     // The SO list page reads ?focus=<so_number> to auto-open the
     // edit modal for that row. Mirrors the deep-link pattern the
     // Teams adaptive card uses so /backorders -> click -> SO modal
-    // is the same path as Teams ping -> Open in Sentry -> SO modal.
+    // is the same path as Teams ping -> Open in Sơn Lộc WMS -> SO modal.
     navigate(`/sales-orders?focus=${encodeURIComponent(row.so_number)}`);
   }
 
   return (
     <div>
-      <PageHeader title="Backorders" />
+      <PageHeader title={t('nav.backorders')} />
       {successBanner && (
         <div
           role="status"
           style={{
             margin: '0 0 12px 0',
             padding: '8px 12px',
-            background: 'var(--success-bg, #e8f5e9)',
-            color: 'var(--success, #2e7d32)',
-            border: '1px solid var(--success, #2e7d32)',
+            background: 'var(--success-bg)',
+            color: 'var(--success)',
+            border: '1px solid var(--success)',
             borderRadius: 4,
             fontSize: 13,
           }}
@@ -196,15 +212,16 @@ export default function Backorders() {
       )}
       <div className="section">
         <div role="tablist" style={{ display: 'flex', gap: 4, marginBottom: 12 }}>
-          {TABS.map((t) => (
+          {/* The map used to bind `t`, which now names the translator. */}
+          {TABS.map((item) => (
             <button
-              key={t.key}
+              key={item.key}
               role="tab"
-              aria-selected={tab === t.key}
-              className={`btn ${tab === t.key ? 'btn-primary' : ''}`}
-              onClick={() => setTab(t.key)}
+              aria-selected={tab === item.key}
+              className={`btn ${tab === item.key ? 'btn-primary' : ''}`}
+              onClick={() => setTab(item.key)}
             >
-              {t.label}
+              {t(item.labelKey)}
             </button>
           ))}
         </div>
@@ -212,28 +229,30 @@ export default function Backorders() {
           columns={columns}
           data={rows}
           loading={loading}
-          emptyMessage={tab === 'waiting'
-            ? 'No backorders waiting for stock.'
-            : 'No backorders are ready to ship right now.'}
+          emptyMessageKey={tab === 'waiting'
+            ? 'backorders.emptyWaiting'
+            : 'backorders.emptyReady'}
           onRowClick={openRowInSalesOrders}
         />
       </div>
 
       {cancelTarget && (
         <Modal
-          title={`Cancel backorder ${cancelTarget.so_number}?`}
+          title={t('backorders.cancelTitle', { so: cancelTarget.so_number })}
           onClose={closeCancel}
           footer={
             <>
               <button className="btn" onClick={closeCancel} disabled={cancelSubmitting}>
-                Keep Backorder
+                {t('backorders.keep')}
               </button>
               <button
                 className="btn btn-danger"
                 onClick={submitCancel}
                 disabled={cancelSubmitting}
               >
-                {cancelSubmitting ? 'Cancelling...' : 'Cancel Backorder'}
+                {cancelSubmitting
+                  ? t('backorders.cancelling')
+                  : t('backorders.cancelConfirm')}
               </button>
             </>
           }
@@ -242,20 +261,23 @@ export default function Backorders() {
             <div className="form-error" style={{ marginBottom: 12 }}>{cancelError}</div>
           )}
           <p style={{ fontSize: 13, marginBottom: 12 }}>
-            Cancelling will mark <strong>{cancelTarget.so_number}</strong> as
-            CANCELLED. The parent SO (<span className="mono">{cancelTarget.parent_so_number}</span>)
-            is unaffected. A backorder.cancelled event fires on the
-            integration outbox + Teams channel.
+            <RichText
+              text={t('backorders.cancelWarning')}
+              values={{
+                so: <strong>{cancelTarget.so_number}</strong>,
+                parent: <span className="mono">{cancelTarget.parent_so_number}</span>,
+              }}
+            />
           </p>
           <div className="form-group">
-            <label>Reason</label>
+            <label>{t('backorders.reason')}</label>
             <select
               className="form-select"
               value={cancelReason}
               onChange={(e) => setCancelReason(e.target.value)}
             >
               {CANCEL_REASONS.map((r) => (
-                <option key={r.value} value={r.value}>{r.label}</option>
+                <option key={r.value} value={r.value}>{t(r.labelKey)}</option>
               ))}
             </select>
           </div>

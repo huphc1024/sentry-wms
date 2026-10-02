@@ -5,6 +5,8 @@ import DataTable from '../components/DataTable.jsx';
 import PageHeader from '../components/PageHeader.jsx';
 import StatusTag from '../components/StatusTag.jsx';
 import Modal from '../components/Modal.jsx';
+import { useLocale } from '../i18n/locale.jsx';
+import RichText from '../i18n/RichText.jsx';
 
 // Outbound > Picking Batches. Lists the active (OPEN / IN_PROGRESS) pick
 // batches -- the ones that hold the cross-pick lock -- so an admin can
@@ -32,12 +34,13 @@ function formatAge(createdAt) {
 }
 
 function OrdersCell({ batch }) {
+  const { t } = useLocale();
   if (batch.kind === 'TO') {
     return <span className="mono">{batch.to_number || '-'}</span>;
   }
   const orders = batch.orders || [];
   if (orders.length === 0) {
-    return <span style={{ color: 'var(--text-secondary)' }}>(none)</span>;
+    return <span style={{ color: 'var(--text-secondary)' }}>{t('backorders.noItems')}</span>;
   }
   return (
     <div style={{ fontSize: 12, lineHeight: 1.4 }}>
@@ -49,6 +52,7 @@ function OrdersCell({ batch }) {
 }
 
 export default function PickingBatches() {
+  const { t } = useLocale();
   const { warehouseId } = useWarehouse();
   const [rows, setRows] = useState([]);
   const [loading, setLoading] = useState(false);
@@ -71,7 +75,7 @@ export default function PickingBatches() {
       setRows(data.pick_batches || []);
     } else {
       setRows([]);
-      setActionError('Failed to load pick batches.');
+      setActionError(t('pickingBatches.loadFailed'));
     }
     setLoading(false);
   }, [warehouseId]);
@@ -107,29 +111,32 @@ export default function PickingBatches() {
     closeDelete();
     setSuccessBanner(
       freed
-        ? `Released ${deleteTarget.batch_number}. Now pickable: ${freed}.`
-        : `Released ${deleteTarget.batch_number}.`,
+        ? t('pickingBatches.releasedWithFreed', {
+          batch: deleteTarget.batch_number,
+          freed,
+        })
+        : t('pickingBatches.released', { batch: deleteTarget.batch_number }),
     );
     setTimeout(() => setSuccessBanner(''), 8000);
     load();
   }
 
   const columns = [
-    { key: 'batch_number', label: 'Batch #', mono: true },
+    { key: 'batch_number', labelKey: 'pickingBatches.batchNumber', mono: true },
     {
       key: 'kind',
-      label: 'Type',
+      labelKey: 'common.type',
       render: (r) => <StatusTag status={r.kind} />,
     },
-    { key: 'orders', label: 'Orders', render: (r) => <OrdersCell batch={r} /> },
+    { key: 'orders', labelKey: 'pickingBatches.orders', render: (r) => <OrdersCell batch={r} /> },
     {
       key: 'assigned_to',
-      label: 'Picker',
+      labelKey: 'users.presetPicker',
       render: (r) => r.assigned_to || <span style={{ color: 'var(--text-secondary)' }}>-</span>,
     },
     {
       key: 'progress',
-      label: 'Progress',
+      labelKey: 'pickingBatches.progress',
       render: (r) => (
         <span className="mono">{r.completed_tasks}/{r.total_tasks}</span>
       ),
@@ -137,7 +144,7 @@ export default function PickingBatches() {
     },
     {
       key: 'created_at',
-      label: 'Age',
+      labelKey: 'pickingBatches.age',
       render: (r) => (
         <span title={r.created_at ? new Date(r.created_at).toLocaleString() : ''}>
           {formatAge(r.created_at)}
@@ -145,7 +152,7 @@ export default function PickingBatches() {
       ),
       csvValue: (r) => formatAge(r.created_at),
     },
-    { key: 'status', label: 'Status', render: (r) => <StatusTag status={r.status} /> },
+    { key: 'status', labelKey: 'common.status', render: (r) => <StatusTag status={r.status} /> },
     {
       key: 'actions',
       label: '',
@@ -154,17 +161,17 @@ export default function PickingBatches() {
           <button
             className="btn btn-sm"
             disabled
-            title="Transfer-order batch. Release it from the Transfer Orders screen."
+            title={t('pickingBatches.transferBatchTooltip')}
           >
-            Delete
+            {t('common.delete')}
           </button>
         ) : (
           <button
             className="btn btn-sm btn-danger"
             onClick={(e) => { e.stopPropagation(); openDelete(r); }}
-            title="Release this batch and free its orders"
+            title={t('pickingBatches.releaseTooltip')}
           >
-            Delete
+            {t('common.delete')}
           </button>
         )
       ),
@@ -173,9 +180,9 @@ export default function PickingBatches() {
 
   return (
     <div>
-      <PageHeader title="Picking Batches">
+      <PageHeader title={t('nav.pickingBatches')}>
         <button className="btn btn-sm" onClick={load} disabled={loading}>
-          {loading ? 'Refreshing...' : 'Refresh'}
+          {t(loading ? 'pickingTicketPrint.refreshing' : 'common.refresh')}
         </button>
       </PageHeader>
 
@@ -185,9 +192,9 @@ export default function PickingBatches() {
           style={{
             margin: '0 0 12px 0',
             padding: '8px 12px',
-            background: 'var(--success-bg, #e8f5e9)',
-            color: 'var(--success, #2e7d32)',
-            border: '1px solid var(--success, #2e7d32)',
+            background: 'var(--success-bg)',
+            color: 'var(--success)',
+            border: '1px solid var(--success)',
             borderRadius: 4,
             fontSize: 13,
           }}
@@ -211,25 +218,25 @@ export default function PickingBatches() {
           columns={columns}
           data={rows}
           loading={loading}
-          emptyMessage="No active pick batches in this warehouse."
+          emptyMessageKey="pickingBatches.empty"
         />
       </div>
 
       {deleteTarget && (
         <Modal
-          title={`Release batch ${deleteTarget.batch_number}?`}
+          title={t('pickingBatches.releaseTitle', { batch: deleteTarget.batch_number })}
           onClose={closeDelete}
           footer={
             <>
               <button className="btn" onClick={closeDelete} disabled={deleteSubmitting}>
-                Keep Batch
+                {t('pickingBatches.keepBatch')}
               </button>
               <button
                 className="btn btn-danger"
                 onClick={submitDelete}
                 disabled={deleteSubmitting}
               >
-                {deleteSubmitting ? 'Releasing...' : 'Release Batch'}
+                {t(deleteSubmitting ? 'pickingBatches.releasing' : 'pickingBatches.releaseBatch')}
               </button>
             </>
           }
@@ -238,17 +245,16 @@ export default function PickingBatches() {
             <div className="form-error" style={{ marginBottom: 12 }}>{deleteError}</div>
           )}
           <p style={{ fontSize: 13, marginBottom: 12 }}>
-            This cancels <strong>{deleteTarget.batch_number}</strong> and unwinds
-            every effect: reserved stock is freed, anything already picked is
-            restored to its source bin in the WMS, and these orders become
-            pickable again:
+            <RichText
+              text={t('pickingBatches.releaseExplain')}
+              values={{ batch: <strong>{deleteTarget.batch_number}</strong> }}
+            />
           </p>
           <div style={{ fontSize: 13, marginBottom: 12 }}>
             <OrdersCell batch={deleteTarget} />
           </div>
           <p style={{ fontSize: 12, color: 'var(--text-secondary)' }}>
-            Picked-but-unshipped units are returned in the system only. Make
-            sure the picker physically returns them to the shelf.
+            {t('pickingBatches.physicalReturnNote')}
           </p>
         </Modal>
       )}

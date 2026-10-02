@@ -4,10 +4,12 @@ import { useWarehouse } from '../warehouse.jsx';
 import DataTable from '../components/DataTable.jsx';
 import PageHeader from '../components/PageHeader.jsx';
 import Modal from '../components/Modal.jsx';
+import { useLocale } from '../i18n/locale.jsx';
 
 const ZONE_TYPES = ['RECEIVING', 'STORAGE', 'PICKING', 'STAGING', 'SHIPPING'];
 
 export default function Zones() {
+  const { t } = useLocale();
   const { warehouseId } = useWarehouse();
   const [zones, setZones] = useState([]);
   const [showModal, setShowModal] = useState(false);
@@ -71,50 +73,54 @@ export default function Zones() {
   }
 
   const columns = [
-    { key: 'zone_code', label: 'Zone Code', mono: true },
-    { key: 'zone_name', label: 'Zone Name' },
-    { key: 'zone_type', label: 'Type' },
-    { key: 'is_active', label: 'Active', render: (r) => r.is_active ? 'Yes' : 'No' },
+    { key: 'zone_code', labelKey: 'zones.code', mono: true },
+    { key: 'zone_name', labelKey: 'zones.name' },
+    { key: 'zone_type', labelKey: 'common.type' },
+    {
+      key: 'is_active',
+      labelKey: 'items.active',
+      render: (r) => t(r.is_active ? 'common.yes' : 'common.no'),
+    },
     { key: 'actions', label: '', render: (r) => (
       <div style={{ display: 'flex', gap: 4 }}>
-        <button className="btn btn-sm" onClick={(e) => { e.stopPropagation(); openEdit(r); }} aria-label="Edit" title="Edit">&#9998;</button>
-        <button className="btn btn-sm btn-danger" onClick={(e) => { e.stopPropagation(); setDeleteTarget(r); }} aria-label="Delete" title="Delete">&#128465;</button>
+        <button className="btn btn-sm" onClick={(e) => { e.stopPropagation(); openEdit(r); }} aria-label={t('common.edit')} title={t('common.edit')}>&#9998;</button>
+        <button className="btn btn-sm btn-danger" onClick={(e) => { e.stopPropagation(); setDeleteTarget(r); }} aria-label={t('common.delete')} title={t('common.delete')}>&#128465;</button>
       </div>
     )},
   ];
 
   return (
     <div>
-      <PageHeader title="Zones">
-        <button className="btn btn-primary" onClick={openCreate}>New Zone</button>
+      <PageHeader title={t('nav.zones')}>
+        <button className="btn btn-primary" onClick={openCreate}>{t('zones.newZone')}</button>
       </PageHeader>
-      <DataTable columns={columns} data={zones} emptyMessage="No zones found" />
+      <DataTable columns={columns} data={zones} emptyMessageKey="zones.empty" />
 
       {showModal && (
         <Modal
-          title={editId ? 'Edit Zone' : 'New Zone'}
+          title={t(editId ? 'zones.editZone' : 'zones.newZone')}
           onClose={() => { setShowModal(false); setError(''); }}
           footer={
             <>
-              <button className="btn" onClick={() => { setShowModal(false); setError(''); }}>Cancel</button>
-              <button className="btn btn-primary" onClick={save}>Save</button>
+              <button className="btn" onClick={() => { setShowModal(false); setError(''); }}>{t('common.cancel')}</button>
+              <button className="btn btn-primary" onClick={save}>{t('common.save')}</button>
             </>
           }
         >
           {error && <div className="form-error" style={{ marginBottom: 12 }}>{error}</div>}
           <div className="form-group">
-            <label>Zone Code</label>
+            <label>{t('zones.code')}</label>
             <input className="form-input" value={form.zone_code || ''} onChange={(e) => setForm({ ...form, zone_code: e.target.value })} />
           </div>
           <div className="form-group">
-            <label>Zone Name</label>
+            <label>{t('zones.name')}</label>
             <input className="form-input" value={form.zone_name || ''} onChange={(e) => setForm({ ...form, zone_name: e.target.value })} />
           </div>
           <div className="form-group">
-            <label>Type</label>
+            <label>{t('common.type')}</label>
             <select className="form-select" value={form.zone_type || ''} onChange={(e) => setForm({ ...form, zone_type: e.target.value })}>
-              <option value="">Select type</option>
-              {ZONE_TYPES.map((t) => <option key={t} value={t}>{t}</option>)}
+              <option value="">{t('bins.selectType')}</option>
+              {ZONE_TYPES.map((zt) => <option key={zt} value={zt}>{t(`zones.type.${zt}`)}</option>)}
             </select>
           </div>
         </Modal>
@@ -122,18 +128,17 @@ export default function Zones() {
 
       {deleteTarget && (
         <Modal
-          title={`Delete zone ${deleteTarget.zone_code || ''}?`}
+          title={t('zones.deleteTitle', { code: deleteTarget.zone_code || '' })}
           onClose={() => setDeleteTarget(null)}
           footer={
             <>
-              <button className="btn" onClick={() => setDeleteTarget(null)}>Cancel</button>
-              <button className="btn btn-danger" onClick={deleteZone}>Delete</button>
+              <button className="btn" onClick={() => setDeleteTarget(null)}>{t('common.cancel')}</button>
+              <button className="btn btn-danger" onClick={deleteZone}>{t('common.delete')}</button>
             </>
           }
         >
           <p style={{ fontSize: 13 }}>
-            This permanently removes the zone. Bins assigned to it must be
-            reassigned or deleted first.
+            {t('zones.deleteExplain')}
           </p>
           {error && <div className="form-error" style={{ marginTop: 12 }}>{error}</div>}
         </Modal>

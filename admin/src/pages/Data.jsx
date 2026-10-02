@@ -1,42 +1,30 @@
 import { NavLink, Outlet, Navigate, useLocation } from 'react-router-dom';
 import { useAuth } from '../auth.jsx';
-
-// Warehouse-layout pages (Warehouses / Bins / Zones / Preferred Bins)
-// consolidated under a single /data parent with a tab strip. The
-// sub-pages render as Outlet children so each one keeps its own
-// PageHeader + state without any changes; the only new chrome is the
-// tab strip below.
-//
-// Per-tab grants honor the existing page_keys so a USER with only
-// 'bins' sees the bins tab and is redirected to it on /data. ADMIN
-// sees every tab. Backend endpoints stay on their per-entity page
-// permission so granular access keeps working.
+import { useLocale } from '../i18n/locale.jsx';
 
 const TABS = [
-  { to: 'warehouses', label: 'Warehouses', pageKey: 'warehouses' },
-  { to: 'bins', label: 'Bins', pageKey: 'bins' },
-  { to: 'zones', label: 'Zones', pageKey: 'zones' },
-  { to: 'preferred-bins', label: 'Preferred Bins', pageKey: 'preferred-bins' },
+  { to: 'warehouses', labelKey: 'nav.warehouses', pageKey: 'warehouses' },
+  { to: 'bins', labelKey: 'nav.bins', pageKey: 'bins' },
+  { to: 'zones', labelKey: 'nav.zones', pageKey: 'zones' },
+  { to: 'preferred-bins', labelKey: 'nav.preferredBins', pageKey: 'preferred-bins' },
 ];
 
 export default function Data() {
   const { user } = useAuth();
+  const { t } = useLocale();
   const location = useLocation();
   const allowedPages = user?.allowed_pages;
   const isAdmin = user?.role === 'ADMIN';
 
-  const visibleTabs = TABS.filter((t) =>
-    isAdmin || (Array.isArray(allowedPages) && allowedPages.includes(t.pageKey)),
+  const visibleTabs = TABS.filter((tab) =>
+    isAdmin || (Array.isArray(allowedPages) && allowedPages.includes(tab.pageKey)),
   );
 
-  // /data with no sub-route lands on the first tab the user can see.
-  // A USER with no grants in this section gets a clear "no access"
-  // message instead of an empty page.
   if (location.pathname === '/data' || location.pathname === '/data/') {
     if (visibleTabs.length === 0) {
       return (
         <div style={{ padding: 24, color: 'var(--text-secondary)' }}>
-          No warehouse-data pages granted to your account.
+          {t('data.noAccess')}
         </div>
       );
     }
@@ -54,7 +42,7 @@ export default function Data() {
               `data-tab${isActive ? ' active' : ''}`
             }
           >
-            {tab.label}
+            {t(tab.labelKey)}
           </NavLink>
         ))}
       </div>

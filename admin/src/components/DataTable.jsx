@@ -1,22 +1,29 @@
-function sanitizeCsvValue(val) {
-  if (typeof val !== 'string') return val ?? '';
-  const escaped = `"${val.replace(/"/g, '""')}"`;
-  if (/^[=+\-@\t\r]/.test(val)) return `"'${val.replace(/"/g, '""')}"`;
-  return escaped;
-}
+import { Button, Pagination, Table } from 'antd';
+import { DownloadOutlined } from '@ant-design/icons';
+import { useLocale } from '../i18n/locale.jsx';
+import { downloadCsv } from '../utils/exportCsv.js';
 
-// Columns that use `render` to display a React element (e.g. <StatusTag>)
-// would otherwise serialize to "[object Object]" in the CSV. Prefer an
-// explicit `csvValue(row)` when provided; otherwise fall back to the raw
-// field value when `render` returned a React element.
-function computeCellValue(col, row) {
-  if (col.csvValue) return col.csvValue(row);
-  if (col.render) {
-    const rendered = col.render(row);
-    if (rendered === null || rendered === undefined) return row[col.key];
-    if (typeof rendered !== 'object') return rendered;
-  }
-  return row[col.key];
+/**
+ * The app's list table, now an Ant Design table underneath.
+ *
+ * Thirty-two pages render this component, so the props are unchanged:
+ * `columns` still carry `{key, label, render, mono, sortable, csvValue}`,
+ * sorting is still delegated upward through `onSort` (the server does the
+ * ordering, not the browser), pagination is still the `{page, pages,
+ * total, per_page}` envelope the API returns, and CSV export still sits
+ * beside the pager.
+ *
+ * Sorting deserves a note. antd's own sorter would cycle
+ * ascending -> descending -> unsorted and manage that state itself, which
+ * is not what these pages do: the parent owns `sortKey`/`sortDir` and
+ * decides what a click means. So antd draws the arrows from a `sortOrder`
+ * that is entirely derived from the props, while the click itself is taken
+ * off the header cell and handed straight to `onSort`. The arrows then
+ * always show what the parent actually asked the server for.
+ */
+
+function toSortOrder(dir) {
+  return dir === 'asc' ? 'ascend' : 'descend';
 }
 
 export default function DataTable({
@@ -25,100 +32,101 @@ export default function DataTable({
   pagination,
   onPageChange,
   onRowClick,
-  emptyMessage = 'No records found',
+  emptyMessage,
+  emptyMessageKey,
   sortKey,
   sortDir,
   onSort,
 }) {
-  function exportCSV() {
-    if (!data || data.length === 0) return;
-    const headers = columns.map((c) => c.label);
-    const rows = data.map((row) =>
-      columns.map((c) => sanitizeCsvValue(computeCellValue(c, row)))
-    );
-    const csv = [headers.join(','), ...rows.map((r) => r.join(','))].join('\n');
-    const blob = new Blob([csv], { type: 'text/csv' });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = `${new Date().toISOString().slice(0, 10)}InvExport.csv`;
-    a.click();
-    URL.revokeObjectURL(url);
-  }
+  const { t } = useLocale();
+
+  // Headings and the empty state are named with keys (`labelKey`,
+  // `emptyMessageKey`). A plain `label` / `emptyMessage` is shown as given.
+  const heading = (col) => (col.labelKey ? t(col.labelKey) : col.label);
+  const empty = emptyMessageKey
+    ? t(emptyMessageKey)
+    : (emptyMessage || t('common.noRecords'));
+  const rows = data || [];
+
+  // These lists are heterogeneous: some carry `id`, some a `canonical_id`,
+  // some nothing at all (the old table fell back to the array index).
+  // antd deprecated the index argument to `rowKey`, so the position is
+  // captured here instead of asked for at render time.
+  const keyByRow = new Map();
+  rows.forEach((row, index) => {
+    if (!keyByRow.has(row)) keyByRow.set(row, row?.id ?? index);
+  });
+
+  const antColumns = columns.map((col, index) => {
+    const isSortable = !!(col.sortable && onSort);
+    return {
+      // `key` is optional on these column definitions (the actions column
+      // often has none), so fall back to the label and then the position.
+      key: col.key || col.labelKey || col.label || `col-${index}`,
+      title: heading(col),
+      className: col.mono ? 'mono' : undefined,
+      width: col.width,
+      sorter: isSortable,
+      sortOrder: isSortable && sortKey === col.key ? toSortOrder(sortDir) : null,
+      showSorterTooltip: false,
+      // The click is taken here rather than read out of antd's onChange.
+      // antd cycles a column ascending -> descending -> unsorted and, on
+      // that third click, reports a sorter with no columnKey at all -- so
+      // routing through onChange silently dropped every third click and
+      // the list appeared stuck in descending order. The parent owns the
+      // direction, so it just needs to hear that the column was clicked.
+      onHeaderCell: isSortable ? () => ({ onClick: () => onSort(col.key) }) : undefined,
+      render: col.render ? (_, row) => col.render(row) : (_, row) => row[col.key],
+    };
+  });
+
+  // The API envelope always carries `per_page`, but a few callers build
+  // the envelope by hand and leave it out. Deriving it from the page count
+  // keeps the pager honest instead of silently falling back to antd's
+  // default of ten rows a page.
+  const perPage = pagination
+    ? pagination.per_page
+      || (pagination.pages ? Math.ceil((pagination.total || 0) / pagination.pages) : 0)
+      || rows.length
+      || 1
+    : 0;
 
   return (
     <div className="data-table-wrapper">
-      <table className="data-table">
-        <thead>
-          <tr>
-            {columns.map((col) => {
-              const isSortable = col.sortable && onSort;
-              const isActive = sortKey === col.key;
-              return (
-                <th
-                  key={col.key || col.label}
-                  style={isSortable ? { cursor: 'pointer', userSelect: 'none' } : undefined}
-                  onClick={isSortable ? () => onSort(col.key) : undefined}
-                >
-                  {col.label}
-                  {isActive && (
-                    <span style={{ marginLeft: 4, fontSize: 10 }}>
-                      {sortDir === 'asc' ? '\u25B2' : '\u25BC'}
-                    </span>
-                  )}
-                </th>
-              );
-            })}
-          </tr>
-        </thead>
-        <tbody>
-          {(!data || data.length === 0) ? (
-            <tr>
-              <td colSpan={columns.length} className="table-empty">
-                {emptyMessage}
-              </td>
-            </tr>
-          ) : (
-            data.map((row, i) => (
-              <tr
-                key={row.id || i}
-                className={onRowClick ? 'clickable' : ''}
-                onClick={() => onRowClick?.(row)}
-              >
-                {columns.map((col) => (
-                  <td key={col.key || col.label} className={col.mono ? 'mono' : ''}>
-                    {col.render ? col.render(row) : row[col.key]}
-                  </td>
-                ))}
-              </tr>
-            ))
-          )}
-        </tbody>
-      </table>
+      <Table
+        rowKey={(row) => keyByRow.get(row)}
+        columns={antColumns}
+        dataSource={rows}
+        pagination={false}
+        size="middle"
+        locale={{ emptyText: empty }}
+        onRow={onRowClick
+          ? (row) => ({ onClick: () => onRowClick(row), className: 'clickable' })
+          : undefined}
+      />
       {pagination && (
         <div className="pagination">
-          <span>
-            Page {pagination.page} of {pagination.pages} ({pagination.total} total)
-          </span>
-          <div className="pagination-buttons">
-            <button className="btn-sm btn" onClick={exportCSV} style={{ marginRight: 8 }}>
-              Export CSV
-            </button>
-            <button
-              className="pagination-btn"
-              disabled={pagination.page <= 1}
-              onClick={() => onPageChange(pagination.page - 1)}
-            >
-              Prev
-            </button>
-            <button
-              className="pagination-btn"
-              disabled={pagination.page >= pagination.pages}
-              onClick={() => onPageChange(pagination.page + 1)}
-            >
-              Next
-            </button>
-          </div>
+          <Button
+            size="small"
+            icon={<DownloadOutlined />}
+            disabled={rows.length === 0}
+            onClick={() => downloadCsv(columns, rows, heading)}
+          >
+            {t('common.exportCsv')}
+          </Button>
+          <Pagination
+            current={pagination.page}
+            pageSize={perPage}
+            total={pagination.total || 0}
+            showSizeChanger={false}
+            onChange={onPageChange}
+            size="small"
+            showTotal={() => t('table.pageOf', {
+              page: pagination.page,
+              pages: pagination.pages,
+              total: pagination.total,
+            })}
+          />
         </div>
       )}
     </div>

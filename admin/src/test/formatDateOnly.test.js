@@ -1,3 +1,8 @@
+// @vitest-environment node
+// This file never touches the DOM. Building a jsdom for it cost about
+// eighteen seconds of the suite's wall clock and, on a loaded machine,
+// starved the tests that do need one into a timeout.
+
 import { describe, it, expect } from 'vitest';
 import { formatDateOnly } from '../utils/date.js';
 

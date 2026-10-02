@@ -3,11 +3,12 @@ import { api } from '../api.js';
 import DataTable from '../components/DataTable.jsx';
 import PageHeader from '../components/PageHeader.jsx';
 import Modal from '../components/Modal.jsx';
+import { useLocale } from '../i18n/locale.jsx';
 
 const FILTER_OPTIONS = [
-  { label: 'Active', value: 'active' },
-  { label: 'Archived', value: 'archived' },
-  { label: 'All', value: 'all' },
+  { labelKey: 'items.filterActive', value: 'active' },
+  { labelKey: 'items.filterArchived', value: 'archived' },
+  { labelKey: 'common.all', value: 'all' },
 ];
 
 function formatApiError(data, fallback) {
@@ -24,6 +25,7 @@ function formatApiError(data, fallback) {
 }
 
 export default function Vendors() {
+  const { t } = useLocale();
   const [vendors, setVendors] = useState([]);
   const [pagination, setPagination] = useState(null);
   const [page, setPage] = useState(1);
@@ -115,19 +117,23 @@ export default function Vendors() {
   }
 
   const columns = [
-    { key: 'vendor_name', label: 'Vendor', sortable: true },
-    { key: 'contact_name', label: 'Contact', render: (r) => r.contact_name || '-' },
-    { key: 'email', label: 'Email', render: (r) => r.email || '-' },
-    { key: 'phone', label: 'Phone', mono: true, render: (r) => r.phone || '-' },
-    { key: 'is_active', label: 'Active', render: (r) => (r.is_active === false ? 'No' : 'Yes') },
+    { key: 'vendor_name', labelKey: 'common.vendor', sortable: true },
+    { key: 'contact_name', labelKey: 'customers.contact', render: (r) => r.contact_name || '-' },
+    { key: 'email', labelKey: 'customers.email', render: (r) => r.email || '-' },
+    { key: 'phone', labelKey: 'common.phone', mono: true, render: (r) => r.phone || '-' },
+    {
+      key: 'is_active',
+      labelKey: 'items.active',
+      render: (r) => t(r.is_active === false ? 'common.no' : 'common.yes'),
+    },
     {
       key: 'actions', label: '', render: (r) => (
         <div style={{ display: 'flex', gap: 4 }}>
-          <button className="btn btn-sm" onClick={(e) => { e.stopPropagation(); openEdit(r); }} aria-label="Edit" title="Edit">&#9998;</button>
+          <button className="btn btn-sm" onClick={(e) => { e.stopPropagation(); openEdit(r); }} aria-label={t('common.edit')} title={t('common.edit')}>&#9998;</button>
           <button
             className="btn btn-sm btn-danger"
             onClick={(e) => { e.stopPropagation(); setDeleteTarget(r); setDeleteError(''); }}
-            aria-label="Delete" title="Delete (only when no items reference this vendor)"
+            aria-label={t('common.delete')} title={t('vendors.deleteTooltip')}
           >&#128465;</button>
         </div>
       ),
@@ -136,14 +142,14 @@ export default function Vendors() {
 
   return (
     <div>
-      <PageHeader title="Vendors">
-        <button className="btn btn-primary" onClick={openCreate}>New Vendor</button>
+      <PageHeader title={t('nav.vendors')}>
+        <button className="btn btn-primary" onClick={openCreate}>{t('vendors.newVendor')}</button>
       </PageHeader>
 
       <div className="filter-bar">
         <input
           className="form-input"
-          placeholder="Search by name, contact, email"
+          placeholder={t('vendors.searchPlaceholder')}
           value={search}
           onChange={(e) => { setSearch(e.target.value); setPage(1); }}
           style={{ maxWidth: 320 }}
@@ -153,7 +159,9 @@ export default function Vendors() {
           value={filter}
           onChange={(e) => { setFilter(e.target.value); setPage(1); }}
         >
-          {FILTER_OPTIONS.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
+          {FILTER_OPTIONS.map((o) => (
+            <option key={o.value} value={o.value}>{t(o.labelKey)}</option>
+          ))}
         </select>
       </div>
 
@@ -163,17 +171,17 @@ export default function Vendors() {
         pagination={pagination}
         onPageChange={setPage}
         onRowClick={openEdit}
-        emptyMessage="No vendors found"
+        emptyMessageKey="vendors.empty"
       />
 
       {showModal && (
         <Modal
-          title={editId ? 'Edit Vendor' : 'New Vendor'}
+          title={t(editId ? 'vendors.editVendor' : 'vendors.newVendor')}
           onClose={() => setShowModal(false)}
           footer={
             <>
-              <button className="btn" onClick={() => setShowModal(false)}>Cancel</button>
-              <button className="btn btn-primary" onClick={save}>Save</button>
+              <button className="btn" onClick={() => setShowModal(false)}>{t('common.cancel')}</button>
+              <button className="btn btn-primary" onClick={save}>{t('common.save')}</button>
             </>
           }
           size="wide"
@@ -181,7 +189,7 @@ export default function Vendors() {
           {error && <div className="form-error" style={{ marginBottom: 12 }}>{error}</div>}
           <div className="form-row">
             <div className="form-group">
-              <label>Vendor Name</label>
+              <label>{t('vendors.vendorName')}</label>
               <input
                 className="form-input" autoFocus
                 value={form.vendor_name || ''}
@@ -189,7 +197,7 @@ export default function Vendors() {
               />
             </div>
             <div className="form-group">
-              <label>Contact Name</label>
+              <label>{t('vendors.contactName')}</label>
               <input
                 className="form-input"
                 value={form.contact_name || ''}
@@ -199,7 +207,7 @@ export default function Vendors() {
           </div>
           <div className="form-row">
             <div className="form-group">
-              <label>Email</label>
+              <label>{t('customers.email')}</label>
               <input
                 className="form-input" type="email"
                 value={form.email || ''}
@@ -207,7 +215,7 @@ export default function Vendors() {
               />
             </div>
             <div className="form-group">
-              <label>Phone</label>
+              <label>{t('common.phone')}</label>
               <input
                 className="form-input"
                 value={form.phone || ''}
@@ -216,7 +224,7 @@ export default function Vendors() {
             </div>
           </div>
           <div className="form-group">
-            <label>Billing Address</label>
+            <label>{t('salesOrders.billingAddress')}</label>
             <textarea
               className="form-input" rows={2}
               value={form.billing_address || ''}
@@ -224,7 +232,7 @@ export default function Vendors() {
             />
           </div>
           <div className="form-group">
-            <label>Remit-To Address</label>
+            <label>{t('vendors.remitTo')}</label>
             <textarea
               className="form-input" rows={2}
               value={form.remit_to_address || ''}
@@ -233,7 +241,7 @@ export default function Vendors() {
           </div>
           <div className="form-row">
             <div className="form-group">
-              <label>Tax ID</label>
+              <label>{t('customers.taxId')}</label>
               <input
                 className="form-input"
                 value={form.tax_id || ''}
@@ -241,7 +249,7 @@ export default function Vendors() {
               />
             </div>
             <div className="form-group">
-              <label>Payment Terms</label>
+              <label>{t('customers.paymentTerms')}</label>
               <input
                 className="form-input"
                 placeholder="e.g. Net 30"
@@ -257,7 +265,7 @@ export default function Vendors() {
                 checked={form.is_active !== false}
                 onChange={(e) => setForm({ ...form, is_active: e.target.checked })}
               />
-              <span>Active (uncheck to hide from item / PO vendor pickers)</span>
+              <span>{t('vendors.activeHint')}</span>
             </label>
           </div>
         </Modal>
@@ -265,12 +273,12 @@ export default function Vendors() {
 
       {deleteTarget && (
         <Modal
-          title={`Delete vendor ${deleteTarget.vendor_name}?`}
+          title={t('vendors.deleteTitle', { name: deleteTarget.vendor_name })}
           onClose={() => { setDeleteTarget(null); setDeleteError(''); }}
           footer={
             <>
-              <button className="btn" onClick={() => { setDeleteTarget(null); setDeleteError(''); }}>Cancel</button>
-              <button className="btn btn-danger" onClick={confirmDelete}>Delete</button>
+              <button className="btn" onClick={() => { setDeleteTarget(null); setDeleteError(''); }}>{t('common.cancel')}</button>
+              <button className="btn btn-danger" onClick={confirmDelete}>{t('common.delete')}</button>
             </>
           }
         >

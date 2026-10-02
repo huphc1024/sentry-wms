@@ -1,16 +1,12 @@
 import { useState } from 'react';
 import { api } from '../api.js';
 import Modal from './Modal.jsx';
+import { useLocale } from '../i18n/locale.jsx';
 
-// Create the <orig>-RMA goods-in SO from an original sale's shipped lines. The
-// operator picks which lines + quantities are coming back; the backend mints
-// the return SO (order_type=return) linked to the parent. No goods move here --
-// the warehouse receives against the RMA later (the RMA page).
 export default function CreateRmaModal({ so, lines, onClose, onCreated }) {
+  const { t } = useLocale();
   const returnableLines = (lines || []).filter((l) => (l.quantity_shipped || 0) > 0);
 
-  // selection keyed by so_line_id -> quantity to return. Seeded to the full
-  // shipped quantity of each line.
   const [selection, setSelection] = useState(() => {
     const sel = {};
     for (const l of returnableLines) sel[l.so_line_id] = l.quantity_shipped;
@@ -47,7 +43,7 @@ export default function CreateRmaModal({ so, lines, onClose, onCreated }) {
       }
     }
     if (body.lines.length === 0) {
-      setError('Select at least one line to return');
+      setError(t('rma.selectLine'));
       return;
     }
     if (memo.trim()) body.memo = memo.trim();
@@ -58,25 +54,25 @@ export default function CreateRmaModal({ so, lines, onClose, onCreated }) {
       onCreated?.(await res.json());
     } else {
       const data = await res?.json();
-      setError(data?.error || 'Failed to create RMA');
+      setError(data?.error || t('rma.failed'));
       setSaving(false);
     }
   }
 
   return (
     <Modal
-      title={`Create RMA for ${so.so_number}`}
+      title={t('rma.createFor', { so: so.so_number })}
       onClose={onClose}
       size="wide"
       footer={
         <>
-          <button className="btn" onClick={onClose} disabled={saving}>Cancel</button>
+          <button className="btn" onClick={onClose} disabled={saving}>{t('common.cancel')}</button>
           <button
             className="btn btn-primary"
             onClick={submit}
             disabled={saving || returnableLines.length === 0}
           >
-            {saving ? 'Creating...' : 'Create RMA'}
+            {saving ? t('rma.creating') : t('rma.create')}
           </button>
         </>
       }
@@ -84,17 +80,17 @@ export default function CreateRmaModal({ so, lines, onClose, onCreated }) {
       {error && <div className="form-error">{error}</div>}
       {returnableLines.length === 0 ? (
         <p style={{ fontSize: 13, color: 'var(--text-secondary)' }}>
-          No shipped lines to return.
+          {t('rma.noLines')}
         </p>
       ) : (
         <table className="lines-table">
           <thead>
             <tr>
               <th style={{ width: 36 }}></th>
-              <th>SKU</th>
-              <th>Item</th>
-              <th style={{ textAlign: 'right' }}>Shipped</th>
-              <th style={{ width: 100, textAlign: 'right' }}>Return Qty</th>
+              <th>{t('common.sku')}</th>
+              <th>{t('common.item')}</th>
+              <th style={{ textAlign: 'right' }}>{t('rma.shipped')}</th>
+              <th style={{ width: 100, textAlign: 'right' }}>{t('rma.returnQty')}</th>
             </tr>
           </thead>
           <tbody>
@@ -140,12 +136,12 @@ export default function CreateRmaModal({ so, lines, onClose, onCreated }) {
       {returnableLines.length > 0 && (
         <div style={{ marginTop: 16 }}>
           <label style={{ display: 'block', fontSize: 13, color: 'var(--text-secondary)', marginBottom: 4 }}>
-            Note (optional)
+            {t('rma.noteOptional')}
           </label>
           <textarea
             className="form-input"
             rows={2}
-            placeholder="Operator note on this RMA"
+            placeholder={t('rma.notePlaceholder')}
             value={memo}
             data-testid="create-rma-memo"
             onChange={(e) => setMemo(e.target.value)}
