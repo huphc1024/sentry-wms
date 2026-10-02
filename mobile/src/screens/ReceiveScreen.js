@@ -8,14 +8,20 @@ import PagedList from '../components/PagedList';
 import useBatchedReceive from '../hooks/useBatchedReceive';
 import useScreenError from '../hooks/useScreenError';
 import { useAuth } from '../auth/AuthContext';
+import { useLocale } from '../i18n/locale.js';
 import client from '../api/client';
 import ScreenHeader from '../components/ScreenHeader';
+import BarcodeScannerModal from '../components/BarcodeScannerModal';
+import ExpiryOcrModal from '../components/ExpiryOcrModal';
+import { isValidExpiryDate, parseExpiryFromScan } from '../utils/expiryParser';
+import { getExpiryStatus } from '../utils/expiryStatus';
 import { colors, fonts, radii, screenStyles, buttonStyles, listStyles, doneStyles } from '../theme/styles';
 
 const MODE_KEY = 'sentry_receive_mode';
 
 export default function ReceiveScreen({ navigation, route }) {
   const { warehouseId } = useAuth();
+  const { t } = useLocale();
 
   // Phase: 'scan_pos' → 'receiving' → 'done'
   const [phase, setPhase] = useState('scan_pos');
@@ -30,6 +36,12 @@ export default function ReceiveScreen({ navigation, route }) {
   const [lines, setLines] = useState([]);
   const [activeItem, setActiveItem] = useState(null);
   const [quantity, setQuantity] = useState('');
+  const [palletCode, setPalletCode] = useState('');
+  const [creatingPallet, setCreatingPallet] = useState(false);
+  const [expiryDate, setExpiryDate] = useState('');
+  const [expirySource, setExpirySource] = useState('');
+  const [showExpiryScanner, setShowExpiryScanner] = useState(false);
+  const [showExpiryOcr, setShowExpiryOcr] = useState(false);
   const [mode, setMode] = useState('standard');
   const [showModeMenu, setShowModeMenu] = useState(false);
   const [turboStatus, setTurboStatus] = useState('');
@@ -54,7 +66,7 @@ export default function ReceiveScreen({ navigation, route }) {
     setSessionReceiptIds(sessionReceiptIdsRef.current);
   }, []);
   // Modal state for replacing Alert.alert
-  const [confirmModal, setConfirmModal] = useState({ visible: false, title: '', message: '', onConfirm: null, confirmText: 'OK', cancelText: 'Cancel' });
+  const [confirmModal, setConfirmModal] = useState({ visible: false, title: '', message: '', onConfirm: null, confirmText: 'OK', cancelText: t('receive.cancel') }); // i18n-ignore
 
   useEffect(() => {
     AsyncStorage.getItem(MODE_KEY).then((saved) => {
@@ -85,9 +97,9 @@ export default function ReceiveScreen({ navigation, route }) {
             .then((r) => {
               const bins = r.data?.bins || [];
               const match = bins.find((b) => b.id === binId);
-              setReceivingBinCode(match?.bin_code || `Bin #${binId}`);
+              setReceivingBinCode(match?.bin_code || t('receive.binFallback', { id: binId }));
             })
-            .catch(() => setReceivingBinCode(`Bin #${binId}`));
+            .catch(() => setReceivingBinCode(t('receive.binFallback', { id: binId })));
         }
       })
       .catch(() => {});
@@ -123,7 +135,7 @@ export default function ReceiveScreen({ navigation, route }) {
   const handleScanPO = async (barcode) => {
     // Duplicate check
     if (poQueue.find((p) => p.po_barcode === barcode || p.po_number === barcode)) {
-      showError('Already scanned');
+      showError(t('receive.alreadyScanned'));
       return;
     }
 
@@ -158,9 +170,9 @@ export default function ReceiveScreen({ navigation, route }) {
       }
     } catch (err) {
       if (err.response?.status === 404) {
-        showError('PO not found');
+        showError(t('receive.poNotFound'));
       } else {
-        showError(err.response?.data?.error || 'Validation failed');
+        showError(err.response?.data?.error || t('receive.validationFailed'));
       }
     }
   };
@@ -194,7 +206,7 @@ export default function ReceiveScreen({ navigation, route }) {
       setCurrentPoIndex(index);
       setPhase('receiving');
     } catch (err) {
-      showError(err.response?.data?.error || 'Failed to load PO');
+      showError(err.response?.data?.error || t('receive.loadPoFailed'));
     }
   };
 
@@ -218,12 +230,12 @@ export default function ReceiveScreen({ navigation, route }) {
       (l) => l.upc === barcode || l.sku === barcode || l.item_barcode === barcode
     );
     if (!match) {
-      showError('Item not on this PO');
+      showError(t('receive.itemNotOnPo'));
       return;
     }
     const remaining = match.quantity_ordered - match.quantity_received;
     if (remaining <= 0 && !allowOverReceiving) {
-      showError(`${match.sku} already fully received (${match.quantity_received}/${match.quantity_ordered})`);
+      showError(t('receive.alreadyFullyReceived', { sku: match.sku, received: match.quantity_received, ordered: match.quantity_ordered }));
       return;
     }
     if (remaining <= 0 && allowOverReceiving) {
@@ -231,10 +243,10 @@ export default function ReceiveScreen({ navigation, route }) {
         setOverReceiveWarned((prev) => new Set(prev).add(match.item_id));
         setConfirmModal({
           visible: true,
-          title: 'Item Fully Received',
-          message: `${match.sku} is already fully received (${match.quantity_received}/${match.quantity_ordered}). Over-receive?`,
-          confirmText: 'Continue',
-          cancelText: 'Cancel',
+          title: t('receive.fullyReceivedTitle'),
+          message: t('receive.fullyReceivedConfirm', { sku: match.sku, received: match.quantity_received, ordered: match.quantity_ordered }),
+          confirmText: t('receive.continue'),
+          cancelText: t('receive.cancel'),
           onConfirm: () => { setConfirmModal((p) => ({ ...p, visible: false })); setActiveItem(match); setQuantity('1'); },
         });
         return;
@@ -248,11 +260,50 @@ export default function ReceiveScreen({ navigation, route }) {
     setQuantity(String(remaining));
   };
 
+  const createFloorPallet = async () => {
+    if (!warehouseId) {
+      showError(t('receive.noWarehouse'));
+      return;
+    }
+    setCreatingPallet(true);
+    try {
+      const resp = await client.post('/api/pallets', { warehouse_id: Number(warehouseId) });
+      const code = resp.data?.pallet_code;
+      if (!code) {
+        showError(t('receive.palletCreateFailed'));
+        return;
+      }
+      setPalletCode(code);
+    } catch (err) {
+      showError(err.response?.data?.error || t('receive.palletCreateFailed'));
+    } finally {
+      setCreatingPallet(false);
+    }
+  };
+
   const doReceiveStandard = async (qty) => {
     try {
+      if (!palletCode.trim()) {
+        showError(t('receive.scanPalletFirst'));
+        return;
+      }
+      if (expiryDate && !isValidExpiryDate(expiryDate)) {
+        showError(t('receive.expiryFormat'));
+        return;
+      }
+      if (getExpiryStatus(expiryDate)?.level === 'expired') {
+        showError(t('receive.expiredBlocked'));
+        return;
+      }
       const resp = await client.post('/api/receiving/receive', {
         po_id: po.po_id,
-        items: [{ item_id: activeItem.item_id, quantity: qty, bin_id: receivingBinId || activeItem.staging_bin_id || 1 }],
+        items: [{
+          item_id: activeItem.item_id,
+          quantity: qty,
+          bin_id: receivingBinId || activeItem.staging_bin_id || 1,
+          pallet_code: palletCode.trim(),
+          expiry_date: expiryDate || null,
+        }],
         warehouse_id: warehouseId,
       });
 
@@ -264,9 +315,32 @@ export default function ReceiveScreen({ navigation, route }) {
       await refreshPO();
       setActiveItem(null);
       setQuantity('');
+      setPalletCode('');
+      setExpiryDate('');
+      setExpirySource('');
     } catch (err) {
-      showError(err.response?.data?.error || 'Failed to receive');
+      showError(err.response?.data?.error || t('receive.receiveFailed'));
     }
+  };
+
+  const applyDetectedExpiry = (date, source) => {
+    setExpiryDate(date);
+    setExpirySource(source);
+    setQtyFocused(false);
+    const status = getExpiryStatus(date);
+    if (status?.level === 'expired') {
+      showError(t('receive.expiredItem', { date, label: status.label }));
+    } else if (status?.level === 'near') {
+      showError(t('receive.expiryWarning', { date, label: status.label }));
+    }
+  };
+
+  const handleExpiryScan = (code) => {
+    const detected = parseExpiryFromScan(code);
+    if (!detected) {
+      throw new Error(t('receive.expiryScanInvalid'));
+    }
+    applyDetectedExpiry(detected, 'scan');
   };
 
   const handleConfirmStandard = async () => {
@@ -279,17 +353,17 @@ export default function ReceiveScreen({ navigation, route }) {
     if (totalAfterReceive > activeItem.quantity_ordered) {
       if (!allowOverReceiving) {
         const remaining = activeItem.quantity_ordered - activeItem.quantity_received;
-        showError(`Cannot receive more than ordered (${remaining > 0 ? remaining : 0} remaining)`);
+        showError(t('receive.cannotOverReceiveRemaining', { remaining: remaining > 0 ? remaining : 0 }));
         return;
       }
       // Show warning but allow  -  EVERY time
       const overAmount = totalAfterReceive - activeItem.quantity_ordered;
       setConfirmModal({
         visible: true,
-        title: 'Over-Receiving',
-        message: `You are receiving ${overAmount} more than expected. Continue?`,
-        confirmText: 'Continue',
-        cancelText: 'Cancel',
+        title: t('receive.overReceivingTitle'),
+        message: t('receive.overReceivingConfirm', { n: overAmount }),
+        confirmText: t('receive.continue'),
+        cancelText: t('receive.cancel'),
         onConfirm: () => { setConfirmModal((p) => ({ ...p, visible: false })); doReceiveStandard(qty); },
       });
       return;
@@ -324,11 +398,11 @@ export default function ReceiveScreen({ navigation, route }) {
 
   const handleBatchError = useCallback(async (items, err) => {
     const n = items.reduce((s, it) => s + it.quantity, 0);
-    showError(err.response?.data?.error || `Failed to save ${n} scan${n !== 1 ? 's' : ''}  -  re-scan them`);
+    showError(err.response?.data?.error || t(n !== 1 ? 'receive.saveScansFailed.other' : 'receive.saveScansFailed.one', { n }));
     // The hook rolled back this batch's optimistic counts; refetch server
     // truth to reconcile.
     await refreshPO();
-  }, [showError]);
+  }, [showError, t]);
 
   const {
     enqueue: enqueueReceive,
@@ -341,25 +415,33 @@ export default function ReceiveScreen({ navigation, route }) {
   } = useBatchedReceive({ submit: submitBatch, onConfirm: handleBatchConfirm, onError: handleBatchError });
 
   const processTurboScan = useCallback((barcode) => {
+    if (!palletCode.trim()) {
+      showError(t('receive.scanOrCreatePalletFirst'));
+      return;
+    }
     const match = lines.find(
       (l) => l.upc === barcode || l.sku === barcode || l.item_barcode === barcode
     );
     if (!match) {
-      showError('Item not on this PO');
+      showError(t('receive.itemNotOnPo'));
       return;
     }
     const projected = match.quantity_received + getPending(match.item_id) + 1;
     if (projected > match.quantity_ordered && !allowOverReceiving) {
-      showError('Cannot receive more than ordered');
+      showError(t('receive.cannotOverReceive'));
       return;
     }
     const binId = receivingBinId || match.staging_bin_id || 1;
-    enqueueReceive(match.item_id, { item_id: match.item_id, bin_id: binId });
+    enqueueReceive(match.item_id, {
+      item_id: match.item_id,
+      bin_id: binId,
+      pallet_code: palletCode.trim(),
+    });
     setTurboStatus(`${match.item_name}: ${projected} / ${match.quantity_ordered}`);
     if (projected >= match.quantity_ordered) {
       try { Vibration.vibrate(200); } catch {}
     }
-  }, [lines, allowOverReceiving, receivingBinId, enqueueReceive, getPending, showError]);
+  }, [lines, allowOverReceiving, receivingBinId, enqueueReceive, getPending, showError, palletCode, t]);
 
   const handleScanItem = mode === 'turbo' ? processTurboScan : handleScanItemStandard;
 
@@ -376,10 +458,10 @@ export default function ReceiveScreen({ navigation, route }) {
   const handleCancel = () => {
     setConfirmModal({
       visible: true,
-      title: 'Cancel Receiving',
-      message: 'Are you sure? Items already received will not be saved.',
-      confirmText: 'Cancel',
-      cancelText: 'Stay',
+      title: t('receive.cancelReceivingTitle'),
+      message: t('receive.cancelReceivingConfirm'),
+      confirmText: t('receive.cancel'),
+      cancelText: t('receive.stay'),
       onConfirm: async () => {
         setConfirmModal((p) => ({ ...p, visible: false }));
         // Flush buffered/in-flight scans first so every receipt has an id,
@@ -425,7 +507,7 @@ export default function ReceiveScreen({ navigation, route }) {
   return (
     <View style={screenStyles.screen}>
       <ScreenHeader
-        title="RECEIVE"
+        title={t('receive.title')}
         onBack={handleExit}
         right={
           phase === 'scan_pos' && poQueue.length > 0 ? (
@@ -445,7 +527,7 @@ export default function ReceiveScreen({ navigation, route }) {
         <>
           <View style={screenStyles.content}>
             <View style={{ padding: 16, paddingBottom: 0 }}>
-              <ScanInput placeholder="SCAN PO" onScan={handleScanPO} disabled={scanDisabled} />
+              <ScanInput placeholder={t('receive.scanPo')} onScan={handleScanPO} disabled={scanDisabled} />
             </View>
 
             <View style={{ flex: 1, paddingHorizontal: 16 }}>
@@ -457,7 +539,7 @@ export default function ReceiveScreen({ navigation, route }) {
                     <View style={{ flex: 1 }}>
                       <Text style={styles.poNumber}>{entry.po_number}</Text>
                       <Text style={styles.poDetail}>
-                        {entry.vendor_name} {'\u00b7'} {entry.line_count} item{entry.line_count !== 1 ? 's' : ''} {'\u00b7'} {entry.total_units} unit{entry.total_units !== 1 ? 's' : ''}
+                        {entry.vendor_name} {'\u00b7'} {t(entry.line_count !== 1 ? 'receive.itemCount.other' : 'receive.itemCount.one', { n: entry.line_count })} {'\u00b7'} {t(entry.total_units !== 1 ? 'receive.unitCount.other' : 'receive.unitCount.one', { n: entry.total_units })}
                       </Text>
                     </View>
                     <TouchableOpacity
@@ -477,7 +559,7 @@ export default function ReceiveScreen({ navigation, route }) {
                 onPress={handleLoadAll}
                 disabled={poQueue.length === 0}
               >
-                <Text style={buttonStyles.buttonPrimaryText}>LOAD ALL POs</Text>
+                <Text style={buttonStyles.buttonPrimaryText}>{t('receive.loadAll')}</Text>
               </TouchableOpacity>
             </View>
           </View>
@@ -496,7 +578,7 @@ export default function ReceiveScreen({ navigation, route }) {
               <View style={styles.poMeta}>
                 <Text style={styles.poVendor}>{po.vendor_name}</Text>
                 <View style={[styles.modeBadge, mode === 'turbo' && styles.modeBadgeTurbo]}>
-                  <Text style={styles.modeBadgeText}>{mode === 'turbo' ? 'TURBO' : 'STANDARD'}</Text>
+                  <Text style={styles.modeBadgeText}>{mode === 'turbo' ? t('receive.mode.turbo') : t('receive.mode.standard')}</Text>
                 </View>
               </View>
               {receivingBinCode ? (
@@ -508,18 +590,46 @@ export default function ReceiveScreen({ navigation, route }) {
 
             {poComplete ? (
               <View style={styles.poCompleteCard}>
-                <Text style={styles.poCompleteText}>PO Complete</Text>
-                <Text style={styles.poCompleteDetail}>{po.po_number} - all items received</Text>
+                <Text style={styles.poCompleteText}>{t('receive.poComplete')}</Text>
+                <Text style={styles.poCompleteDetail}>{t('receive.poCompleteDetail', { po: po.po_number })}</Text>
                 {currentPoIndex < poQueue.length - 1 && (
                   <TouchableOpacity style={[buttonStyles.buttonPrimary, { width: '100%' }]} onPress={handleNextPO}>
-                    <Text style={buttonStyles.buttonPrimaryText}>NEXT PO</Text>
+                    <Text style={buttonStyles.buttonPrimaryText}>{t('receive.nextPo')}</Text>
                   </TouchableOpacity>
                 )}
               </View>
             ) : (
               <>
+                {mode === 'turbo' && (
+                  <View style={styles.palletSessionCard}>
+                    <Text style={[listStyles.label, { marginBottom: 6 }]}>{t('receive.palletSession')}</Text>
+                    <ScanInput
+                      placeholder={t('receive.scanPallet')}
+                      onScan={(code) => setPalletCode(code)}
+                      autoFocus={!palletCode}
+                      suppressRefocus={qtyFocused}
+                    />
+                    <View style={styles.palletActions}>
+                      {palletCode ? (
+                        <Text style={styles.palletSelected}>{t('receive.palletLabel', { code: palletCode })}</Text>
+                      ) : (
+                        <Text style={styles.palletHint}>{t('receive.palletHint')}</Text>
+                      )}
+                      <TouchableOpacity
+                        style={[buttonStyles.buttonSecondary, styles.createPalletBtn]}
+                        onPress={createFloorPallet}
+                        disabled={creatingPallet}
+                      >
+                        <Text style={buttonStyles.buttonSecondaryText}>
+                          {creatingPallet ? t('receive.creating') : t('receive.createPallet')}
+                        </Text>
+                      </TouchableOpacity>
+                    </View>
+                  </View>
+                )}
+
                 <ScanInput
-                  placeholder="SCAN ITEM"
+                  placeholder={t('receive.scanItem')}
                   onScan={handleScanItem}
                   disabled={scanDisabled || (mode === 'standard' && !!activeItem)}
                   suppressRefocus={qtyFocused}
@@ -529,7 +639,7 @@ export default function ReceiveScreen({ navigation, route }) {
                   <View style={styles.turboCard}>
                     {turboStatus !== '' && <Text style={styles.turboText}>{turboStatus}</Text>}
                     {pendingTotal > 0 && (
-                      <Text style={styles.turboPending}>{'↻'} syncing {pendingTotal}...</Text>
+                      <Text style={styles.turboPending}>{'↻'} {t('receive.syncing', { n: pendingTotal })}</Text>
                     )}
                   </View>
                 )}
@@ -539,10 +649,69 @@ export default function ReceiveScreen({ navigation, route }) {
                     <Text style={listStyles.sku}>{activeItem.sku}</Text>
                     <Text style={[listStyles.itemName, { fontSize: 13 }]}>{activeItem.item_name}</Text>
                     <Text style={styles.expectedText}>
-                      Expected: {activeItem.quantity_ordered} | Received: {activeItem.quantity_received}
+                      {t('receive.expected', { ordered: activeItem.quantity_ordered, received: activeItem.quantity_received })}
                     </Text>
+                    <Text style={[listStyles.label, { marginTop: 12, marginBottom: 6 }]}>{t('receive.palletQr')}</Text>
+                    <ScanInput
+                      placeholder={t('receive.scanPallet')}
+                      onScan={(code) => setPalletCode(code)}
+                      autoFocus
+                      suppressRefocus={qtyFocused}
+                    />
+                    <View style={styles.palletActions}>
+                      {palletCode ? <Text style={styles.palletSelected}>{t('receive.palletLabel', { code: palletCode })}</Text> : null}
+                      <TouchableOpacity
+                        style={[buttonStyles.buttonSecondary, styles.createPalletBtn]}
+                        onPress={createFloorPallet}
+                        disabled={creatingPallet}
+                      >
+                        <Text style={buttonStyles.buttonSecondaryText}>
+                          {creatingPallet ? t('receive.creating') : t('receive.createPallet')}
+                        </Text>
+                      </TouchableOpacity>
+                    </View>
+                    <Text style={[listStyles.label, { marginTop: 8, marginBottom: 6 }]}>{t('receive.expiryDate')}</Text>
+                    <View style={styles.expiryActions}>
+                      <TouchableOpacity style={styles.expiryActionButton} onPress={() => setShowExpiryScanner(true)}>
+                        <Text style={styles.expiryActionText}>{t('receive.scanGs1')}</Text>
+                      </TouchableOpacity>
+                      <TouchableOpacity style={styles.expiryActionButton} onPress={() => setShowExpiryOcr(true)}>
+                        <Text style={styles.expiryActionText}>{t('receive.ocr')}</Text>
+                      </TouchableOpacity>
+                    </View>
+                    <TextInput
+                      style={styles.expiryInput}
+                      value={expiryDate}
+                      onChangeText={(value) => {
+                        setExpiryDate(value);
+                        setExpirySource(value ? 'manual' : '');
+                      }}
+                      placeholder={t('receive.expiryPlaceholder')}
+                      placeholderTextColor={colors.textPlaceholder}
+                      onFocus={() => setQtyFocused(true)}
+                      onBlur={() => setQtyFocused(false)}
+                    />
+                    {expirySource ? (
+                      <Text style={styles.expiryDetected}>
+                        {expirySource === 'scan' ? t('receive.expirySource.scan') : expirySource === 'ocr' ? t('receive.expirySource.ocr') : t('receive.expirySource.manual')}
+                      </Text>
+                    ) : null}
+                    {expiryDate && getExpiryStatus(expiryDate)?.level !== 'ok' ? (
+                      <View style={[
+                        styles.expiryBanner,
+                        getExpiryStatus(expiryDate)?.level === 'expired' && styles.expiryBannerDanger,
+                      ]}>
+                        <Text style={[
+                          styles.expiryBannerText,
+                          getExpiryStatus(expiryDate)?.level === 'expired' && styles.expiryBannerDangerText,
+                        ]}>
+                          {getExpiryStatus(expiryDate)?.level === 'expired' ? t('receive.bannerExpired') : t('receive.bannerNear')}
+                          {' · '}{getExpiryStatus(expiryDate)?.label}
+                        </Text>
+                      </View>
+                    ) : null}
                     <View style={styles.qtyRow}>
-                      <Text style={listStyles.label}>QUANTITY</Text>
+                      <Text style={listStyles.label}>{t('receive.quantity')}</Text>
                       <TextInput
                         style={listStyles.qtyInput}
                         value={quantity}
@@ -554,7 +723,7 @@ export default function ReceiveScreen({ navigation, route }) {
                       />
                     </View>
                     <TouchableOpacity style={[buttonStyles.buttonPrimary, { width: '100%' }]} onPress={handleConfirmStandard}>
-                      <Text style={buttonStyles.buttonPrimaryText}>RECEIVE</Text>
+                      <Text style={buttonStyles.buttonPrimaryText}>{t('receive.receive')}</Text>
                     </TouchableOpacity>
                   </View>
                 )}
@@ -587,10 +756,10 @@ export default function ReceiveScreen({ navigation, route }) {
 
           <View style={screenStyles.bottomBar}>
             <TouchableOpacity style={[buttonStyles.buttonPrimary, { flex: 1 }]} onPress={handleSubmit}>
-              <Text style={buttonStyles.buttonPrimaryText}>SUBMIT</Text>
+              <Text style={buttonStyles.buttonPrimaryText}>{t('receive.submit')}</Text>
             </TouchableOpacity>
             <TouchableOpacity style={[buttonStyles.buttonSecondary, { flex: 1 }]} onPress={handleCancel}>
-              <Text style={buttonStyles.buttonSecondaryText}>CANCEL</Text>
+              <Text style={buttonStyles.buttonSecondaryText}>{t('receive.cancelBtn')}</Text>
             </TouchableOpacity>
           </View>
         </>
@@ -600,15 +769,15 @@ export default function ReceiveScreen({ navigation, route }) {
       {phase === 'done' && (
         <View style={doneStyles.section}>
           <Text style={doneStyles.check}>{'\u2713'}</Text>
-          <Text style={doneStyles.title}>Receiving Complete</Text>
+          <Text style={doneStyles.title}>{t('receive.complete')}</Text>
           <Text style={doneStyles.detail}>
-            {poQueue.length} PO{poQueue.length !== 1 ? 's' : ''} processed
+            {t(poQueue.length !== 1 ? 'receive.posProcessed.other' : 'receive.posProcessed.one', { n: poQueue.length })}
           </Text>
           <TouchableOpacity style={[buttonStyles.buttonPrimary, { width: '100%' }]} onPress={resetAll}>
-            <Text style={buttonStyles.buttonPrimaryText}>RECEIVE MORE</Text>
+            <Text style={buttonStyles.buttonPrimaryText}>{t('receive.receiveMore')}</Text>
           </TouchableOpacity>
           <TouchableOpacity style={[buttonStyles.buttonSecondary, { marginTop: 8, width: '100%' }]} onPress={() => navigation.goBack()}>
-            <Text style={buttonStyles.buttonSecondaryText}>DONE</Text>
+            <Text style={buttonStyles.buttonSecondaryText}>{t('receive.done')}</Text>
           </TouchableOpacity>
         </View>
       )}
@@ -617,20 +786,20 @@ export default function ReceiveScreen({ navigation, route }) {
       <ModeSelector
         visible={showModeMenu}
         onClose={() => setShowModeMenu(false)}
-        title="RECEIVE MODE"
+        title={t('receive.modeTitle')}
         mode={mode}
         onChangeMode={changeMode}
-        standardDesc="Scan item, enter qty, confirm"
-        turboDesc="Each scan = 1 unit received"
+        standardDesc={t('receive.standardDesc')}
+        turboDesc={t('receive.turboDesc')}
       >
         <View style={{ height: 1, backgroundColor: colors.cardBorder, marginVertical: 8 }} />
-        <Text style={styles.modeTitle}>RECEIVING BIN</Text>
+        <Text style={styles.modeTitle}>{t('receive.receivingBin')}</Text>
         <TouchableOpacity
           style={styles.modeOption}
           onPress={() => { setShowModeMenu(false); setBinPickerValue(''); setShowBinPicker(true); }}
         >
-          <Text style={styles.modeOptionLabel}>{receivingBinCode || 'Not Set'}</Text>
-          <Text style={styles.modeOptionDesc}>Tap to change destination bin</Text>
+          <Text style={styles.modeOptionLabel}>{receivingBinCode || t('receive.notSet')}</Text>
+          <Text style={styles.modeOptionDesc}>{t('receive.tapToChange')}</Text>
         </TouchableOpacity>
       </ModeSelector>
 
@@ -638,12 +807,12 @@ export default function ReceiveScreen({ navigation, route }) {
       <Modal visible={showBinPicker} transparent animationType="fade">
         <View style={styles.modeOverlay}>
           <View style={[styles.modeCard, { maxHeight: '70%' }]}>
-            <Text style={styles.modeTitle}>CHANGE RECEIVING BIN</Text>
+            <Text style={styles.modeTitle}>{t('receive.changeBinTitle')}</Text>
             <Text style={{ fontSize: 12, color: colors.textMuted, marginBottom: 12 }}>
-              Scan or select a staging bin
+              {t('receive.scanOrSelectBin')}
             </Text>
             <ScanInput
-              placeholder="SCAN BIN"
+              placeholder={t('receive.scanBin')}
               onScan={async (barcode) => {
                 try {
                   const resp = await client.get(`/api/lookup/bin/${encodeURIComponent(barcode)}`);
@@ -653,12 +822,12 @@ export default function ReceiveScreen({ navigation, route }) {
                     setReceivingBinCode(bin.bin_code);
                     setShowBinPicker(false);
                   } else if (bin) {
-                    showError(`${bin.bin_code} is ${bin.bin_type}  -  must be Staging or PickableStaging`);
+                    showError(t('receive.binWrongType', { code: bin.bin_code, type: bin.bin_type }));
                   } else {
-                    showError('Bin not found');
+                    showError(t('receive.binNotFound'));
                   }
                 } catch {
-                  showError('Bin not found');
+                  showError(t('receive.binNotFound'));
                 }
               }}
               disabled={false}
@@ -668,7 +837,7 @@ export default function ReceiveScreen({ navigation, route }) {
                 {stagingBins.map((bin) => (
                   <TouchableOpacity
                     key={bin.bin_id}
-                    style={[listStyles.row, { padding: 10, marginBottom: 4 }, bin.bin_id === receivingBinId && { borderColor: colors.accentRed }]}
+                    style={[listStyles.row, { padding: 10, marginBottom: 4 }, bin.bin_id === receivingBinId && { borderColor: colors.accent }]}
                     onPress={() => {
                       setReceivingBinId(bin.bin_id);
                       setReceivingBinCode(bin.bin_code);
@@ -685,11 +854,22 @@ export default function ReceiveScreen({ navigation, route }) {
               style={[buttonStyles.buttonSecondary, { marginTop: 8 }]}
               onPress={() => setShowBinPicker(false)}
             >
-              <Text style={buttonStyles.buttonSecondaryText}>CANCEL</Text>
+              <Text style={buttonStyles.buttonSecondaryText}>{t('receive.cancelBtn')}</Text>
             </TouchableOpacity>
           </View>
         </View>
       </Modal>
+
+      <BarcodeScannerModal
+        visible={showExpiryScanner}
+        onClose={() => setShowExpiryScanner(false)}
+        onScan={handleExpiryScan}
+      />
+      <ExpiryOcrModal
+        visible={showExpiryOcr}
+        onClose={() => setShowExpiryOcr(false)}
+        onExpiryDetected={(date) => applyDetectedExpiry(date, 'ocr')}
+      />
 
       {/* Confirm modal (replaces Alert.alert) */}
       <Modal visible={confirmModal.visible} transparent animationType="fade">
@@ -726,10 +906,10 @@ export default function ReceiveScreen({ navigation, route }) {
 
 const styles = StyleSheet.create({
   badge: {
-    backgroundColor: colors.accentRed, borderRadius: 10,
+    backgroundColor: colors.accent, borderRadius: 10,
     paddingHorizontal: 8, paddingVertical: 2, minWidth: 24, alignItems: 'center',
   },
-  badgeText: { color: '#FFFFFF', fontFamily: fonts.mono, fontSize: 12, fontWeight: '700' },
+  badgeText: { color: colors.background, fontFamily: fonts.mono, fontSize: 12, fontWeight: '700' },
 
   // Phase 1: PO queue
   poNumber: { fontFamily: fonts.mono, fontSize: 14, fontWeight: '700', color: colors.textPrimary },
@@ -746,25 +926,59 @@ const styles = StyleSheet.create({
     backgroundColor: colors.cardBorder, borderRadius: radii.badge,
     paddingHorizontal: 8, paddingVertical: 2,
   },
-  modeBadgeTurbo: { backgroundColor: colors.accentRed },
+  modeBadgeTurbo: { backgroundColor: colors.accent },
   modeBadgeText: { fontFamily: fonts.mono, fontSize: 10, fontWeight: '700', color: colors.cream, letterSpacing: 0.5 },
   turboCard: {
-    backgroundColor: '#f0f9f0', borderWidth: 1, borderColor: colors.success, borderRadius: radii.card,
+    backgroundColor: colors.successBg, borderWidth: 1, borderColor: colors.success, borderRadius: radii.card,
     padding: 12, marginBottom: 16, alignItems: 'center',
   },
   turboText: { fontFamily: fonts.mono, fontSize: 14, fontWeight: '600', color: colors.success },
   turboPending: { fontFamily: fonts.mono, fontSize: 11, color: colors.textMuted, marginTop: 4 },
   receiveCard: {
-    borderWidth: 1.5, borderColor: colors.accentRed, borderRadius: radii.card,
+    borderWidth: 1.5, borderColor: colors.accent, borderRadius: radii.card,
     padding: 12, marginBottom: 10,
   },
   expectedText: { fontFamily: fonts.mono, fontSize: 12, color: colors.textMuted, marginTop: 6 },
+  palletSessionCard: {
+    borderWidth: 1, borderColor: colors.cardBorder, borderRadius: radii.card,
+    padding: 12, marginBottom: 12,
+  },
+  palletActions: { marginTop: 8, gap: 8 },
+  createPalletBtn: { alignSelf: 'flex-start' },
+  palletHint: { fontFamily: fonts.mono, fontSize: 11, color: colors.textMuted },
+  palletSelected: { fontFamily: fonts.mono, fontSize: 12, fontWeight: '700', color: colors.success, marginTop: -8, marginBottom: 8 },
+  expiryActions: {
+    flexDirection: 'row', gap: 8, marginBottom: 8,
+  },
+  expiryActionButton: {
+    flex: 1, alignItems: 'center', backgroundColor: colors.cardBorder,
+    borderRadius: radii.small, paddingHorizontal: 8, paddingVertical: 10,
+  },
+  expiryActionText: {
+    color: colors.textPrimary, fontFamily: fonts.mono, fontSize: 10, fontWeight: '700',
+  },
+  expiryInput: {
+    borderWidth: 1, borderColor: colors.cardBorder, borderRadius: radii.small,
+    paddingHorizontal: 10, paddingVertical: 9, color: colors.textPrimary,
+    fontFamily: fonts.mono,
+  },
+  expiryDetected: { fontFamily: fonts.mono, fontSize: 10, color: colors.success, marginTop: 5, marginBottom: 8 },
+  expiryBanner: {
+    alignSelf: 'flex-start', marginTop: 7, marginBottom: 8,
+    paddingHorizontal: 8, paddingVertical: 5, borderRadius: radii.badge,
+    borderWidth: 1, borderColor: colors.warning, backgroundColor: colors.warningBg,
+  },
+  expiryBannerDanger: { borderColor: colors.danger, backgroundColor: colors.accentBg },
+  expiryBannerText: {
+    fontFamily: fonts.mono, fontSize: 10, fontWeight: '700', color: colors.accent,
+  },
+  expiryBannerDangerText: { color: colors.danger },
   qtyRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginVertical: 12 },
   lineQty: { fontFamily: fonts.mono, fontSize: 14, fontWeight: '700', color: colors.textPrimary },
   lineQtyPending: { color: colors.copper },
   lineRowDone: { borderColor: colors.success },
   textDone: { color: colors.success },
-  textPending: { color: colors.accentRed },
+  textPending: { color: colors.danger },
 
   // PO complete within receiving phase
   poCompleteCard: { alignItems: 'center', paddingVertical: 24 },
@@ -799,7 +1013,7 @@ const styles = StyleSheet.create({
   confirmTitle: { fontFamily: fonts.mono, fontSize: 16, fontWeight: '700', color: colors.textPrimary, marginBottom: 8 },
   confirmMessage: { fontFamily: fonts.mono, fontSize: 13, color: colors.textMuted, lineHeight: 20 },
   confirmButton: {
-    backgroundColor: colors.accentRed, borderRadius: radii.button,
+    backgroundColor: colors.accent, borderRadius: radii.button,
     paddingVertical: 12, alignItems: 'center',
   },
   confirmButtonText: { fontFamily: fonts.mono, fontSize: 13, fontWeight: '700', color: colors.cream, letterSpacing: 0.5 },

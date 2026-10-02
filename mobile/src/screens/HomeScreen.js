@@ -8,25 +8,38 @@ import ErrorPopup from '../components/ErrorPopup';
 import useScreenError from '../hooks/useScreenError';
 import WarehouseSelector from '../components/WarehouseSelector';
 import client, { getStoredApiUrl, setApiUrl } from '../api/client';
+import {
+  lookupScannedBarcode,
+  scanFailureMessage,
+  SCAN_ITEM,
+  SCAN_BIN,
+  SCAN_PO,
+  SCAN_SO,
+} from '../utils/scanLookup';
 import { colors, fonts, radii, spacing } from '../theme/styles';
+import { useLocale } from '../i18n/locale.js';
+import LanguageToggle from '../components/LanguageToggle';
 
 const FUNCTIONS = [
-  { key: 'pick', label: 'PICK', sub: 'Pick orders', screen: 'PickScan', accent: 'red' },
-  { key: 'pack', label: 'PACK', sub: 'Verify & pack', screen: 'Pack', accent: 'red' },
-  { key: 'receive', label: 'RECEIVE', sub: 'PO receiving', screen: 'Receive', accent: 'copper' },
-  { key: 'putaway', label: 'PUT-AWAY', sub: 'Bin placement', screen: 'PutAway', accent: 'copper' },
-  { key: 'transfer', label: 'TRANSFER', sub: 'Bin to bin', screen: 'Transfer', accent: 'gray' },
-  { key: 'count', label: 'COUNT', sub: 'Cycle count', screen: 'Count', accent: 'gray' },
-  { key: 'ship', label: 'SHIP', sub: 'Fulfill & ship', screen: 'Ship', accent: 'gray' },
+  { key: 'pick', labelKey: 'home.fn.pick.label', subKey: 'home.fn.pick.sub', screen: 'PickScan', accent: 'red' }, // i18n-ignore: screen names / accent codes
+  { key: 'pack', labelKey: 'home.fn.pack.label', subKey: 'home.fn.pack.sub', screen: 'Pack', accent: 'red' }, // i18n-ignore: screen names / accent codes
+  { key: 'receive', labelKey: 'home.fn.receive.label', subKey: 'home.fn.receive.sub', screen: 'Receive', accent: 'copper' }, // i18n-ignore: screen names / accent codes
+  { key: 'putaway', labelKey: 'home.fn.putaway.label', subKey: 'home.fn.putaway.sub', screen: 'PutAway', accent: 'copper' }, // i18n-ignore: screen names / accent codes
+  { key: 'gate', labelKey: 'home.fn.gate.label', subKey: 'home.fn.gate.sub', screen: 'Gate', accent: 'copper' }, // i18n-ignore: screen names / accent codes
+  { key: 'transfer', labelKey: 'home.fn.transfer.label', subKey: 'home.fn.transfer.sub', screen: 'Transfer', accent: 'gray' }, // i18n-ignore: screen names / accent codes
+  { key: 'count', labelKey: 'home.fn.count.label', subKey: 'home.fn.count.sub', screen: 'Count', accent: 'gray' }, // i18n-ignore: screen names / accent codes
+  { key: 'map', labelKey: 'home.fn.map.label', subKey: 'home.fn.map.sub', screen: 'Map', accent: 'gray' }, // i18n-ignore: screen names / accent codes
+  { key: 'ship', labelKey: 'home.fn.ship.label', subKey: 'home.fn.ship.sub', screen: 'Ship', accent: 'gray' }, // i18n-ignore: screen names / accent codes
 ];
 
 const ACCENT_COLORS = {
-  red: colors.accentRed,
+  red: colors.accent,
   copper: colors.copper,
   gray: colors.grayAccent,
 };
 
 export default function HomeScreen({ navigation }) {
+  const { t } = useLocale();
   const { user, warehouseId, logout, switchWarehouse } = useAuth();
   const [allowedFunctions, setAllowedFunctions] = useState([]);
   const [badges, setBadges] = useState({});
@@ -52,7 +65,7 @@ export default function HomeScreen({ navigation }) {
   useScrollToTop(scrollRef);
   // Modal state for replacing Alert.alert
   const [infoModal, setInfoModal] = useState({ visible: false, title: '', message: '' });
-  const [confirmModal, setConfirmModal] = useState({ visible: false, title: '', message: '', onConfirm: null, confirmText: 'OK', confirmDestructive: false });
+  const [confirmModal, setConfirmModal] = useState({ visible: false, title: '', message: '', onConfirm: null, confirmText: '', confirmDestructive: false });
 
   // On first load after login, if no warehouse is set, fetch the list and
   // either auto-select (single warehouse) or show a blocking picker.
@@ -129,77 +142,63 @@ export default function HomeScreen({ navigation }) {
   const handleScan = async (barcode) => {
     const cleaned = barcode.replace(/[\r\n\s]+/g, '').trim();
     if (!cleaned) return;
-    const encoded = encodeURIComponent(cleaned);
 
-    // Try item lookup (UPC or SKU)
-    try {
-      const itemResp = await client.get(`/api/lookup/item/${encoded}`);
-      if (itemResp.data && itemResp.data.item) {
-        const item = itemResp.data.item;
-        const locations = (itemResp.data.locations || [])
+    // One helper walks item -> bin -> PO -> SO and tells us *why* it
+    // came back empty. Before this, every failure -- including a dropped
+    // Wi-Fi link -- surfaced as "Barcode not recognized", which sends the
+    // operator hunting for a bad label instead of a network problem.
+    const result = await lookupScannedBarcode(client, cleaned);
+
+    switch (result.kind) {
+      case SCAN_ITEM: {
+        const item = result.data.item;
+        const locations = (result.data.locations || [])
           .map((l) => `${l.bin_code}: ${l.quantity_on_hand}`)
           .join('\n');
-        setInfoModal({ visible: true, title: item.sku, message: `${item.item_name}\n\n${locations || 'No stock on hand'}` });
+        setInfoModal({
+          visible: true,
+          title: item.sku,
+          message: `${item.item_name}\n\n${locations || t('home.noStock')}`,
+        });
         return;
       }
-    } catch {
-      // Not an item
-    }
-
-    // Try bin lookup
-    try {
-      const binResp = await client.get(`/api/lookup/bin/${encoded}`);
-      if (binResp.data && binResp.data.bin) {
-        const bin = binResp.data.bin;
-        const contents = (binResp.data.items || [])
+      case SCAN_BIN: {
+        const bin = result.data.bin;
+        const contents = (result.data.items || [])
           .map((c) => `${c.sku}: ${c.quantity_on_hand}`)
           .join('\n');
-        setInfoModal({ visible: true, title: bin.bin_code, message: `${bin.bin_type}\n\n${contents || 'Empty bin'}` });
+        setInfoModal({
+          visible: true,
+          title: bin.bin_code,
+          message: `${bin.bin_type}\n\n${contents || t('home.emptyBin')}`,
+        });
         return;
       }
-    } catch {
-      // Not a bin
-    }
-
-    // Try PO lookup
-    try {
-      const poResp = await client.get(`/api/receiving/po/${encoded}`);
-      if (poResp.data && poResp.data.purchase_order) {
-        const po = poResp.data.purchase_order;
-        navigation.navigate('Receive', { po_number: po.po_number });
+      case SCAN_PO:
+        navigation.navigate('Receive', { po_number: result.data.purchase_order.po_number });
         return;
-      }
-    } catch {
-      // Not a PO
-    }
-
-    // Try SO lookup  -  generic first to check status, then route appropriately
-    try {
-      const soResp = await client.get(`/api/lookup/so/${encoded}`);
-      if (soResp.data && soResp.data.sales_order) {
-        const so = soResp.data.sales_order;
-        if (so.status === 'PACKED') {
+      case SCAN_SO: {
+        const so = result.data.sales_order;
+        // PICKED and PACKED both belong on the ship screen; anything
+        // else is informational, since there is no floor action to take.
+        if (so.status === 'PACKED' || so.status === 'PICKED') {
           navigation.navigate('Ship', { so_number: so.so_number });
           return;
         }
-        if (so.status === 'PICKED') {
-          navigation.navigate('Ship', { so_number: so.so_number });
-          return;
-        }
-        // SO exists but not in actionable status  -  show info
-        const infoLines = [so.customer_name, so.customer_phone, `Status: ${so.status}`].filter(Boolean);
+        const infoLines = [so.customer_name, so.customer_phone, t('home.status', { status: so.status })].filter(Boolean);
         setInfoModal({ visible: true, title: so.so_number, message: infoLines.join('\n') });
         return;
       }
-    } catch {
-      // Not an SO
+      default:
+        showError(scanFailureMessage(result.kind, cleaned));
     }
-
-    showError('Barcode not recognized');
   };
 
+  // MAP is always visible for any signed-in worker — it is a read-only
+  // warehouse locator, not an operational privilege like pick/receive.
+  // Gate is available to any authenticated floor user (check-in is low-privilege).
   const visibleFunctions = FUNCTIONS.filter(
-    (fn) => allowedFunctions.includes(fn.key)
+    (fn) => fn.key === 'map' || fn.key === 'gate' || allowedFunctions.includes(fn.key)
   );
 
   const getBadgeCount = (key) => badges[key] || 0;
@@ -211,6 +210,7 @@ export default function HomeScreen({ navigation }) {
       <View style={styles.header}>
         <Text style={styles.headerLogo}>SENTRY</Text>
         <View style={styles.headerRight}>
+          <LanguageToggle />
           <TouchableOpacity style={styles.warehousePill} onPress={() => setShowWarehousePicker(true)}>
             <Text style={styles.warehousePillText}>{warehouseCode || '---'}</Text>
           </TouchableOpacity>
@@ -223,7 +223,7 @@ export default function HomeScreen({ navigation }) {
       <Modal visible={showUserMenu} transparent animationType="fade">
         <Pressable style={styles.menuOverlay} onPress={() => setShowUserMenu(false)}>
           <View style={styles.menuCard}>
-            <Text style={styles.menuUser}>{user?.full_name || user?.username || 'User'}</Text>
+            <Text style={styles.menuUser}>{user?.full_name || user?.username || t('home.userFallback')}</Text>
             <Text style={styles.menuRole}>{user?.role}</Text>
             <View style={styles.menuDivider} />
             <TouchableOpacity style={styles.menuItem} onPress={() => {
@@ -231,7 +231,7 @@ export default function HomeScreen({ navigation }) {
               getStoredApiUrl().then(setServerUrl);
               setShowScanConfig(true);
             }}>
-              <Text style={styles.menuItemText}>SETTINGS</Text>
+              <Text style={styles.menuItemText}>{t('home.settings')}</Text>
             </TouchableOpacity>
             <TouchableOpacity style={styles.menuItem} onPress={() => {
               setShowUserMenu(false);
@@ -240,10 +240,10 @@ export default function HomeScreen({ navigation }) {
               setPwSuccess('');
               setShowChangePw(true);
             }}>
-              <Text style={styles.menuItemText}>CHANGE PASSWORD</Text>
+              <Text style={styles.menuItemText}>{t('home.changePassword')}</Text>
             </TouchableOpacity>
             <TouchableOpacity style={styles.menuItem} onPress={() => { setShowUserMenu(false); logout(); }}>
-              <Text style={styles.menuItemTextDanger}>LOGOUT</Text>
+              <Text style={styles.menuItemTextDanger}>{t('home.logout')}</Text>
             </TouchableOpacity>
           </View>
         </Pressable>
@@ -254,9 +254,9 @@ export default function HomeScreen({ navigation }) {
         <Pressable style={styles.menuOverlay} onPress={() => setShowScanConfig(false)}>
           <Pressable style={[styles.scanConfigCard, { maxHeight: '80%' }]} onPress={() => {}}>
             <ScrollView keyboardShouldPersistTaps="handled" showsVerticalScrollIndicator={false}>
-            <Text style={styles.scanConfigTitle}>SETTINGS</Text>
+            <Text style={styles.scanConfigTitle}>{t('home.settings')}</Text>
 
-            <Text style={styles.scanConfigLabel}>SERVER URL</Text>
+            <Text style={styles.scanConfigLabel}>{t('home.serverUrl')}</Text>
             <TextInput
               style={styles.scanConfigInput}
               value={serverUrl}
@@ -268,9 +268,9 @@ export default function HomeScreen({ navigation }) {
               keyboardType="url"
               placeholderTextColor={colors.textPlaceholder}
             />
-            <Text style={[styles.scanConfigHint, { marginBottom: 16 }]}>API server address  -  change requires re-login</Text>
+            <Text style={[styles.scanConfigHint, { marginBottom: 16 }]}>{t('home.serverUrlHint')}</Text>
 
-            <Text style={styles.scanConfigLabel}>SCAN MODE</Text>
+            <Text style={styles.scanConfigLabel}>{t('home.scanMode')}</Text>
             <View style={styles.scanModeRow}>
               <TouchableOpacity
                 style={[styles.scanModeBtn, scanSettings?.mode === 'keyboard' && styles.scanModeBtnActive]}
@@ -287,8 +287,8 @@ export default function HomeScreen({ navigation }) {
             </View>
             <Text style={styles.scanConfigHint}>
               {scanSettings?.mode === 'keyboard'
-                ? 'Scanner types into focused text field (default)'
-                : 'Scanner sends broadcast intent (Chainway native)'}
+                ? t('home.scanKeyboardHint')
+                : t('home.scanIntentHint')}
             </Text>
 
             {scanSettings?.mode === 'intent' && (
@@ -312,7 +312,7 @@ export default function HomeScreen({ navigation }) {
                   placeholderTextColor={colors.textPlaceholder}
                 />
                 {!scanSettings.scannerAvailable && (
-                  <Text style={styles.scanConfigWarn}>Native module not available  -  intent mode requires a standalone APK build</Text>
+                  <Text style={styles.scanConfigWarn}>{t('home.nativeUnavailable')}</Text>
                 )}
               </>
             )}
@@ -321,7 +321,7 @@ export default function HomeScreen({ navigation }) {
               if (serverUrl.trim()) setApiUrl(serverUrl.trim());
               setShowScanConfig(false);
             }}>
-              <Text style={styles.scanConfigDoneText}>DONE</Text>
+              <Text style={styles.scanConfigDoneText}>{t('home.done')}</Text>
             </TouchableOpacity>
             </ScrollView>
           </Pressable>
@@ -332,35 +332,35 @@ export default function HomeScreen({ navigation }) {
       <Modal visible={showChangePw} transparent animationType="fade">
         <Pressable style={styles.menuOverlay} onPress={() => setShowChangePw(false)}>
           <Pressable style={styles.infoModalCard} onPress={() => {}}>
-            <Text style={styles.infoModalTitle}>CHANGE PASSWORD</Text>
+            <Text style={styles.infoModalTitle}>{t('home.changePassword')}</Text>
             <TextInput
               style={[styles.scanConfigInput, { marginBottom: 10 }]}
-              placeholder="Current password"
+              placeholder={t('home.currentPassword')}
               placeholderTextColor={colors.textPlaceholder}
               value={pwForm.current}
-              onChangeText={(t) => { setPwForm({ ...pwForm, current: t }); setPwError(''); setPwSuccess(''); }}
+              onChangeText={(v) => { setPwForm({ ...pwForm, current: v }); setPwError(''); setPwSuccess(''); }}
               secureTextEntry
               autoCapitalize="none"
             />
             <TextInput
               style={[styles.scanConfigInput, { marginBottom: 10 }]}
-              placeholder="New password"
+              placeholder={t('home.newPassword')}
               placeholderTextColor={colors.textPlaceholder}
               value={pwForm.newPw}
-              onChangeText={(t) => { setPwForm({ ...pwForm, newPw: t }); setPwError(''); setPwSuccess(''); }}
+              onChangeText={(v) => { setPwForm({ ...pwForm, newPw: v }); setPwError(''); setPwSuccess(''); }}
               secureTextEntry
               autoCapitalize="none"
             />
             <TextInput
               style={[styles.scanConfigInput, { marginBottom: 10 }]}
-              placeholder="Confirm new password"
+              placeholder={t('home.confirmPassword')}
               placeholderTextColor={colors.textPlaceholder}
               value={pwForm.confirm}
-              onChangeText={(t) => { setPwForm({ ...pwForm, confirm: t }); setPwError(''); setPwSuccess(''); }}
+              onChangeText={(v) => { setPwForm({ ...pwForm, confirm: v }); setPwError(''); setPwSuccess(''); }}
               secureTextEntry
               autoCapitalize="none"
             />
-            {pwError ? <Text style={{ color: colors.accentRed, fontSize: 12, marginBottom: 8 }}>{pwError}</Text> : null}
+            {pwError ? <Text style={{ color: colors.accent, fontSize: 12, marginBottom: 8 }}>{pwError}</Text> : null}
             {pwSuccess ? <Text style={{ color: colors.copper, fontSize: 12, marginBottom: 8 }}>{pwSuccess}</Text> : null}
             <View style={{ flexDirection: 'row', gap: 8, marginTop: 4 }}>
               <TouchableOpacity
@@ -368,11 +368,11 @@ export default function HomeScreen({ navigation }) {
                 disabled={pwSaving}
                 onPress={async () => {
                   if (!pwForm.current || !pwForm.newPw || !pwForm.confirm) {
-                    setPwError('All fields are required');
+                    setPwError(t('home.pwAllRequired'));
                     return;
                   }
                   if (pwForm.newPw !== pwForm.confirm) {
-                    setPwError('New passwords do not match');
+                    setPwError(t('home.pwMismatch'));
                     return;
                   }
                   setPwSaving(true);
@@ -382,22 +382,22 @@ export default function HomeScreen({ navigation }) {
                       current_password: pwForm.current,
                       new_password: pwForm.newPw,
                     });
-                    setPwSuccess('Password changed - please log in again');
+                    setPwSuccess(t('home.pwChanged'));
                     setTimeout(() => { setShowChangePw(false); logout(); }, 1500);
                   } catch (err) {
-                    setPwError(err.response?.data?.error || 'Failed to change password');
+                    setPwError(err.response?.data?.error || t('home.pwFailed'));
                   } finally {
                     setPwSaving(false);
                   }
                 }}
               >
-                <Text style={styles.infoModalButtonText}>{pwSaving ? 'SAVING...' : 'CHANGE'}</Text>
+                <Text style={styles.infoModalButtonText}>{pwSaving ? t('home.saving') : t('home.change')}</Text>
               </TouchableOpacity>
               <TouchableOpacity
                 style={[styles.infoModalButton, { flex: 1, marginTop: 0, backgroundColor: colors.cardBorder }]}
                 onPress={() => setShowChangePw(false)}
               >
-                <Text style={[styles.infoModalButtonText, { color: colors.textPrimary }]}>CANCEL</Text>
+                <Text style={[styles.infoModalButtonText, { color: colors.textPrimary }]}>{t('home.cancel')}</Text>
               </TouchableOpacity>
             </View>
           </Pressable>
@@ -406,15 +406,15 @@ export default function HomeScreen({ navigation }) {
 
       <ScrollView ref={scrollRef} style={styles.content} contentContainerStyle={styles.contentInner} keyboardShouldPersistTaps="handled">
         <ScanInput
-          placeholder="SCAN BARCODE"
+          placeholder={t('home.scanBarcode')}
           onScan={handleScan}
           disabled={scanDisabled}
         />
 
-        <Text style={styles.operationsLabel}>OPERATIONS</Text>
+        <Text style={styles.operationsLabel}>{t('home.operations')}</Text>
 
         {initialLoading ? (
-          <ActivityIndicator size="large" color={colors.accentRed} style={{ marginTop: 32 }} />
+          <ActivityIndicator size="large" color={colors.accent} style={{ marginTop: 32 }} />
         ) : (
         <View style={styles.grid}>
           {visibleFunctions.map((fn, index) => {
@@ -431,8 +431,8 @@ export default function HomeScreen({ navigation }) {
               >
                 <View style={[styles.accentStripe, { backgroundColor: accentColor }]} />
                 <View style={[styles.accentDash, { backgroundColor: accentColor }]} />
-                <Text style={styles.cardLabel}>{fn.label}</Text>
-                <Text style={styles.cardSub}>{fn.sub}</Text>
+                <Text style={styles.cardLabel}>{t(fn.labelKey)}</Text>
+                <Text style={styles.cardSub}>{t(fn.subKey)}</Text>
               </TouchableOpacity>
             );
           })}
@@ -442,7 +442,7 @@ export default function HomeScreen({ navigation }) {
 
       <View style={styles.footer}>
         <TouchableOpacity onPress={() => { getStoredApiUrl().then(setServerUrl); setShowScanConfig(true); }}>
-          <Text style={styles.footerIp}>{serverUrl || 'Set Server URL'}</Text>
+          <Text style={styles.footerIp}>{serverUrl || t('home.setServerUrl')}</Text>
         </TouchableOpacity>
         <Text style={styles.footerText}>v1.9.0 / {warehouseName}</Text>
       </View>
@@ -457,7 +457,7 @@ export default function HomeScreen({ navigation }) {
               style={styles.infoModalButton}
               onPress={() => setInfoModal({ visible: false, title: '', message: '' })}
             >
-              <Text style={styles.infoModalButtonText}>OK</Text>
+              <Text style={styles.infoModalButtonText}>{t('home.ok')}</Text>
             </TouchableOpacity>
           </Pressable>
         </Pressable>
@@ -471,16 +471,20 @@ export default function HomeScreen({ navigation }) {
             <Text style={styles.infoModalMessage}>{confirmModal.message}</Text>
             <View style={{ flexDirection: 'row', gap: 8, marginTop: 16 }}>
               <TouchableOpacity
-                style={[styles.infoModalButton, { flex: 1, backgroundColor: confirmModal.confirmDestructive ? colors.accentRed : colors.accentRed }]}
+                /* Both arms of this used to be the same colour, so the
+                   destructive flag did nothing and a confirm that wipes
+                   a count looked exactly like one that does not. Brick
+                   now means destructive; copper means ordinary. */
+                style={[styles.infoModalButton, { flex: 1, backgroundColor: confirmModal.confirmDestructive ? colors.danger : colors.accent }]}
                 onPress={confirmModal.onConfirm}
               >
-                <Text style={styles.infoModalButtonText}>{confirmModal.confirmText}</Text>
+                <Text style={styles.infoModalButtonText}>{confirmModal.confirmText || t('home.ok')}</Text>
               </TouchableOpacity>
               <TouchableOpacity
                 style={[styles.infoModalButton, { flex: 1, backgroundColor: colors.cardBorder }]}
                 onPress={() => setConfirmModal((p) => ({ ...p, visible: false }))}
               >
-                <Text style={[styles.infoModalButtonText, { color: colors.textPrimary }]}>Cancel</Text>
+                <Text style={[styles.infoModalButtonText, { color: colors.textPrimary }]}>{t('home.cancel')}</Text>
               </TouchableOpacity>
             </View>
           </Pressable>
@@ -526,7 +530,7 @@ const styles = StyleSheet.create({
     fontFamily: fonts.mono,
     fontSize: 18,
     fontWeight: '700',
-    color: colors.accentRed,
+    color: colors.accent,
     letterSpacing: 4,
   },
   headerRight: {
@@ -551,7 +555,7 @@ const styles = StyleSheet.create({
     color: colors.textPrimary,
   },
   userAvatar: {
-    backgroundColor: colors.accentRed,
+    backgroundColor: colors.accent,
     borderRadius: 8,
     width: 32,
     height: 32,
@@ -610,7 +614,7 @@ const styles = StyleSheet.create({
     fontFamily: fonts.mono,
     fontSize: 13,
     fontWeight: '600',
-    color: colors.accentRed,
+    color: colors.accent,
     letterSpacing: 0.3,
   },
   content: {
@@ -754,8 +758,8 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   scanModeBtnActive: {
-    borderColor: colors.accentRed,
-    backgroundColor: '#fdf6f4',
+    borderColor: colors.accent,
+    backgroundColor: colors.accentBg,
   },
   scanModeBtnText: {
     fontFamily: fonts.mono,
@@ -765,7 +769,7 @@ const styles = StyleSheet.create({
     letterSpacing: 0.5,
   },
   scanModeBtnTextActive: {
-    color: colors.accentRed,
+    color: colors.accent,
   },
   scanConfigHint: {
     fontSize: 11,
@@ -791,7 +795,7 @@ const styles = StyleSheet.create({
   },
   scanConfigDone: {
     marginTop: 20,
-    backgroundColor: colors.accentRed,
+    backgroundColor: colors.accent,
     borderRadius: radii.button,
     paddingVertical: 12,
     alignItems: 'center',
@@ -827,7 +831,7 @@ const styles = StyleSheet.create({
     lineHeight: 20,
   },
   infoModalButton: {
-    backgroundColor: colors.accentRed,
+    backgroundColor: colors.accent,
     borderRadius: radii.button,
     paddingVertical: 12,
     alignItems: 'center',

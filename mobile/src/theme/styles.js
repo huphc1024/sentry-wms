@@ -1,34 +1,168 @@
-import { Platform, StyleSheet } from 'react-native';
+import { Appearance, Platform, StyleSheet } from 'react-native';
 
-export const colors = {
+/**
+ * One palette, shared with the two web apps, in light and dark.
+ *
+ * The values mirror admin/src/App.css and portal/src/App.css: copper
+ * accent on neutral stone, and brick red reserved for one meaning --
+ * destructive or failed. The app used to use brick as its accent, which
+ * made every primary button on the floor look like an error state.
+ *
+ * ── Why the theme is read once, at startup ──────────────────
+ *
+ * Every screen in this app builds its styles with StyleSheet.create at
+ * module scope, which resolves the colours when the module is imported
+ * and never again. Reacting to a theme change while the app is running
+ * would mean converting all twenty-nine of those call sites to build
+ * their styles during render, behind a context and a hook.
+ *
+ * That is a wide, mechanical change to an app people use on a warehouse
+ * floor, and it buys one thing: the screen repainting the instant the
+ * device theme flips. On a handheld, where the theme is set once by
+ * whoever provisions the device and not by the picker mid-shift, that is
+ * not worth the blast radius. So the scheme is read here, once, and the
+ * app picks up a change on its next launch.
+ *
+ * If live switching is ever actually wanted -- a toggle in the app, say
+ * -- this is the line to come back to, and the refactor above is what it
+ * costs.
+ */
+
+const LIGHT = {
   // Brand
-  accentRed: '#8e2716',
-  copper: '#b87333',
-  cream: '#fdf4e3',
+  accent: '#9C5718',
+  accentHover: '#8F4F18',
+  onAccent: '#FFFFFF',
+  accentBg: '#F7EFE6',
+  copper: '#C4722A',
+  cream: '#FCF4E3',
 
   // Surfaces
-  background: '#ffffff',
-  cardBg: '#f7f3ec',
-  cardBorder: '#e0d9cc',
-  inputBg: '#f7f3ec',
-  inputBorder: '#d6cfc0',
+  background: '#FFFFFF',
+  canvas: '#F6F6F5',
+  cardBg: '#F1F1EF',
+  cardBorder: '#E3E2DF',
+  inputBg: '#F1F1EF',
+  inputBorder: '#CFCDC8',
 
   // Text
-  textPrimary: '#1a1a1a',
-  textSecondary: '#7a7060',
-  textMuted: '#999080',
-  textPlaceholder: '#b0a898',
+  textPrimary: '#1C1B19',
+  textSecondary: '#6E6B66',
+  textMuted: '#6E6B66',
+  textPlaceholder: '#9C9892',
 
   // Status
-  success: '#34a853',
-  warning: '#b87333',
-  danger: '#8e2716',
+  success: '#1F6F3C',
+  successBg: '#E7F3EB',
+  warning: '#806316',
+  warningBg: '#FBF3DE',
+  danger: '#8E2715',
+  dangerBg: '#FAE7E4',
+  info: '#1E5F8A',
+  infoBg: '#E4EFF6',
 
   // Utility
-  border: '#e0d9cc',
-  overlay: 'rgba(0,0,0,0.4)',
-  grayAccent: '#a09b91',
+  border: '#E3E2DF',
+  overlay: 'rgba(0, 0, 0, 0.45)',
+  grayAccent: '#9C9892',
 };
+
+const DARK = {
+  // A lighter copper than light mode uses, because here it is read
+  // against a dark panel rather than white.
+  accent: '#D6883F',
+  accentHover: '#E09A55',
+  // On a copper fill the label goes dark, not white.
+  onAccent: '#1A1A19',
+  accentBg: '#2A2118',
+  copper: '#C4722A',
+  cream: '#FCF4E3',
+
+  background: '#232322',
+  canvas: '#1A1A19',
+  cardBg: '#2B2B29',
+  cardBorder: '#35342F',
+  inputBg: '#2B2B29',
+  inputBorder: '#47453F',
+
+  textPrimary: '#EDEBE7',
+  textSecondary: '#A8A49D',
+  textMuted: '#A8A49D',
+  textPlaceholder: '#7A766F',
+
+  success: '#5FBF7A',
+  successBg: '#1B2E20',
+  warning: '#D4AA3A',
+  warningBg: '#2E2715',
+  danger: '#E57A66',
+  dangerBg: '#331C18',
+  info: '#5FA8D8',
+  infoBg: '#16262F',
+
+  border: '#35342F',
+  overlay: 'rgba(0, 0, 0, 0.6)',
+  grayAccent: '#7A766F',
+};
+
+/**
+ * Read at module scope, which is the earliest point the stylesheets need
+ * it -- and the riskiest place to touch a native module, because a throw
+ * here takes the whole app down before the first screen renders rather
+ * than breaking one colour. Hence the guard: any failure, and any device
+ * that reports no preference, reads as light. Light is the safe default
+ * for a screen used under warehouse lighting.
+ */
+function detectScheme() {
+  try {
+    return Appearance?.getColorScheme?.() === 'dark' ? 'dark' : 'light';
+  } catch {
+    return 'light';
+  }
+}
+
+export const scheme = detectScheme();
+
+export const palettes = { light: LIGHT, dark: DARK };
+
+export const colors = palettes[scheme];
+
+/**
+ * The warehouse floor plan draws in its own blue-grey ramp rather than
+ * the brand palette -- it is a technical drawing, and flattening it into
+ * the app's neutrals would cost the layering that separates a rack from
+ * an aisle. It still needs a dark set, or the one screen a picker opens
+ * in a dim aisle is the one that blinds them.
+ */
+const MAP_LIGHT = {
+  surface: '#FAFAFA',
+  fill: '#EEF2FF',
+  border: '#CBD5E1',
+  borderStrong: '#475569',
+  muted: '#94A3B8',
+  route: '#2563EB',
+  walkway: '#0F8238',
+  // Translucent so the grid shows through; the plan is drawn in layers.
+  zoneFill: 'rgba(255, 255, 255, 0.55)',
+  gridFill: 'rgba(255, 255, 255, 0.92)',
+  highlightFill: 'rgba(156, 87, 24, 0.14)',
+};
+
+const MAP_DARK = {
+  surface: '#232322',
+  fill: '#262A33',
+  border: '#3A3934',
+  borderStrong: '#6B6860',
+  muted: '#7A766F',
+  // Lifted clear of the dark fills; the light-mode pair is under 3:1 on
+  // them.
+  route: '#6BA8F0',
+  walkway: '#5FBF7A',
+  zoneFill: 'rgba(255, 255, 255, 0.05)',
+  gridFill: 'rgba(255, 255, 255, 0.04)',
+  highlightFill: 'rgba(214, 136, 63, 0.22)',
+};
+
+export const mapColors = { light: MAP_LIGHT, dark: MAP_DARK }[scheme];
 
 export const radii = {
   card: 12,
@@ -48,7 +182,7 @@ export const spacing = {
 };
 
 export const fonts = {
-  mono: Platform.select({ ios: 'Menlo', android: 'monospace', default: 'monospace' }),
+  mono: Platform.select({ ios: 'Menlo', android: 'monospace', default: 'monospace' }), // i18n-ignore
 };
 
 // ── Shared screen layout ─────────────────────────────────────
@@ -74,7 +208,7 @@ export const screenStyles = StyleSheet.create({
 // ── Shared buttons ───────────────────────────────────────────
 export const buttonStyles = StyleSheet.create({
   buttonPrimary: {
-    backgroundColor: colors.accentRed, borderRadius: radii.button,
+    backgroundColor: colors.accent, borderRadius: radii.button,
     paddingVertical: 14, alignItems: 'center', minHeight: 48,
   },
   buttonPrimaryText: {
@@ -196,7 +330,7 @@ export default StyleSheet.create({
   cardRed: {
     backgroundColor: colors.cardBg,
     borderWidth: 1.5,
-    borderColor: colors.accentRed,
+    borderColor: colors.accent,
     borderRadius: radii.card,
     padding: spacing.cardPadding,
     marginBottom: spacing.sectionGap,
@@ -204,7 +338,7 @@ export default StyleSheet.create({
 
   // ── Buttons ─────────────────────────────────────────────
   buttonPrimary: {
-    backgroundColor: colors.accentRed,
+    backgroundColor: colors.accent,
     borderRadius: radii.button,
     paddingVertical: 14,
     paddingHorizontal: 24,
@@ -272,7 +406,7 @@ export default StyleSheet.create({
 
   // ── Badges ──────────────────────────────────────────────
   badge: {
-    backgroundColor: colors.accentRed,
+    backgroundColor: colors.accent,
     borderRadius: 10,
     paddingHorizontal: 8,
     paddingVertical: 2,
@@ -302,13 +436,13 @@ export default StyleSheet.create({
     fontFamily: fonts.mono,
     fontSize: 30,
     fontWeight: '700',
-    color: colors.accentRed,
+    color: colors.accent,
   },
   qty: {
     fontFamily: fonts.mono,
     fontSize: 28,
     fontWeight: '700',
-    color: colors.accentRed,
+    color: colors.accent,
   },
   label: {
     fontFamily: fonts.mono,

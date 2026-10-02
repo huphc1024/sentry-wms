@@ -1,13 +1,24 @@
 import React, { useRef, useState, useEffect } from 'react';
-import { View, TextInput, StyleSheet } from 'react-native';
+import { View, TextInput, TouchableOpacity, Text, StyleSheet } from 'react-native';
 import { colors, fonts, radii } from '../theme/styles';
 import { useScanSettingsContext } from '../context/ScanSettingsContext';
+import BarcodeScannerModal from './BarcodeScannerModal';
+import { useLocale } from '../i18n/locale';
 
-export default function ScanInput({ placeholder = 'SCAN BARCODE', onScan, disabled = false, autoFocus = true, suppressRefocus = false }) {
+export default function ScanInput({
+  placeholder,
+  onScan,
+  disabled = false,
+  autoFocus = true,
+  suppressRefocus = false,
+  enableCameraScan = true,
+}) {
+  const { t } = useLocale();
   const inputRef = useRef(null);
   const [value, setValue] = useState('');
   const bufferRef = useRef('');
   const [processing, setProcessing] = useState(false);
+  const [showCamera, setShowCamera] = useState(false);
   // True only while the user is manually typing. Keeps the soft keyboard
   // hidden during auto-focus and the 1-second refocus loop (hardware scan
   // flow), while still letting a tap open the keyboard for manual fallback.
@@ -57,27 +68,15 @@ export default function ScanInput({ placeholder = 'SCAN BARCODE', onScan, disabl
   const scanInFlightRef = useRef(false);
 
   const handleSubmit = () => {
-    // Use bufferRef (synchronous) instead of value (async React state)
-    // to avoid the C6000 race where Enter fires before the last onChangeText flushes
     const raw = bufferRef.current;
-    const trimmed = raw.replace(/[\r\n\s]+/g, '').trim();
-
     setValue('');
     bufferRef.current = '';
-    // Drop out of manual-entry mode so the post-submit refocus stays silent.
     setSoftInput(false);
-    if (!trimmed || !onScan || scanInFlightRef.current) {
+    if (!raw.replace(/[\r\n\s]+/g, '').trim()) {
       setTimeout(() => inputRef.current?.focus(), 50);
       return;
     }
-
-    scanInFlightRef.current = true;
-    setProcessing(true);
-    Promise.resolve(onScan(trimmed)).finally(() => {
-      scanInFlightRef.current = false;
-      setProcessing(false);
-      setTimeout(() => inputRef.current?.focus(), 50);
-    });
+    submitBarcode(raw);
   };
 
   const handlePressIn = () => {
@@ -104,37 +103,75 @@ export default function ScanInput({ placeholder = 'SCAN BARCODE', onScan, disabl
     // C6000 scanners send characters one at a time; a timer causes partial submits.
   };
 
+  const submitBarcode = (raw) => {
+    const trimmed = raw.replace(/[\r\n\s]+/g, '').trim();
+    if (!trimmed || !onScan || scanInFlightRef.current) {
+      return Promise.resolve();
+    }
+
+    scanInFlightRef.current = true;
+    setProcessing(true);
+    return Promise.resolve(onScan(trimmed)).finally(() => {
+      scanInFlightRef.current = false;
+      setProcessing(false);
+      setTimeout(() => inputRef.current?.focus(), 50);
+    });
+  };
+
+  const handleCameraScan = async (barcode) => {
+    setValue('');
+    bufferRef.current = '';
+    await submitBarcode(barcode);
+  };
+
   const IGNORED_KEYS = ['Escape', 'GoBack', 'F1', 'F2', 'F3', 'F4', 'F5',
     'F6', 'F7', 'F8', 'F9', 'F10', 'F11', 'F12', 'Tab'];
 
   return (
-    <View style={[styles.container, (disabled || processing) && styles.disabled]}>
-      <TextInput
-        ref={inputRef}
-        style={styles.input}
-        placeholder={processing ? 'PROCESSING...' : placeholder}
-        placeholderTextColor={colors.textPlaceholder}
-        value={value}
-        onChangeText={handleChangeText}
-        onSubmitEditing={handleSubmit}
-        onKeyPress={(e) => {
-          if (IGNORED_KEYS.includes(e.nativeEvent.key)) {
-            e.preventDefault?.();
-            e.stopPropagation?.();
-          }
-        }}
-        onPressIn={handlePressIn}
-        onBlur={handleBlur}
-        editable={!disabled && !processing}
-        autoFocus={autoFocus && !disabled}
-        autoCapitalize="characters"
-        autoCorrect={false}
-        blurOnSubmit={false}
-        returnKeyType="done"
-        showSoftInputOnFocus={softInput}
-        selectTextOnFocus
+    <>
+      <View style={[styles.container, (disabled || processing) && styles.disabled]}>
+        <TextInput
+          ref={inputRef}
+          style={styles.input}
+          placeholder={processing ? t('common.processing') : (placeholder ?? t('common.scanBarcode'))}
+          placeholderTextColor={colors.textPlaceholder}
+          value={value}
+          onChangeText={handleChangeText}
+          onSubmitEditing={handleSubmit}
+          onKeyPress={(e) => {
+            if (IGNORED_KEYS.includes(e.nativeEvent.key)) {
+              e.preventDefault?.();
+              e.stopPropagation?.();
+            }
+          }}
+          onPressIn={handlePressIn}
+          onBlur={handleBlur}
+          editable={!disabled && !processing}
+          autoFocus={autoFocus && !disabled}
+          autoCapitalize="characters"
+          autoCorrect={false}
+          blurOnSubmit={false}
+          returnKeyType="done"
+          showSoftInputOnFocus={softInput}
+          selectTextOnFocus
+        />
+        {enableCameraScan && (
+          <TouchableOpacity
+            style={[styles.cameraBtn, (disabled || processing) && styles.cameraBtnDisabled]}
+            onPress={() => setShowCamera(true)}
+            disabled={disabled || processing}
+            accessibilityLabel={t('common.openCameraScanner')}
+          >
+            <Text style={styles.cameraBtnText}>CAM</Text>
+          </TouchableOpacity>
+        )}
+      </View>
+      <BarcodeScannerModal
+        visible={showCamera}
+        onClose={() => setShowCamera(false)}
+        onScan={handleCameraScan}
       />
-    </View>
+    </>
   );
 }
 
@@ -151,7 +188,7 @@ const styles = StyleSheet.create({
     marginBottom: 16,
   },
   disabled: {
-    backgroundColor: '#f0ede6',
+    backgroundColor: colors.cardBg,
     borderColor: colors.cardBorder,
   },
   input: {
@@ -161,5 +198,25 @@ const styles = StyleSheet.create({
     color: colors.textPrimary,
     letterSpacing: 1,
     paddingVertical: 10,
+  },
+  cameraBtn: {
+    marginLeft: 8,
+    backgroundColor: colors.accent,
+    borderRadius: radii.small,
+    paddingHorizontal: 10,
+    paddingVertical: 8,
+    minWidth: 44,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  cameraBtnDisabled: {
+    opacity: 0.45,
+  },
+  cameraBtnText: {
+    color: colors.cream,
+    fontFamily: fonts.mono,
+    fontSize: 10,
+    letterSpacing: 0.5,
+    fontWeight: '700',
   },
 });

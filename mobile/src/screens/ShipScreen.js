@@ -6,9 +6,11 @@ import ScreenHeader from '../components/ScreenHeader';
 import ErrorPopup from '../components/ErrorPopup';
 import useScreenError from '../hooks/useScreenError';
 import client from '../api/client';
+import { useLocale } from '../i18n/locale.js';
 import { colors, fonts, radii, screenStyles, buttonStyles, modalStyles } from '../theme/styles';
 
 export default function ShipScreen({ navigation, route }) {
+  const { t } = useLocale();
   const scrollRef = React.useRef(null);
   useScrollToTop(scrollRef);
   const [order, setOrder] = useState(null);
@@ -42,13 +44,13 @@ export default function ShipScreen({ navigation, route }) {
       setTotalItems(data.total_items || 0);
       setPhase('shipping');
     } catch (err) {
-      showError(err.response?.data?.error || 'Order not found');
+      showError(err.response?.data?.error || t('packship.orderNotFound'));
     }
   };
 
   const handleShip = async () => {
     if (!carrier.trim() || !tracking.trim()) {
-      showError('Carrier and tracking number are required');
+      showError(t('packship.carrierTrackingRequired'));
       return;
     }
     try {
@@ -60,7 +62,7 @@ export default function ShipScreen({ navigation, route }) {
       });
       setPhase('done');
     } catch (err) {
-      showError(err.response?.data?.error || 'Shipment failed');
+      showError(err.response?.data?.error || t('packship.shipFailed'));
     }
   };
 
@@ -86,11 +88,11 @@ export default function ShipScreen({ navigation, route }) {
 
   return (
     <View style={screenStyles.screen}>
-      <ScreenHeader title="SHIP" onBack={() => navigation.goBack()} />
+      <ScreenHeader title={t('packship.titleShip')} onBack={() => navigation.goBack()} />
 
       <ScrollView ref={scrollRef} style={screenStyles.content} contentContainerStyle={screenStyles.contentInner} keyboardShouldPersistTaps="handled">
         {phase === 'scan_order' && (
-          <ScanInput placeholder="SCAN ORDER" onScan={handleScanOrder} disabled={scanDisabled} />
+          <ScanInput placeholder={t('packship.scanOrder')} onScan={handleScanOrder} disabled={scanDisabled} />
         )}
 
         {phase === 'shipping' && (
@@ -99,14 +101,14 @@ export default function ShipScreen({ navigation, route }) {
               <Text style={styles.soNumber}>{order.so_number}</Text>
               <Text style={styles.customer}>{order.customer_name}</Text>
               <Text style={styles.statusLabel}>
-                {order.status === 'PACKED' ? 'PACKED - READY TO SHIP' : 'READY TO SHIP'}
+                {order.status === 'PACKED' ? t('packship.packedReadyToShip') : t('packship.readyToShip')}
               </Text>
-              <Text style={styles.tapHint}>Tap for details</Text>
+              <Text style={styles.tapHint}>{t('packship.tapForDetails')}</Text>
             </TouchableOpacity>
 
             {order.memo ? (
               <View style={styles.memoBlock}>
-                <Text style={styles.memoLabel}>NOTE</Text>
+                <Text style={styles.memoLabel}>{t('packship.note')}</Text>
                 <Text style={styles.memoText}>{order.memo}</Text>
               </View>
             ) : null}
@@ -114,18 +116,18 @@ export default function ShipScreen({ navigation, route }) {
             <View style={styles.summaryRow}>
               <View style={styles.summaryItem}>
                 <Text style={styles.summaryValue}>{lines.length}</Text>
-                <Text style={styles.summaryLabel}>LINES</Text>
+                <Text style={styles.summaryLabel}>{t('packship.lines')}</Text>
               </View>
               <View style={styles.summaryItem}>
                 <Text style={styles.summaryValue}>{totalItems}</Text>
-                <Text style={styles.summaryLabel}>UNITS</Text>
+                <Text style={styles.summaryLabel}>{t('packship.units')}</Text>
               </View>
             </View>
 
-            <Text style={styles.fieldLabel}>CARRIER</Text>
+            <Text style={styles.fieldLabel}>{t('packship.carrier')}</Text>
             <TouchableOpacity style={styles.pickerBtn} onPress={() => setShowCarrierPicker(true)}>
               <Text style={[styles.pickerText, !carrier && { color: colors.textPlaceholder }]}>
-                {carrier || 'Select carrier...'}
+                {carrier || t('packship.selectCarrierPlaceholder')}
               </Text>
               <Text style={{ color: colors.textSecondary }}>&#9662;</Text>
             </TouchableOpacity>
@@ -134,24 +136,24 @@ export default function ShipScreen({ navigation, route }) {
                 style={styles.textInput}
                 value={carrier}
                 onChangeText={setCarrier}
-                placeholder="Enter carrier name"
+                placeholder={t('packship.enterCarrierName')}
                 placeholderTextColor={colors.textPlaceholder}
                 autoFocus
               />
             )}
 
-            <Text style={styles.fieldLabel}>TRACKING NUMBER</Text>
+            <Text style={styles.fieldLabel}>{t('packship.trackingNumber')}</Text>
             <TextInput
               style={styles.textInput}
               value={tracking}
               onChangeText={setTracking}
-              placeholder="Enter tracking number"
+              placeholder={t('packship.trackingPlaceholder')}
               placeholderTextColor={colors.textPlaceholder}
               autoCapitalize="characters"
             />
 
             <TouchableOpacity style={[buttonStyles.buttonPrimary, { marginTop: 16, width: '100%' }]} onPress={handleShip}>
-              <Text style={buttonStyles.buttonPrimaryText}>SHIP</Text>
+              <Text style={buttonStyles.buttonPrimaryText}>{t('packship.ship')}</Text>
             </TouchableOpacity>
           </>
         )}
@@ -159,13 +161,13 @@ export default function ShipScreen({ navigation, route }) {
         {phase === 'done' && (
           <View style={styles.doneContainer}>
             <Text style={styles.doneIcon}>&#10003;</Text>
-            <Text style={styles.doneTitle}>Order {order.so_number} shipped!</Text>
+            <Text style={styles.doneTitle}>{t('packship.orderShipped', { so: order.so_number })}</Text>
             <Text style={styles.doneDetail}>{carrier} - {tracking}</Text>
             <TouchableOpacity style={[buttonStyles.buttonPrimary, { marginTop: 16, width: '100%' }]} onPress={resetScreen}>
-              <Text style={buttonStyles.buttonPrimaryText}>SHIP ANOTHER ORDER</Text>
+              <Text style={buttonStyles.buttonPrimaryText}>{t('packship.shipAnother')}</Text>
             </TouchableOpacity>
             <TouchableOpacity style={[buttonStyles.buttonSecondary, { marginTop: 8, width: '100%' }]} onPress={() => navigation.goBack()}>
-              <Text style={[buttonStyles.buttonSecondaryText, { fontWeight: '700' }]}>DONE</Text>
+              <Text style={[buttonStyles.buttonSecondaryText, { fontWeight: '700' }]}>{t('packship.done')}</Text>
             </TouchableOpacity>
           </View>
         )}
@@ -174,7 +176,7 @@ export default function ShipScreen({ navigation, route }) {
       <Modal visible={showCarrierPicker} transparent animationType="fade">
         <Pressable style={styles.pickerOverlay} onPress={() => setShowCarrierPicker(false)}>
           <View style={styles.pickerCard}>
-            <Text style={styles.pickerTitle}>SELECT CARRIER</Text>
+            <Text style={styles.pickerTitle}>{t('packship.selectCarrier')}</Text>
             {CARRIERS.map((c) => (
               <TouchableOpacity
                 key={c}
@@ -191,7 +193,7 @@ export default function ShipScreen({ navigation, route }) {
                   }
                 }}
               >
-                <Text style={[styles.pickerOptionText, carrier === c && styles.pickerOptionTextActive]}>{c}</Text>
+                <Text style={[styles.pickerOptionText, carrier === c && styles.pickerOptionTextActive]}>{c === 'Other' ? t('packship.carrierOther') : c}</Text>
               </TouchableOpacity>
             ))}
           </View>
@@ -202,18 +204,18 @@ export default function ShipScreen({ navigation, route }) {
       <Modal visible={showSODetail} transparent animationType="fade">
         <Pressable style={modalStyles.overlay} onPress={() => setShowSODetail(false)}>
           <View style={modalStyles.card}>
-            <Text style={modalStyles.title}>ORDER DETAILS</Text>
+            <Text style={modalStyles.title}>{t('packship.orderDetails')}</Text>
             {soDetail && (
               <ScrollView style={{ maxHeight: 300 }}>
-                <View style={styles.detailRow}><Text style={styles.detailLabel}>ORDER</Text><Text style={styles.detailValue}>{soDetail.so_number}</Text></View>
-                <View style={styles.detailRow}><Text style={styles.detailLabel}>CUSTOMER</Text><Text style={styles.detailValue}>{soDetail.customer_name || '-'}</Text></View>
-                {soDetail.customer_phone && <View style={styles.detailRow}><Text style={styles.detailLabel}>PHONE</Text><Text style={styles.detailValue}>{soDetail.customer_phone}</Text></View>}
-                {(soDetail.customer_address || soDetail.ship_address) && <View style={styles.detailRow}><Text style={styles.detailLabel}>ADDRESS</Text><Text style={styles.detailValue}>{soDetail.customer_address || soDetail.ship_address}</Text></View>}
-                {soDetail.memo && <View style={styles.detailRow}><Text style={styles.detailLabel}>NOTE</Text><Text style={styles.detailValue}>{soDetail.memo}</Text></View>}
-                <View style={styles.detailRow}><Text style={styles.detailLabel}>STATUS</Text><Text style={styles.detailValue}>{soDetail.status}</Text></View>
+                <View style={styles.detailRow}><Text style={styles.detailLabel}>{t('packship.order')}</Text><Text style={styles.detailValue}>{soDetail.so_number}</Text></View>
+                <View style={styles.detailRow}><Text style={styles.detailLabel}>{t('packship.customer')}</Text><Text style={styles.detailValue}>{soDetail.customer_name || '-'}</Text></View>
+                {soDetail.customer_phone && <View style={styles.detailRow}><Text style={styles.detailLabel}>{t('packship.phone')}</Text><Text style={styles.detailValue}>{soDetail.customer_phone}</Text></View>}
+                {(soDetail.customer_address || soDetail.ship_address) && <View style={styles.detailRow}><Text style={styles.detailLabel}>{t('packship.address')}</Text><Text style={styles.detailValue}>{soDetail.customer_address || soDetail.ship_address}</Text></View>}
+                {soDetail.memo && <View style={styles.detailRow}><Text style={styles.detailLabel}>{t('packship.note')}</Text><Text style={styles.detailValue}>{soDetail.memo}</Text></View>}
+                <View style={styles.detailRow}><Text style={styles.detailLabel}>{t('packship.status')}</Text><Text style={styles.detailValue}>{soDetail.status}</Text></View>
                 {soDetail.lines?.length > 0 && (
                   <View style={{ marginTop: 12 }}>
-                    <Text style={styles.detailLabel}>ITEMS</Text>
+                    <Text style={styles.detailLabel}>{t('packship.items')}</Text>
                     {soDetail.lines.map((l, i) => (
                       <View key={i} style={styles.detailItemRow}>
                         <Text style={styles.detailItemSku}>{l.sku}</Text>
@@ -225,7 +227,7 @@ export default function ShipScreen({ navigation, route }) {
               </ScrollView>
             )}
             <TouchableOpacity style={[buttonStyles.buttonSecondary, { marginTop: 16 }]} onPress={() => setShowSODetail(false)}>
-              <Text style={buttonStyles.buttonSecondaryText}>CLOSE</Text>
+              <Text style={buttonStyles.buttonSecondaryText}>{t('packship.close')}</Text>
             </TouchableOpacity>
           </View>
         </Pressable>
@@ -247,7 +249,7 @@ const styles = StyleSheet.create({
   statusLabel: { fontFamily: fonts.mono, fontSize: 12, color: colors.success, letterSpacing: 0.3, marginTop: 4 },
   memoBlock: {
     borderWidth: 1, borderColor: colors.warning, borderRadius: radii.badge,
-    padding: 10, marginBottom: 16, backgroundColor: '#fdf6ed',
+    padding: 10, marginBottom: 16, backgroundColor: colors.accentBg,
   },
   memoLabel: {
     fontFamily: fonts.mono, fontSize: 10, fontWeight: '700',
@@ -295,14 +297,14 @@ const styles = StyleSheet.create({
   pickerOption: {
     padding: 14, borderRadius: radii.card, borderWidth: 1, borderColor: colors.cardBorder, marginBottom: 8,
   },
-  pickerOptionActive: { borderColor: colors.accentRed, backgroundColor: '#fdf6f4' },
+  pickerOptionActive: { borderColor: colors.accent, backgroundColor: colors.accentBg },
   pickerOptionText: { fontFamily: fonts.mono, fontSize: 14, fontWeight: '600', color: colors.textPrimary },
-  pickerOptionTextActive: { color: colors.accentRed },
+  pickerOptionTextActive: { color: colors.accent },
   tapHint: { fontFamily: fonts.mono, fontSize: 10, color: colors.textPlaceholder, marginTop: 2 },
   detailRow: { flexDirection: 'row', justifyContent: 'space-between', paddingVertical: 6, borderBottomWidth: 1, borderBottomColor: colors.cardBorder },
   detailLabel: { fontFamily: fonts.mono, fontSize: 11, fontWeight: '600', color: colors.textMuted, letterSpacing: 0.3 },
   detailValue: { fontFamily: fonts.mono, fontSize: 13, color: colors.textPrimary, textAlign: 'right', flex: 1, marginLeft: 12 },
   detailItemRow: { flexDirection: 'row', justifyContent: 'space-between', paddingVertical: 4, paddingLeft: 8 },
   detailItemSku: { fontFamily: fonts.mono, fontSize: 12, color: colors.textPrimary },
-  detailItemQty: { fontFamily: fonts.mono, fontSize: 12, fontWeight: '700', color: colors.accentRed },
+  detailItemQty: { fontFamily: fonts.mono, fontSize: 12, fontWeight: '700', color: colors.accent },
 });

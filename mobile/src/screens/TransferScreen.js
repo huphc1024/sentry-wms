@@ -7,12 +7,14 @@ import ErrorPopup from '../components/ErrorPopup';
 import useScreenError from '../hooks/useScreenError';
 import { useAuth } from '../auth/AuthContext';
 import client from '../api/client';
+import { useLocale } from '../i18n/locale.js';
 import { colors, fonts, radii, screenStyles, buttonStyles, listStyles } from '../theme/styles';
 
-const STEPS = ['SCAN ITEM', 'SCAN FROM BIN', 'SCAN TO BIN'];
+const STEPS = ['transfer.step.item', 'transfer.step.fromBin', 'transfer.step.toBin'];
 
 export default function TransferScreen({ navigation }) {
   const { warehouseId } = useAuth();
+  const { t } = useLocale();
   const scrollRef = React.useRef(null);
   useScrollToTop(scrollRef);
   const [step, setStep] = useState(0);
@@ -30,21 +32,21 @@ export default function TransferScreen({ navigation }) {
       try {
         const resp = await client.get(`/api/lookup/item/${encodeURIComponent(barcode)}`);
         if (!resp.data?.item) {
-          showError('Item not found');
+          showError(t('transfer.err.itemNotFound'));
           return;
         }
         setItem(resp.data.item);
         setLocations(resp.data.locations || []);
         setStep(1);
       } catch {
-        showError('Item not found');
+        showError(t('transfer.err.itemNotFound'));
       }
     } else if (step === 1) {
       // Scan from bin
       try {
         const resp = await client.get(`/api/lookup/bin/${encodeURIComponent(barcode)}`);
         if (!resp.data?.bin) {
-          showError('Bin not found');
+          showError(t('transfer.err.binNotFound'));
           return;
         }
         const bin = resp.data.bin;
@@ -53,27 +55,27 @@ export default function TransferScreen({ navigation }) {
           (l) => l.bin_id === bin.bin_id || l.bin_code === bin.bin_code
         );
         if (!inBin) {
-          showError('Item not found in this bin');
+          showError(t('transfer.err.itemNotInBin'));
           return;
         }
         setFromBin({ ...bin, available: inBin.quantity_on_hand });
         setQuantity('1');
         setStep(2);
       } catch {
-        showError('Bin not found');
+        showError(t('transfer.err.binNotFound'));
       }
     } else if (step === 2) {
       // Scan to bin
       try {
         const resp = await client.get(`/api/lookup/bin/${encodeURIComponent(barcode)}`);
         if (!resp.data?.bin) {
-          showError('Bin not found');
+          showError(t('transfer.err.binNotFound'));
           return;
         }
         setToBin(resp.data.bin);
         setStep(3);
       } catch {
-        showError('Bin not found');
+        showError(t('transfer.err.binNotFound'));
       }
     }
   };
@@ -92,7 +94,7 @@ export default function TransferScreen({ navigation }) {
       });
       setSuccess(true);
     } catch (err) {
-      showError(err.response?.data?.error || 'Transfer failed');
+      showError(err.response?.data?.error || t('transfer.err.failed'));
     }
   };
 
@@ -108,20 +110,20 @@ export default function TransferScreen({ navigation }) {
 
   return (
     <View style={screenStyles.screen}>
-      <ScreenHeader title="TRANSFER" onBack={() => navigation.goBack()} />
+      <ScreenHeader title={t('transfer.title')} onBack={() => navigation.goBack()} />
 
       <ScrollView ref={scrollRef} style={screenStyles.content} contentContainerStyle={screenStyles.contentInner} keyboardShouldPersistTaps="handled">
         {success ? (
           <View style={styles.successSection}>
-            <Text style={styles.successText}>Transfer complete</Text>
+            <Text style={styles.successText}>{t('transfer.complete')}</Text>
             <Text style={styles.successDetail}>
-              {quantity}x {item?.sku} moved from {fromBin?.bin_code} to {toBin?.bin_code}
+              {t('transfer.completeDetail', { qty: quantity, sku: item?.sku, from: fromBin?.bin_code, to: toBin?.bin_code })}
             </Text>
             <TouchableOpacity style={[buttonStyles.buttonPrimary, { width: '100%' }]} onPress={resetAll}>
-              <Text style={buttonStyles.buttonPrimaryText}>NEW TRANSFER</Text>
+              <Text style={buttonStyles.buttonPrimaryText}>{t('transfer.btn.new')}</Text>
             </TouchableOpacity>
             <TouchableOpacity style={[buttonStyles.buttonSecondary, { width: '100%', marginTop: 8 }]} onPress={() => navigation.goBack()}>
-              <Text style={buttonStyles.buttonSecondaryText}>DONE</Text>
+              <Text style={buttonStyles.buttonSecondaryText}>{t('transfer.btn.done')}</Text>
             </TouchableOpacity>
           </View>
         ) : (
@@ -131,7 +133,7 @@ export default function TransferScreen({ navigation }) {
               {STEPS.map((label, i) => (
                 <View key={i} style={styles.stepItem}>
                   <View style={[styles.stepDot, i <= step && styles.stepDotActive]} />
-                  <Text style={[styles.stepLabel, i === step && styles.stepLabelActive]}>{label}</Text>
+                  <Text style={[styles.stepLabel, i === step && styles.stepLabelActive]}>{t(label)}</Text>
                 </View>
               ))}
             </View>
@@ -139,14 +141,14 @@ export default function TransferScreen({ navigation }) {
             {/* Confirmed info */}
             {item && (
               <View style={styles.infoCard}>
-                <Text style={listStyles.label}>ITEM</Text>
+                <Text style={listStyles.label}>{t('transfer.label.item')}</Text>
                 <Text style={listStyles.sku}>{item.sku}</Text>
                 <Text style={styles.itemName}>{item.item_name}</Text>
                 {locations.length > 0 && (
                   <View style={styles.locationList}>
                     {locations.map((loc, i) => (
                       <Text key={i} style={styles.locationText}>
-                        {loc.bin_code}: {loc.quantity_on_hand} on hand
+                        {t('transfer.onHand', { bin: loc.bin_code, qty: loc.quantity_on_hand })}
                       </Text>
                     ))}
                   </View>
@@ -157,7 +159,7 @@ export default function TransferScreen({ navigation }) {
             {fromBin && (
               <View style={styles.infoCard}>
                 <View style={styles.infoCardHeader}>
-                  <Text style={listStyles.label}>FROM BIN</Text>
+                  <Text style={listStyles.label}>{t('transfer.label.fromBin')}</Text>
                   <TouchableOpacity
                     style={styles.clearBtn}
                     onPress={() => { setFromBin(null); setToBin(null); setStep(1); }}
@@ -166,14 +168,14 @@ export default function TransferScreen({ navigation }) {
                   </TouchableOpacity>
                 </View>
                 <Text style={styles.binValue}>{fromBin.bin_code}</Text>
-                <Text style={styles.available}>Available: {fromBin.available}</Text>
+                <Text style={styles.available}>{t('transfer.available', { qty: fromBin.available })}</Text>
               </View>
             )}
 
             {toBin && (
               <View style={styles.infoCard}>
                 <View style={styles.infoCardHeader}>
-                  <Text style={listStyles.label}>TO BIN</Text>
+                  <Text style={listStyles.label}>{t('transfer.label.toBin')}</Text>
                   <TouchableOpacity
                     style={styles.clearBtn}
                     onPress={() => { setToBin(null); setStep(2); }}
@@ -188,7 +190,7 @@ export default function TransferScreen({ navigation }) {
             {/* Scan input for current step */}
             {step < 3 && (
               <ScanInput
-                placeholder={STEPS[step]}
+                placeholder={t(STEPS[step])}
                 onScan={handleScan}
                 disabled={scanDisabled}
               />
@@ -198,7 +200,7 @@ export default function TransferScreen({ navigation }) {
             {step === 3 && (
               <>
                 <View style={styles.qtyRow}>
-                  <Text style={listStyles.label}>QUANTITY</Text>
+                  <Text style={listStyles.label}>{t('transfer.label.quantity')}</Text>
                   <TextInput
                     style={listStyles.qtyInput}
                     value={quantity}
@@ -207,7 +209,7 @@ export default function TransferScreen({ navigation }) {
                   />
                 </View>
                 <TouchableOpacity style={buttonStyles.buttonPrimary} onPress={handleConfirm}>
-                  <Text style={buttonStyles.buttonPrimaryText}>CONFIRM TRANSFER</Text>
+                  <Text style={buttonStyles.buttonPrimaryText}>{t('transfer.btn.confirm')}</Text>
                 </TouchableOpacity>
               </>
             )}
@@ -228,9 +230,9 @@ const styles = StyleSheet.create({
   steps: { flexDirection: 'row', justifyContent: 'space-between', marginBottom: 10 },
   stepItem: { alignItems: 'center', flex: 1 },
   stepDot: { width: 8, height: 8, borderRadius: 4, backgroundColor: colors.cardBorder, marginBottom: 2 },
-  stepDotActive: { backgroundColor: colors.accentRed },
+  stepDotActive: { backgroundColor: colors.accent },
   stepLabel: { fontFamily: fonts.mono, fontSize: 8, color: colors.textMuted, letterSpacing: 0.3, textAlign: 'center' },
-  stepLabelActive: { color: colors.accentRed, fontWeight: '700' },
+  stepLabelActive: { color: colors.accent, fontWeight: '700' },
   infoCard: {
     backgroundColor: colors.cardBg, borderWidth: 1, borderColor: colors.cardBorder, borderRadius: radii.card,
     padding: 8, marginBottom: 8,

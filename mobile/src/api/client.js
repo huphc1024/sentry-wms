@@ -1,5 +1,6 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { getAuthItem } from '../auth/secureStorage';
+import { t } from '../i18n/translate';
 
 // Build-time default from .env / eas.json env
 const DEFAULT_API_URL = process.env.EXPO_PUBLIC_API_URL || 'http://localhost:5000';
@@ -57,9 +58,9 @@ export const setLogoutHandler = (handler) => {
 
 async function request(method, path, body) {
   const token = await getAuthItem('jwt_token');
-  const headers = { 'Content-Type': 'application/json' };
+  const headers = { 'Content-Type': 'application/json' }; // i18n-ignore
   if (token) {
-    headers.Authorization = `Bearer ${token}`;
+    headers.Authorization = `Bearer ${token}`; // i18n-ignore
   }
 
   const options = { method, headers };
@@ -80,7 +81,7 @@ async function request(method, path, body) {
   } catch (err) {
     clearTimeout(timeout);
     if (err.name === 'AbortError') {
-      const timeoutErr = new Error('Request timeout');
+      const timeoutErr = new Error(t('common.requestTimeout'));
       timeoutErr.response = null;
       throw timeoutErr;
     }

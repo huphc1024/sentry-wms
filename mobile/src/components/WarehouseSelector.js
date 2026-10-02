@@ -1,8 +1,10 @@
 import React from 'react';
 import { Modal, View, Text, Pressable, FlatList, StyleSheet } from 'react-native';
 import { colors, fonts, radii } from '../theme/styles';
+import { useLocale } from '../i18n/locale';
 
 export default function WarehouseSelector({ visible, warehouses, selected, onSelect, onClose }) {
+  const { t } = useLocale();
   const renderItem = ({ item }) => {
     const isSelected = item.id === selected;
     return (
@@ -21,7 +23,7 @@ export default function WarehouseSelector({ visible, warehouses, selected, onSel
     <Modal visible={visible} transparent animationType="fade">
       <Pressable style={styles.overlay} onPress={onClose}>
         <Pressable style={styles.card} onPress={() => {}}>
-          <Text style={styles.title}>SELECT WAREHOUSE</Text>
+          <Text style={styles.title}>{t('common.selectWarehouse')}</Text>
           <FlatList
             data={warehouses}
             keyExtractor={(item) => String(item.id)}
@@ -75,7 +77,7 @@ const styles = StyleSheet.create({
     backgroundColor: colors.cardBg,
   },
   itemSelected: {
-    borderColor: colors.accentRed,
+    borderColor: colors.accent,
     borderWidth: 1.5,
     backgroundColor: colors.background,
   },
@@ -87,7 +89,7 @@ const styles = StyleSheet.create({
     letterSpacing: 0.3,
   },
   codeSelected: {
-    color: colors.accentRed,
+    color: colors.accent,
   },
   name: {
     fontSize: 13,

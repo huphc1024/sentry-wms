@@ -1,6 +1,7 @@
 import React from 'react';
 import { Modal, Pressable, View, Text, TouchableOpacity, StyleSheet } from 'react-native';
 import { colors, fonts, radii } from '../theme/styles';
+import { useLocale } from '../i18n/locale';
 
 /**
  * Reusable standard/turbo mode picker modal.
@@ -19,6 +20,7 @@ export default function ModeSelector({
   visible, onClose, title, mode, onChangeMode,
   standardDesc, turboDesc, children,
 }) {
+  const { t } = useLocale();
   return (
     <Modal visible={visible} transparent animationType="fade">
       <Pressable style={styles.overlay} onPress={onClose}>
@@ -28,14 +30,14 @@ export default function ModeSelector({
             style={[styles.option, mode === 'standard' && styles.optionActive]}
             onPress={() => onChangeMode('standard')}
           >
-            <Text style={[styles.optionLabel, mode === 'standard' && styles.optionLabelActive]}>STANDARD</Text>
+            <Text style={[styles.optionLabel, mode === 'standard' && styles.optionLabelActive]}>{t('common.modeStandard')}</Text>
             <Text style={styles.optionDesc}>{standardDesc}</Text>
           </TouchableOpacity>
           <TouchableOpacity
             style={[styles.option, mode === 'turbo' && styles.optionActive]}
             onPress={() => onChangeMode('turbo')}
           >
-            <Text style={[styles.optionLabel, mode === 'turbo' && styles.optionLabelActive]}>TURBO</Text>
+            <Text style={[styles.optionLabel, mode === 'turbo' && styles.optionLabelActive]}>{t('common.modeTurbo')}</Text>
             <Text style={styles.optionDesc}>{turboDesc}</Text>
           </TouchableOpacity>
           {children}
@@ -63,8 +65,8 @@ const styles = StyleSheet.create({
     padding: 12, borderRadius: radii.badge, borderWidth: 1,
     borderColor: colors.cardBorder, marginBottom: 8,
   },
-  optionActive: { borderColor: colors.accentRed, backgroundColor: '#fdf6f4' },
+  optionActive: { borderColor: colors.accent, backgroundColor: colors.accentBg },
   optionLabel: { fontFamily: fonts.mono, fontSize: 14, fontWeight: '700', color: colors.textPrimary },
-  optionLabelActive: { color: colors.accentRed },
+  optionLabelActive: { color: colors.accent },
   optionDesc: { fontSize: 12, color: colors.textMuted, marginTop: 2 },
 });

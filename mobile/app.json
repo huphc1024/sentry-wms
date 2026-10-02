@@ -1,7 +1,7 @@
 {
   "expo": {
-    "name": "Sentry WMS",
-    "slug": "sentry-wms",
+    "name": "Sơn Lộc WMS",
+    "slug": "sonloc-wms",
     "version": "1.29.0",
     "orientation": "portrait",
     "icon": "./assets/icon.png",
@@ -14,25 +14,32 @@
     },
     "ios": {
       "supportsTablet": true,
-      "bundleIdentifier": "com.hightowersystems.sentrywms"
+      "bundleIdentifier": "com.sonloc.wms"
     },
     "android": {
       "adaptiveIcon": {
         "foregroundImage": "./assets/adaptive-icon.png",
         "backgroundColor": "#000000"
       },
-      "package": "com.hightowersystems.sentrywms",
+      "package": "com.sonloc.wms",
       "versionCode": 10,
       "usesCleartextTraffic": true,
       "permissions": [
         "INTERNET",
-        "VIBRATE"
+        "VIBRATE",
+        "CAMERA"
       ]
     },
     "plugins": [
       "expo-asset",
       "expo-secure-store",
       "expo-splash-screen",
+      [
+        "expo-camera",
+        {
+          "cameraPermission": "Cho phép Sơn Lộc WMS quét mã vạch và mã QR."
+        }
+      ],
       "./plugins/chainway-scanner",
       "./plugins/with-cleartext-traffic"
     ],

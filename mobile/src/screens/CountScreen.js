@@ -10,12 +10,14 @@ import useScreenError from '../hooks/useScreenError';
 import { useAuth } from '../auth/AuthContext';
 import client from '../api/client';
 import ScreenHeader from '../components/ScreenHeader';
+import { useLocale } from '../i18n/locale.js';
 import { colors, fonts, radii, screenStyles, buttonStyles, listStyles, doneStyles } from '../theme/styles';
 
 const MODE_KEY = 'sentry_count_mode';
 
 export default function CountScreen({ navigation }) {
   const { warehouseId } = useAuth();
+  const { t } = useLocale();
   const scrollRef = React.useRef(null);
   useScrollToTop(scrollRef);
   const [countId, setCountId] = useState(null);
@@ -61,7 +63,7 @@ export default function CountScreen({ navigation }) {
     try {
       const binResp = await client.get(`/api/lookup/bin/${encodeURIComponent(barcode)}`);
       if (!binResp.data?.bin) {
-        showError('Bin not found');
+        showError(t('count.err.binNotFound'));
         return;
       }
       const binId = binResp.data.bin.bin_id;
@@ -85,7 +87,7 @@ export default function CountScreen({ navigation }) {
       setSubmitted(false);
       setTurboStatus('');
     } catch (err) {
-      showError(err.response?.data?.error || 'Failed to create count');
+      showError(err.response?.data?.error || t('count.err.createFailed'));
     }
   };
 
@@ -104,7 +106,7 @@ export default function CountScreen({ navigation }) {
       try {
         const resp = await client.get(`/api/lookup/item/${encodeURIComponent(barcode)}`);
         if (!resp.data?.item) {
-          showError('Item not found');
+          showError(t('count.err.itemNotFound'));
           return;
         }
         const foundItem = resp.data.item;
@@ -118,10 +120,10 @@ export default function CountScreen({ navigation }) {
           counted_quantity: '1',
           unexpected: true,
         }]);
-        setTurboStatus(`${foundItem.sku}: 1 counted (unexpected)`);
+        setTurboStatus(t('count.turbo.countedUnexpected', { sku: foundItem.sku, qty: 1 }));
         try { Vibration.vibrate([0, 100, 50, 100]); } catch {}
       } catch {
-        showError('Item not found');
+        showError(t('count.err.itemNotFound'));
       }
       return;
     }
@@ -132,8 +134,7 @@ export default function CountScreen({ navigation }) {
       updated[index] = { ...updated[index], counted_quantity: String(current + 1) };
 
       const newCount = current + 1;
-      const label = updated[index].unexpected ? ' (unexpected)' : '';
-      setTurboStatus(`${updated[index].sku}: ${newCount} counted${label}`);
+      setTurboStatus(t(updated[index].unexpected ? 'count.turbo.countedUnexpected' : 'count.turbo.counted', { sku: updated[index].sku, qty: newCount }));
 
       if (newCount >= updated[index].expected_quantity && updated[index].expected_quantity > 0) {
         try { Vibration.vibrate(200); } catch {}
@@ -141,7 +142,7 @@ export default function CountScreen({ navigation }) {
 
       return updated;
     });
-  }, [lines]);
+  }, [lines, t]);
 
   const [enqueueTurbo] = useScanQueue(processTurboScan, errorRef);
 
@@ -152,13 +153,13 @@ export default function CountScreen({ navigation }) {
     // Check if item already in lines
     const existing = lines.findIndex((l) => l.upc === barcode || l.sku === barcode);
     if (existing !== -1) {
-      showError('Item already in list');
+      showError(t('count.err.alreadyInList'));
       return;
     }
     try {
       const resp = await client.get(`/api/lookup/item/${encodeURIComponent(barcode)}`);
       if (!resp.data?.item) {
-        showError('Item not found');
+        showError(t('count.err.itemNotFound'));
         return;
       }
       const foundItem = resp.data.item;
@@ -173,7 +174,7 @@ export default function CountScreen({ navigation }) {
         unexpected: true,
       }]);
     } catch {
-      showError('Item not found');
+      showError(t('count.err.itemNotFound'));
     }
   };
 
@@ -198,7 +199,7 @@ export default function CountScreen({ navigation }) {
       });
       setSubmitted(true);
     } catch (err) {
-      showError(err.response?.data?.error || 'Failed to submit count');
+      showError(err.response?.data?.error || t('count.err.submitFailed'));
     }
   };
 
@@ -213,7 +214,7 @@ export default function CountScreen({ navigation }) {
   return (
     <View style={screenStyles.screen}>
       <ScreenHeader
-        title="CYCLE COUNT"
+        title={t('count.title')}
         onBack={() => navigation.goBack()}
         right={
           countId && !submitted ? (
@@ -226,13 +227,13 @@ export default function CountScreen({ navigation }) {
 
       <ScrollView ref={scrollRef} style={screenStyles.content} contentContainerStyle={screenStyles.contentInner} keyboardShouldPersistTaps="handled">
         {!countId ? (
-          <ScanInput placeholder="SCAN BIN" onScan={handleScanBin} disabled={scanDisabled} />
+          <ScanInput placeholder={t('count.scan.bin')} onScan={handleScanBin} disabled={scanDisabled} />
         ) : submitted ? (
           <View style={styles.doneSection}>
             <Text style={doneStyles.check}>{'\u2713'}</Text>
-            <Text style={styles.doneText}>Count submitted for {binCode}</Text>
+            <Text style={styles.doneText}>{t('count.submitted', { bin: binCode })}</Text>
             {lines.some((l) => parseInt(l.counted_quantity, 10) !== l.expected_quantity) && (
-              <Text style={styles.varianceNote}>Variances sent for admin review</Text>
+              <Text style={styles.varianceNote}>{t('count.varianceNote')}</Text>
             )}
           </View>
         ) : (
@@ -240,13 +241,13 @@ export default function CountScreen({ navigation }) {
             <View style={styles.binHeaderRow}>
               <Text style={styles.binHeader}>{binCode}</Text>
               <View style={[styles.modeBadge, mode === 'turbo' && styles.modeBadgeTurbo]}>
-                <Text style={styles.modeBadgeText}>{mode === 'turbo' ? 'TURBO' : 'STANDARD'}</Text>
+                <Text style={styles.modeBadgeText}>{mode === 'turbo' ? t('count.mode.turbo') : t('count.mode.standard')}</Text>
               </View>
             </View>
 
             {mode === 'turbo' ? (
               <>
-                <ScanInput placeholder="SCAN ITEM" onScan={handleScanItem} disabled={scanDisabled} suppressRefocus={qtyFocused} />
+                <ScanInput placeholder={t('count.scan.item')} onScan={handleScanItem} disabled={scanDisabled} suppressRefocus={qtyFocused} />
                 {turboStatus !== '' && (
                   <View style={styles.turboCard}>
                     <Text style={styles.turboText}>{turboStatus}</Text>
@@ -254,7 +255,7 @@ export default function CountScreen({ navigation }) {
                 )}
               </>
             ) : (
-              <ScanInput placeholder="SCAN UNEXPECTED ITEM" onScan={handleAddUnexpected} disabled={scanDisabled} suppressRefocus={qtyFocused} />
+              <ScanInput placeholder={t('count.scan.unexpected')} onScan={handleAddUnexpected} disabled={scanDisabled} suppressRefocus={qtyFocused} />
             )}
 
             {lines.map((line, index) => {
@@ -271,13 +272,13 @@ export default function CountScreen({ navigation }) {
                       <Text style={listStyles.sku}>{line.sku}</Text>
                       {line.unexpected && (
                         <View style={styles.unexpectedBadge}>
-                          <Text style={styles.unexpectedBadgeText}>NEW</Text>
+                          <Text style={styles.unexpectedBadgeText}>{t('count.badge.new')}</Text>
                         </View>
                       )}
                     </View>
                     <Text style={listStyles.itemName}>{line.item_name}</Text>
                     {showExpected && !line.unexpected && (
-                      <Text style={styles.expectedText}>Expected: {expected}</Text>
+                      <Text style={styles.expectedText}>{t('count.expected', { qty: expected })}</Text>
                     )}
                   </View>
                   {mode === 'standard' ? (
@@ -306,10 +307,10 @@ export default function CountScreen({ navigation }) {
       {countId && !submitted && (
         <View style={screenStyles.bottomBar}>
           <TouchableOpacity style={[buttonStyles.buttonPrimary, { flex: 1 }]} onPress={handleSubmit}>
-            <Text style={buttonStyles.buttonPrimaryText}>SUBMIT COUNT</Text>
+            <Text style={buttonStyles.buttonPrimaryText}>{t('count.btn.submit')}</Text>
           </TouchableOpacity>
           <TouchableOpacity style={[buttonStyles.buttonSecondary, { flex: 1 }]} onPress={() => navigation.goBack()}>
-            <Text style={buttonStyles.buttonSecondaryText}>CANCEL</Text>
+            <Text style={buttonStyles.buttonSecondaryText}>{t('count.btn.cancel')}</Text>
           </TouchableOpacity>
         </View>
       )}
@@ -317,10 +318,10 @@ export default function CountScreen({ navigation }) {
       {submitted && (
         <View style={screenStyles.bottomBar}>
           <TouchableOpacity style={[buttonStyles.buttonPrimary, { flex: 1 }]} onPress={resetCount}>
-            <Text style={buttonStyles.buttonPrimaryText}>COUNT ANOTHER BIN</Text>
+            <Text style={buttonStyles.buttonPrimaryText}>{t('count.btn.another')}</Text>
           </TouchableOpacity>
           <TouchableOpacity style={[buttonStyles.buttonSecondary, { flex: 1 }]} onPress={() => navigation.goBack()}>
-            <Text style={buttonStyles.buttonSecondaryText}>DONE</Text>
+            <Text style={buttonStyles.buttonSecondaryText}>{t('count.btn.done')}</Text>
           </TouchableOpacity>
         </View>
       )}
@@ -329,11 +330,11 @@ export default function CountScreen({ navigation }) {
       <ModeSelector
         visible={showModeMenu}
         onClose={() => setShowModeMenu(false)}
-        title="COUNT MODE"
+        title={t('count.mode.title')}
         mode={mode}
         onChangeMode={changeMode}
-        standardDesc="Enter quantity for each item"
-        turboDesc="Each scan = +1 to item count"
+        standardDesc={t('count.mode.standardDesc')}
+        turboDesc={t('count.mode.turboDesc')}
       />
 
       <ErrorPopup
@@ -352,11 +353,11 @@ const styles = StyleSheet.create({
     backgroundColor: colors.cardBorder, borderRadius: radii.badge,
     paddingHorizontal: 8, paddingVertical: 2,
   },
-  modeBadgeTurbo: { backgroundColor: colors.accentRed },
+  modeBadgeTurbo: { backgroundColor: colors.accent },
   modeBadgeText: { fontFamily: fonts.mono, fontSize: 10, fontWeight: '700', color: colors.cream, letterSpacing: 0.5 },
 
   turboCard: {
-    backgroundColor: '#f0f9f0', borderWidth: 1, borderColor: colors.success, borderRadius: radii.card,
+    backgroundColor: colors.successBg, borderWidth: 1, borderColor: colors.success, borderRadius: radii.card,
     padding: 10, marginBottom: 10, alignItems: 'center',
   },
   turboText: { fontFamily: fonts.mono, fontSize: 14, fontWeight: '600', color: colors.success },
@@ -380,7 +381,7 @@ const styles = StyleSheet.create({
     backgroundColor: colors.copper, borderRadius: 4,
     paddingHorizontal: 5, paddingVertical: 1, marginLeft: 6,
   },
-  unexpectedBadgeText: { fontFamily: fonts.mono, fontSize: 8, fontWeight: '700', color: '#FFFFFF', letterSpacing: 0.5 },
+  unexpectedBadgeText: { fontFamily: fonts.mono, fontSize: 8, fontWeight: '700', color: colors.background, letterSpacing: 0.5 },
   expectedText: { fontFamily: fonts.mono, fontSize: 10, color: colors.textMuted, marginTop: 2 },
 
   doneSection: { alignItems: 'center', paddingVertical: 32 },

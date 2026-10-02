@@ -8,10 +8,12 @@ import useScreenError from '../hooks/useScreenError';
 import { useAuth } from '../auth/AuthContext';
 import client from '../api/client';
 import ScreenHeader from '../components/ScreenHeader';
+import { useLocale } from '../i18n/locale.js';
 import { colors, fonts, radii, screenStyles, buttonStyles, listStyles } from '../theme/styles';
 
 export default function PickScanScreen({ navigation }) {
   const { warehouseId } = useAuth();
+  const { t } = useLocale();
   const [orders, setOrders] = useState([]);
   const { error, scanDisabled, showError, clearError } = useScreenError();
   const [loading, setLoading] = useState(false);
@@ -22,7 +24,7 @@ export default function PickScanScreen({ navigation }) {
   const handleScan = async (barcode) => {
     // Client-side duplicate check
     if (orders.find((o) => o.so_barcode === barcode || o.so_number === barcode)) {
-      showError('Already scanned');
+      showError(t('pick.alreadyScanned'));
       return;
     }
 
@@ -40,7 +42,7 @@ export default function PickScanScreen({ navigation }) {
       // scanned SOs first.
       if (resp.data.kind === 'TO') {
         if (orders.length > 0) {
-          showError('Drop scanned sales orders before loading a transfer order');
+          showError(t('pick.dropSoFirst'));
           return;
         }
         navigation.replace('PickWalk', {
@@ -60,11 +62,11 @@ export default function PickScanScreen({ navigation }) {
     } catch (err) {
       const data = err.response?.data;
       if (err.response?.status === 409) {
-        showError(data?.error || `Order already in batch #${data?.batch_id}`);
+        showError(data?.error || t('pick.orderInBatch', { batch: data?.batch_id }));
       } else if (err.response?.status === 404) {
-        showError('Order not found');
+        showError(t('pick.orderNotFound'));
       } else {
-        showError(data?.error || 'Validation failed');
+        showError(data?.error || t('pick.validationFailed'));
       }
     }
   };
@@ -98,7 +100,7 @@ export default function PickScanScreen({ navigation }) {
         setLoading(false);
         return;
       }
-      showError(data?.error || 'Failed to create batch');
+      showError(data?.error || t('pick.createBatchFailed'));
       setLoading(false);
     }
   };
@@ -125,7 +127,7 @@ export default function PickScanScreen({ navigation }) {
         setLoading(false);
         return;
       }
-      showError(data?.error || 'Failed to create batch');
+      showError(data?.error || t('pick.createBatchFailed'));
       setLoading(false);
     }
   };
@@ -137,9 +139,9 @@ export default function PickScanScreen({ navigation }) {
   if (loading) {
     return (
       <View style={styles.loadingScreen}>
-        <ActivityIndicator size="large" color={colors.accentRed} />
+        <ActivityIndicator size="large" color={colors.accent} />
         <Text style={styles.loadingText}>
-          Building pick path for {orders.length} order{orders.length !== 1 ? 's' : ''}...
+          {t('pick.buildingPath', { orders: t(orders.length !== 1 ? 'pick.orders_other' : 'pick.orders_one', { count: orders.length }) })}
         </Text>
       </View>
     );
@@ -148,7 +150,7 @@ export default function PickScanScreen({ navigation }) {
   return (
     <View style={screenStyles.screen}>
       <ScreenHeader
-        title="PICK ORDERS"
+        title={t('pick.titlePickOrders')}
         onBack={() => navigation.goBack()}
         right={
           orders.length > 0 ? (
@@ -161,7 +163,7 @@ export default function PickScanScreen({ navigation }) {
 
       <View style={screenStyles.content}>
         <View style={{ padding: 16, paddingBottom: 0 }}>
-          <ScanInput placeholder="SCAN SO OR TO" onScan={handleScan} disabled={scanDisabled} />
+          <ScanInput placeholder={t('pick.scanSoOrTo')} onScan={handleScan} disabled={scanDisabled} />
         </View>
 
         <View style={{ flex: 1, paddingHorizontal: 16 }}>
@@ -173,7 +175,7 @@ export default function PickScanScreen({ navigation }) {
                 <View style={{ flex: 1 }}>
                   <Text style={styles.soNumber}>{order.so_number}</Text>
                   <Text style={styles.orderDetail}>
-                    {order.item_count} item{order.item_count !== 1 ? 's' : ''} · {order.unit_count} unit{order.unit_count !== 1 ? 's' : ''}
+                    {t('pick.itemsUnits', { items: t(order.item_count !== 1 ? 'pick.items_other' : 'pick.items_one', { count: order.item_count }), units: t(order.unit_count !== 1 ? 'pick.units_other' : 'pick.units_one', { count: order.unit_count }) })}
                   </Text>
                 </View>
                 <TouchableOpacity
@@ -193,7 +195,7 @@ export default function PickScanScreen({ navigation }) {
             onPress={handleLoadAll}
             disabled={orders.length === 0}
           >
-            <Text style={buttonStyles.buttonPrimaryText}>LOAD ALL ORDERS</Text>
+            <Text style={buttonStyles.buttonPrimaryText}>{t('pick.loadAllOrders')}</Text>
           </TouchableOpacity>
         </View>
       </View>
@@ -216,10 +218,10 @@ export default function PickScanScreen({ navigation }) {
 
 const styles = StyleSheet.create({
   badge: {
-    backgroundColor: colors.accentRed, borderRadius: 10,
+    backgroundColor: colors.accent, borderRadius: 10,
     paddingHorizontal: 8, paddingVertical: 2, minWidth: 24, alignItems: 'center',
   },
-  badgeText: { color: '#FFFFFF', fontFamily: fonts.mono, fontSize: 12, fontWeight: '700' },
+  badgeText: { color: colors.background, fontFamily: fonts.mono, fontSize: 12, fontWeight: '700' },
   soNumber: { fontFamily: fonts.mono, fontSize: 14, fontWeight: '700', color: colors.textPrimary },
   orderDetail: { fontSize: 12, color: colors.textMuted, marginTop: 2 },
   loadingScreen: { flex: 1, justifyContent: 'center', alignItems: 'center', backgroundColor: colors.background, padding: 32 },

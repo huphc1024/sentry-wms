@@ -14,6 +14,7 @@ import HomeScreen from '../screens/HomeScreen';
 import ChangePasswordScreen from '../screens/ChangePasswordScreen';
 import ReceiveScreen from '../screens/ReceiveScreen';
 import PutAwayScreen from '../screens/PutAwayScreen';
+import GateScreen from '../screens/GateScreen';
 import PickScanScreen from '../screens/PickScanScreen';
 import PickWalkScreen from '../screens/PickWalkScreen';
 import PickCompleteScreen from '../screens/PickCompleteScreen';
@@ -22,6 +23,9 @@ import PackScreen from '../screens/PackScreen';
 import ShipScreen from '../screens/ShipScreen';
 import CountScreen from '../screens/CountScreen';
 import TransferScreen from '../screens/TransferScreen';
+import MapScreen from '../screens/MapScreen';
+import ZoneMapScreen from '../screens/ZoneMapScreen';
+import RackMapScreen from '../screens/RackMapScreen';
 
 const Stack = createNativeStackNavigator();
 
@@ -73,6 +77,7 @@ export default function AppNavigator() {
               <Stack.Screen name="Home" component={HomeScreen} />
               <Stack.Screen name="Receive" component={ReceiveScreen} />
               <Stack.Screen name="PutAway" component={PutAwayScreen} />
+              <Stack.Screen name="Gate" component={GateScreen} />
               <Stack.Screen name="PickScan" component={PickScanScreen} />
               <Stack.Screen name="PickWalk" component={PickWalkScreen} />
               <Stack.Screen name="PickComplete" component={PickCompleteScreen} />
@@ -81,6 +86,9 @@ export default function AppNavigator() {
               <Stack.Screen name="Ship" component={ShipScreen} />
               <Stack.Screen name="Count" component={CountScreen} />
               <Stack.Screen name="Transfer" component={TransferScreen} />
+              <Stack.Screen name="Map" component={MapScreen} />
+              <Stack.Screen name="ZoneMap" component={ZoneMapScreen} />
+              <Stack.Screen name="RackMap" component={RackMapScreen} />
             </>
           )
         ) : (

@@ -8,9 +8,16 @@ import { useRef, useState, useCallback, useEffect } from 'react';
 export function aggregateReceiveBatch(entries) {
   const byKey = new Map();
   for (const { payload } of entries) {
-    const k = `${payload.item_id}:${payload.bin_id}`;
-    const cur = byKey.get(k) || { item_id: payload.item_id, bin_id: payload.bin_id, quantity: 0 };
+    const k = `${payload.item_id}:${payload.bin_id}:${payload.pallet_code || ''}`;
+    const cur = byKey.get(k) || {
+      item_id: payload.item_id,
+      bin_id: payload.bin_id,
+      quantity: 0,
+      pallet_code: payload.pallet_code || null,
+      expiry_date: payload.expiry_date || null,
+    };
     cur.quantity += 1;
+    if (payload.expiry_date) cur.expiry_date = payload.expiry_date;
     byKey.set(k, cur);
   }
   return [...byKey.values()];
