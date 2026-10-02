@@ -284,7 +284,7 @@ export default function Channels() {
       {loading ? (
         <p style={{ color: 'var(--text-secondary)' }}>{t('common.loading')}</p>
       ) : (
-        <DataTable columns={columns} data={channels}
+        <DataTable rowKey="channel_id" columns={columns} data={channels}
                    emptyMessageKey="channels.empty" />
       )}
 
@@ -335,6 +335,7 @@ export default function Channels() {
             <p style={{ color: 'var(--text-secondary)' }}>{t('channels.noParkedRows')}</p>
           ) : (
             <DataTable
+              rowKey="item_id"
               columns={[
                 { key: 'sku', labelKey: 'common.sku', mono: true },
                 { key: 'available_qty', labelKey: 'common.available' },

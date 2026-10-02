@@ -94,7 +94,7 @@ export default function Zones() {
       <PageHeader title={t('nav.zones')}>
         <button className="btn btn-primary" onClick={openCreate}>{t('zones.newZone')}</button>
       </PageHeader>
-      <DataTable columns={columns} data={zones} emptyMessageKey="zones.empty" />
+      <DataTable rowKey="zone_id" columns={columns} data={zones} emptyMessageKey="zones.empty" />
 
       {showModal && (
         <Modal

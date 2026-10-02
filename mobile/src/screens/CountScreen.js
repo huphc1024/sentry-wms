@@ -25,6 +25,7 @@ export default function CountScreen({ navigation }) {
   const [lines, setLines] = useState([]);
   const { error, scanDisabled, showError, clearError, errorRef } = useScreenError();
   const [submitted, setSubmitted] = useState(false);
+  const [submitting, setSubmitting] = useState(false);
   const [mode, setMode] = useState('standard');
   const [showModeMenu, setShowModeMenu] = useState(false);
   const [turboStatus, setTurboStatus] = useState('');
@@ -179,6 +180,11 @@ export default function CountScreen({ navigation }) {
   };
 
   const handleSubmit = async () => {
+    // Guard against a double-tap firing two submits: a second POST for the
+    // same count would re-insert the unexpected lines and double-count
+    // inventory on approval (the backend now also locks the count row).
+    if (submitting) return;
+    setSubmitting(true);
     try {
       const countLines = lines.map((l) => {
         const entry = {
@@ -200,6 +206,8 @@ export default function CountScreen({ navigation }) {
       setSubmitted(true);
     } catch (err) {
       showError(err.response?.data?.error || t('count.err.submitFailed'));
+    } finally {
+      setSubmitting(false);
     }
   };
 
@@ -306,8 +314,8 @@ export default function CountScreen({ navigation }) {
       {/* Bottom bar */}
       {countId && !submitted && (
         <View style={screenStyles.bottomBar}>
-          <TouchableOpacity style={[buttonStyles.buttonPrimary, { flex: 1 }]} onPress={handleSubmit}>
-            <Text style={buttonStyles.buttonPrimaryText}>{t('count.btn.submit')}</Text>
+          <TouchableOpacity style={[buttonStyles.buttonPrimary, { flex: 1 }, submitting && { opacity: 0.6 }]} onPress={handleSubmit} disabled={submitting}>
+            <Text style={buttonStyles.buttonPrimaryText}>{submitting ? t('count.btn.submitting') : t('count.btn.submit')}</Text>
           </TouchableOpacity>
           <TouchableOpacity style={[buttonStyles.buttonSecondary, { flex: 1 }]} onPress={() => navigation.goBack()}>
             <Text style={buttonStyles.buttonSecondaryText}>{t('count.btn.cancel')}</Text>

@@ -346,7 +346,7 @@ export default function Bins() {
         </button>
         <button className="btn btn-primary" onClick={() => { setForm({ is_active: true }); setShowCreate(true); setError(''); }}>{t('bins.newBin')}</button>
       </PageHeader>
-      <DataTable columns={columns} data={bins} pagination={pagination} onPageChange={setPage} onRowClick={viewBin} />
+      <DataTable rowKey="bin_id" columns={columns} data={bins} pagination={pagination} onPageChange={setPage} onRowClick={viewBin} />
 
       {selected && detail && !editing && (
         <Modal title={t('warehouseSimulation.binN', { code: detail.bin_code })} onClose={() => { setSelected(null); setDetail(null); setError(''); }}
@@ -375,7 +375,7 @@ export default function Bins() {
           {detail.inventory && detail.inventory.length > 0 && (
             <>
               <div className="section-title">{t('nav.inventory')}</div>
-              <DataTable columns={invCols} data={detail.inventory} />
+              <DataTable rowKey="inventory_id" columns={invCols} data={detail.inventory} />
             </>
           )}
           {error && <div className="form-error" style={{ marginTop: 12 }}>{error}</div>}

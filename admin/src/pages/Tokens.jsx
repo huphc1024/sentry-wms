@@ -451,6 +451,7 @@ export default function Tokens() {
       {pageError && <div className="form-error" style={{ marginBottom: 12 }}>{pageError}</div>}
 
       <DataTable
+        rowKey="token_id"
         columns={columns}
         data={tokens}
         emptyMessageKey={loading ? 'common.loading' : 'tokens.noTokens'}

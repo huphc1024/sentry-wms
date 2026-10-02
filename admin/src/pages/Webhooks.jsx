@@ -338,6 +338,7 @@ function DlqPanel({ subscription, onClose }) {
       {panelError && <div className="form-error" style={{ marginBottom: 12 }}>{panelError}</div>}
 
       <DataTable
+        rowKey="delivery_id"
         columns={dlqColumns}
         data={rows}
         emptyMessageKey={loading ? 'common.loading' : 'webhooks.noDlqForSub'}
@@ -1245,6 +1246,7 @@ export default function Webhooks() {
       {pageError && <div className="form-error" style={{ marginBottom: 12 }}>{pageError}</div>}
 
       <DataTable
+        rowKey="subscription_id"
         columns={columns}
         data={webhooks}
         emptyMessageKey={loading ? 'common.loading' : 'webhooks.noSubscriptions'}

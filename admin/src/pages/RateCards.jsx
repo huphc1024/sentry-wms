@@ -85,7 +85,7 @@ export default function RateCards() {
   return (
     <div>
       <PageHeader title={t('nav.rateCards')}><button type="button" className="btn btn-primary" onClick={() => setForm({ currency: 'VND', unit_price: '', service_type: 'STORAGE', unit: 'PALLET_DAY' })}>{t('rateCards.addRate')}</button></PageHeader>
-      <DataTable columns={columns} data={cards} />
+      <DataTable columns={columns} data={cards} rowKey="rate_card_id" />
       {form && (
         <Modal title={t(form.rate_card_id ? 'rateCards.editRate' : 'rateCards.addRate')} onClose={() => setForm(null)} footer={<><button type="button" className="btn" onClick={() => setForm(null)}>{t('common.cancel')}</button><button type="button" className="btn btn-primary" onClick={save}>{t('common.save')}</button></>}>
           {error && <div className="alert alert-error">{error}</div>}

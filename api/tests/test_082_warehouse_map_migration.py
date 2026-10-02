@@ -1,4 +1,4 @@
-"""Schema-level tests for migration 076 (warehouse map coordinates)."""
+"""Schema-level tests for migration 082 (warehouse map coordinates)."""
 
 import os
 
@@ -7,7 +7,7 @@ import pytest
 from db_test_context import get_raw_connection
 
 MIGRATION_PATH = os.path.join(
-    os.path.dirname(__file__), "..", "..", "db", "migrations", "076_warehouse_map.sql",
+    os.path.dirname(__file__), "..", "..", "db", "migrations", "082_warehouse_map.sql",
 )
 
 
@@ -17,7 +17,7 @@ def migration_sql():
         return f.read()
 
 
-def test_migration_076_adds_map_columns(migration_sql):
+def test_migration_082_adds_map_columns(migration_sql):
     assert "ALTER TABLE zones" in migration_sql
     assert "ALTER TABLE bins" in migration_sql
     assert "map_x" in migration_sql

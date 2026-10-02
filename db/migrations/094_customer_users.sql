@@ -1,4 +1,4 @@
--- Migration 088: customer portal login accounts (Customer Portal phase 1)
+-- Migration 094: customer portal login accounts (Customer Portal phase 1)
 --
 -- Deliberately a separate table from `users` rather than a third value in
 -- users.role. `users` carries role / warehouse_ids / allowed_functions and

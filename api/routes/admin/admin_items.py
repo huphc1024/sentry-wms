@@ -25,7 +25,15 @@ from schemas.csv_import import (
 from schemas.items import CreateItemRequest, CreatePreferredBinRequest, UpdateItemRequest, UpdatePreferredBinRequest
 from services.audit_service import write_audit_log
 from services.events_service import emit_event, get_user_external_id
-from services.inventory_service import add_inventory
+from services.inventory_service import (
+    add_inventory,
+    set_inventory_quantity,
+    release_satisfiable_backorders,
+    RELEASE_SOURCE_ADJUSTMENT,
+)
+from services.webhook_dispatcher.backorder_notifier import (
+    dispatch_backorder_notification,
+)
 from utils.validation import validate_body
 
 
@@ -59,7 +67,7 @@ def list_items():
         # alias match they have to look up the item manually.
         where_clauses.append(
             "(i.sku ILIKE :search OR i.item_name ILIKE :search "
-            "OR i.upc ILIKE :search OR EXISTS (SELECT 1 FROM "
+            "OR i.upc ILIKE :search OR i.mpn ILIKE :search OR EXISTS (SELECT 1 FROM "
             "jsonb_array_elements_text(COALESCE(i.barcode_aliases, '[]'::jsonb)) "
             "AS alias(code) WHERE alias.code ILIKE :search))"
         )
@@ -74,7 +82,7 @@ def list_items():
     params["offset"] = (page - 1) * per_page
     rows = g.db.execute(
         text(f"""
-            SELECT i.item_id, i.sku, i.item_name, i.upc, i.category, i.storage_profile,
+            SELECT i.item_id, i.sku, i.item_name, i.upc, i.mpn, i.category, i.storage_profile,
                    i.weight_lbs, i.is_lot_tracked,
                    i.default_bin_id, i.is_active, i.created_at,
                    b.bin_code AS default_bin_code,
@@ -112,6 +120,7 @@ def list_items():
     return jsonify({
         "items": [
             {"item_id": r.item_id, "sku": r.sku, "item_name": r.item_name, "upc": r.upc,
+             "mpn": r.mpn,
              "category": r.category, "storage_profile": r.storage_profile,
              "weight_lbs": float(r.weight_lbs) if r.weight_lbs is not None else None,
              "is_lot_tracked": r.is_lot_tracked,
@@ -133,7 +142,7 @@ def list_items():
 @with_db
 def get_item(item_id):
     item = g.db.execute(
-        text("SELECT item_id, sku, item_name, description, upc, barcode_aliases, category, storage_profile, weight_lbs, length_in, width_in, height_in, default_bin_id, reorder_point, reorder_qty, is_lot_tracked, is_serial_tracked, is_active, created_at, updated_at FROM items WHERE item_id = :iid"),
+        text("SELECT item_id, sku, item_name, description, upc, mpn, barcode_aliases, category, storage_profile, weight_lbs, length_in, width_in, height_in, default_bin_id, reorder_point, reorder_qty, is_lot_tracked, is_serial_tracked, is_active, created_at, updated_at FROM items WHERE item_id = :iid"),
         {"iid": item_id},
     ).fetchone()
     if not item:
@@ -141,7 +150,8 @@ def get_item(item_id):
 
     inv_rows = g.db.execute(
         text("""
-            SELECT inv.bin_id, b.bin_code, z.zone_name, inv.quantity_on_hand, inv.quantity_allocated
+            SELECT inv.inventory_id, inv.bin_id, b.bin_code, z.zone_name,
+                   inv.quantity_on_hand, inv.quantity_allocated
             FROM inventory inv JOIN bins b ON b.bin_id = inv.bin_id JOIN zones z ON z.zone_id = b.zone_id
             WHERE inv.item_id = :iid
         """),
@@ -160,7 +170,7 @@ def get_item(item_id):
     return jsonify({
         "item": {
             "item_id": item.item_id, "sku": item.sku, "item_name": item.item_name,
-            "description": item.description, "upc": item.upc, "barcode_aliases": item.barcode_aliases,
+            "description": item.description, "upc": item.upc, "mpn": item.mpn, "barcode_aliases": item.barcode_aliases,
             "category": item.category, "storage_profile": item.storage_profile,
             "weight_lbs": float(item.weight_lbs) if item.weight_lbs is not None else None,
             "length_in": float(item.length_in) if item.length_in is not None else None,
@@ -172,8 +182,13 @@ def get_item(item_id):
             "created_at": item.created_at.isoformat() if item.created_at else None,
             "updated_at": item.updated_at.isoformat() if item.updated_at else None,
         },
+        # inventory_id is the row identity the admin grid keys on.
+        # bin_id alone is not unique here: inventory is UNIQUE(item_id,
+        # bin_id, lot_number), so one item in one bin across two lots is
+        # two rows.
         "inventory": [
-            {"bin_id": r.bin_id, "bin_code": r.bin_code, "zone_name": r.zone_name,
+            {"inventory_id": r.inventory_id, "bin_id": r.bin_id,
+             "bin_code": r.bin_code, "zone_name": r.zone_name,
              "quantity_on_hand": r.quantity_on_hand, "quantity_allocated": r.quantity_allocated}
             for r in inv_rows
         ],
@@ -205,25 +220,25 @@ def create_item(validated):
     result = g.db.execute(
         text("""
             INSERT INTO items (
-                sku, item_name, description, upc, barcode_aliases, category,
+                sku, item_name, description, upc, mpn, barcode_aliases, category,
                 storage_profile, weight_lbs, length_in, width_in, height_in,
                 default_bin_id, reorder_point, reorder_qty, is_lot_tracked,
                 is_serial_tracked, external_id
             )
             VALUES (
-                :sku, :name, :desc, :upc, CAST(:aliases AS JSONB), :cat,
+                :sku, :name, :desc, :upc, :mpn, CAST(:aliases AS JSONB), :cat,
                 :profile, :weight, :length, :width, :height, :bin,
                 :reorder_point, :reorder_qty, :lot_tracked, :serial_tracked,
                 :ext_id
             )
-            RETURNING item_id, sku, item_name, description, upc, barcode_aliases,
+            RETURNING item_id, sku, item_name, description, upc, mpn, barcode_aliases,
                       category, storage_profile, weight_lbs, length_in, width_in,
                       height_in, default_bin_id, reorder_point, reorder_qty,
                       is_lot_tracked, is_serial_tracked, is_active, created_at
         """),
         {
             "sku": data["sku"], "name": data["item_name"], "desc": data.get("description"),
-            "upc": data.get("upc"), "aliases": json.dumps(data.get("barcode_aliases") or []),
+            "upc": data.get("upc"), "mpn": data.get("mpn"), "aliases": json.dumps(data.get("barcode_aliases") or []),
             "cat": data.get("category"), "profile": data.get("storage_profile"),
             "weight": float(data["weight_lbs"]) if data.get("weight_lbs") is not None else None,
             "length": float(data["length_in"]) if data.get("length_in") is not None else None,
@@ -241,7 +256,7 @@ def create_item(validated):
     g.db.commit()
     return jsonify({
         "item_id": row.item_id, "sku": row.sku, "item_name": row.item_name,
-        "description": row.description, "upc": row.upc, "category": row.category,
+        "description": row.description, "upc": row.upc, "mpn": row.mpn, "category": row.category,
         "barcode_aliases": row.barcode_aliases, "storage_profile": row.storage_profile,
         "weight_lbs": float(row.weight_lbs) if row.weight_lbs is not None else None,
         "length_in": float(row.length_in) if row.length_in is not None else None,
@@ -267,7 +282,7 @@ def update_item(item_id, validated):
         return jsonify({"error": "Item not found"}), 404
 
     ALLOWED_FIELDS = {
-        "sku", "item_name", "description", "upc", "barcode_aliases",
+        "sku", "item_name", "description", "upc", "mpn", "barcode_aliases",
         "category", "storage_profile", "weight_lbs", "length_in", "width_in",
         "height_in", "default_bin_id", "reorder_point", "reorder_qty",
         "is_lot_tracked", "is_serial_tracked", "is_active",
@@ -290,12 +305,12 @@ def update_item(item_id, validated):
     g.db.commit()
 
     row = g.db.execute(
-        text("SELECT item_id, sku, item_name, description, upc, barcode_aliases, category, storage_profile, weight_lbs, length_in, width_in, height_in, default_bin_id, reorder_point, reorder_qty, is_lot_tracked, is_serial_tracked, is_active, created_at, updated_at FROM items WHERE item_id = :iid"),
+        text("SELECT item_id, sku, item_name, description, upc, mpn, barcode_aliases, category, storage_profile, weight_lbs, length_in, width_in, height_in, default_bin_id, reorder_point, reorder_qty, is_lot_tracked, is_serial_tracked, is_active, created_at, updated_at FROM items WHERE item_id = :iid"),
         {"iid": item_id},
     ).fetchone()
     return jsonify({
         "item_id": row.item_id, "sku": row.sku, "item_name": row.item_name,
-        "description": row.description, "upc": row.upc, "barcode_aliases": row.barcode_aliases,
+        "description": row.description, "upc": row.upc, "mpn": row.mpn, "barcode_aliases": row.barcode_aliases,
         "category": row.category, "storage_profile": row.storage_profile,
         "weight_lbs": float(row.weight_lbs) if row.weight_lbs is not None else None,
         "length_in": float(row.length_in) if row.length_in is not None else None,
@@ -401,7 +416,7 @@ def list_inventory():
         # bins for display.
         where_clauses.append(
             "(i.sku ILIKE :search OR i.item_name ILIKE :search "
-            "OR i.upc ILIKE :search OR b.bin_code ILIKE :search)"
+            "OR i.upc ILIKE :search OR i.mpn ILIKE :search OR b.bin_code ILIKE :search)"
         )
         params["search"] = f"%{search}%"
 
@@ -515,6 +530,9 @@ def csv_import(entity_type):
 
     imported = 0
     errors = []
+    # (warehouse_id, item_id) pairs this file increased stock for.
+    _released_pairs = set()
+    _deferred_notifications = []
 
     for idx, rec in enumerate(records, 1):
         try:
@@ -528,12 +546,30 @@ def csv_import(entity_type):
             elif entity_type == "sales-orders":
                 _import_sales_order(g.db, row, default_warehouse_id)
             elif entity_type == "inventory-adjustments":
-                _import_inventory_adjustment(g.db, row)
+                _import_inventory_adjustment(g.db, row, _released_pairs)
             imported += 1
         except _SkipRow as e:
             errors.append({"row": idx, "error": str(e)})
 
+    # once per distinct pair, before the commit, so the release rides
+    # the same transaction as the stock that caused it.
+    for wid, iid in sorted(_released_pairs):
+        release_satisfiable_backorders(
+            g.db,
+            warehouse_id=wid,
+            item_id=iid,
+            source_txn_id=g.source_txn_id,
+            deferred_notifications=_deferred_notifications,
+            source=RELEASE_SOURCE_ADJUSTMENT,
+        )
+
     g.db.commit()
+
+    for event_type, payload, wid in _deferred_notifications:
+        dispatch_backorder_notification(
+            event_type=event_type, payload=payload, warehouse_id=wid,
+        )
+
     return jsonify({
         "message": "Import complete",
         "total": len(records),
@@ -569,19 +605,19 @@ def _import_item(db, row: ItemImportRow):
     result = db.execute(
         text("""
             INSERT INTO items (
-                sku, item_name, description, upc, category, storage_profile,
+                sku, item_name, description, upc, mpn, category, storage_profile,
                 weight_lbs, length_in, width_in, height_in, is_lot_tracked,
                 is_serial_tracked, default_bin_id, external_id
             )
             VALUES (
-                :sku, :name, :desc, :upc, :cat, :profile, :weight,
+                :sku, :name, :desc, :upc, :mpn, :cat, :profile, :weight,
                 :length, :width, :height, :lot_tracked, :serial_tracked,
                 :bin, :ext_id
             )
             RETURNING item_id
         """),
         {"sku": sku, "name": name, "desc": row.description,
-         "upc": row.upc, "cat": row.category, "profile": row.storage_profile,
+         "upc": row.upc, "mpn": row.mpn, "cat": row.category, "profile": row.storage_profile,
          "weight": float(weight) if weight is not None else None,
          "length": float(row.length_in) if row.length_in is not None else None,
          "width": float(row.width_in) if row.width_in is not None else None,
@@ -771,12 +807,15 @@ def _import_sales_order(db, row: SalesOrderImportRow, default_warehouse_id=None)
     )
 
 
-def _import_inventory_adjustment(db, row: InventoryAdjustmentImportRow):
+def _import_inventory_adjustment(db, row: InventoryAdjustmentImportRow, released_pairs=None):
     """Resolve sku/warehouse/bin, apply the on-hand change, write the
     inventory_adjustments row as APPROVED, audit-log it, and emit
     inventoryadjusted.completed/1. Mirrors the auto-approve direct-adjustment
     endpoint (admin_users.create_inventory_adjustment) one-row-per-call
-    so subscribers receive one event per imported correction."""
+    so subscribers receive one event per imported correction. a positive change records its (warehouse_id, item_id) in
+    ``released_pairs`` so the caller can run the backorder matcher once per
+    distinct pair after the whole file, rather than once per row. A 5000-row
+    import correcting the same SKU repeatedly should not run it 5000 times."""
     item = db.execute(
         text("SELECT item_id, external_id FROM items WHERE sku = :sku"),
         {"sku": row.sku},
@@ -806,6 +845,8 @@ def _import_inventory_adjustment(db, row: InventoryAdjustmentImportRow):
     qty_change = row.qty
     if qty_change > 0:
         add_inventory(db, item.item_id, bin_row.bin_id, wh.warehouse_id, qty_change)
+        if released_pairs is not None:
+            released_pairs.add((wh.warehouse_id, item.item_id))
     else:
         inv = db.execute(
             text(
@@ -821,19 +862,7 @@ def _import_inventory_adjustment(db, row: InventoryAdjustmentImportRow):
                 f"'{row.sku}': available {available}, requested {-qty_change}"
             )
         new_qty = available + qty_change
-        if new_qty == 0:
-            db.execute(
-                text("DELETE FROM inventory WHERE inventory_id = :inv_id"),
-                {"inv_id": inv.inventory_id},
-            )
-        else:
-            db.execute(
-                text(
-                    "UPDATE inventory SET quantity_on_hand = :qty, "
-                    "updated_at = NOW() WHERE inventory_id = :inv_id"
-                ),
-                {"qty": new_qty, "inv_id": inv.inventory_id},
-            )
+        set_inventory_quantity(db, inv.inventory_id, new_qty)
 
     adj = db.execute(
         text(

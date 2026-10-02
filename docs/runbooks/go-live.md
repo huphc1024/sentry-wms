@@ -72,15 +72,15 @@ Chạy file trong `db/migrations/` **theo số tăng dần**, chỉ các migrati
 
 | # | File | Nội dung |
 |---|------|----------|
-| 078 | `078_create_pallets.sql` | Bảng pallets |
-| 079 | `079_billing.sql` | Billing events / invoices |
-| 080 | `080_vehicle_movements.sql` | Vehicle movements |
-| 081 | `081_pallet_customer.sql` | Pallet ↔ customer |
-| 082 | `082_pallet_expiry_fefo.sql` | Expiry / FEFO |
-| 083 | `083_warehouse_layout.sql` | Layout |
-| 084 | `084_warehouse_layout_phase2.sql` | Layout phase 2 |
-| 085 | `085_customer_contracts_billing.sql` | Contracts |
-| 086 | `086_vehicle_gate_sessions.sql` | Gate sessions |
+| 078 | `084_create_pallets.sql` | Bảng pallets |
+| 079 | `085_billing.sql` | Billing events / invoices |
+| 080 | `086_vehicle_movements.sql` | Vehicle movements |
+| 081 | `087_pallet_customer.sql` | Pallet ↔ customer |
+| 082 | `088_pallet_expiry_fefo.sql` | Expiry / FEFO |
+| 083 | `089_warehouse_layout.sql` | Layout |
+| 084 | `090_warehouse_layout_phase2.sql` | Layout phase 2 |
+| 085 | `091_customer_contracts_billing.sql` | Contracts |
+| 086 | `092_vehicle_gate_sessions.sql` | Gate sessions |
 
 Docker:
 

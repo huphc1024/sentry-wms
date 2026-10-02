@@ -275,6 +275,7 @@ export default function ConsumerGroups() {
       )}
 
       <DataTable
+        rowKey="consumer_group_id"
         columns={columns}
         data={groups}
         emptyMessageKey={loading ? 'common.loading' : 'consumerGroups.empty'}
@@ -430,6 +431,7 @@ export default function ConsumerGroups() {
             </div>
           ) : (
             <DataTable
+              rowKey="connector_id"
               columns={[
                 { key: 'connector_id', labelKey: 'consumerGroups.connectorId', render: (r) => <span className="mono">{r.connector_id}</span> },
                 { key: 'display_name', labelKey: 'webhooks.displayName' },

@@ -159,7 +159,7 @@ export default function VehicleMovements() {
       )}
       {error && <div className="alert alert-error" style={{ marginBottom: 12 }}>{error}</div>}
 
-      <DataTable columns={columns} data={movements} />
+      <DataTable columns={columns} data={movements} rowKey="movement_id" />
 
       {form && (
         <Modal

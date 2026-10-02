@@ -242,7 +242,7 @@ export default function Receiving() {
           <option value="CLOSED">{t('status.CLOSED')}</option>
         </select>
       </div>
-      <DataTable columns={columns} data={pos} onRowClick={viewPO} emptyMessageKey="receiving.noPos" />
+      <DataTable rowKey="po_id" columns={columns} data={pos} onRowClick={viewPO} emptyMessageKey="receiving.noPos" />
 
       {selected && detail && (
         <Modal
@@ -276,6 +276,8 @@ export default function Receiving() {
                 <thead>
                   <tr>
                     <th>{t('common.sku')}</th>
+                    <th>{t('common.upc')}</th>
+                    <th>{t('receiving.mpn')}</th>
                     <th>{t('common.item')}</th>
                     <th style={{ textAlign: 'right' }}>{t('salesOrders.ordered')}</th>
                     <th style={{ textAlign: 'right' }}>{t('purchaseOrders.received')}</th>
@@ -300,6 +302,8 @@ export default function Receiving() {
                       <Fragment key={l.po_line_id}>
                         <tr>
                           <td className="mono">{l.sku}</td>
+                          <td className="mono">{l.upc || '-'}</td>
+                          <td className="mono">{l.mpn || '-'}</td>
                           <td style={{ color: 'var(--text-secondary)' }}>
                             {l.item_name}
                             {lineReceipts.length > 0 && (
@@ -379,7 +383,7 @@ export default function Receiving() {
                             opens the confirm modal. */}
                         {isExpanded && lineReceipts.map((r) => (
                           <tr key={`receipt-${r.receipt_id}`} style={{ background: 'var(--surface)' }}>
-                            <td></td>
+                            <td colSpan={3}></td>
                             <td colSpan={canReceive ? 6 : 3} style={{ fontSize: 12 }}>
                               <span className="mono" style={{ color: 'var(--text-secondary)' }}>
                                 {r.received_at ? new Date(r.received_at).toLocaleString() : '-'}
@@ -419,7 +423,7 @@ export default function Receiving() {
                   })}
                   {Object.entries(lineDrafts).filter(([, d]) => d.error).map(([lineId, d]) => (
                     <tr key={`err-${lineId}`}>
-                      <td colSpan={canReceive ? 8 : 5}>
+                      <td colSpan={canReceive ? 10 : 7}>
                         <div className="form-error" style={{ fontSize: 12, padding: '4px 0' }}>
                           {t('receiving.lineError', { line: lineId })} {d.error}
                         </div>

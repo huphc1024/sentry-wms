@@ -1,11 +1,11 @@
-﻿"""Contracts for customer, contract and billing migration 085."""
+﻿"""Contracts for customer, contract and billing migration 091."""
 
 from pathlib import Path
 
 from schemas.customers import CreateContractRequest, CreateCustomerRequest
 
 
-MIGRATION = Path(__file__).parents[2] / "db" / "migrations" / "085_customer_contracts_billing.sql"
+MIGRATION = Path(__file__).parents[2] / "db" / "migrations" / "091_customer_contracts_billing.sql"
 
 
 def test_migration_defines_commercial_billing_chain():

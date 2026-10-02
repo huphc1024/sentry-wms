@@ -88,9 +88,11 @@ export default function Refunds() {
         />
       </div>
       <DataTable
+        rowKey="so_id"
         columns={columns}
         data={refunds}
         onRowClick={openRefund}
+        clickColumn="so_number"
         emptyMessageKey="refunds.empty"
       />
 

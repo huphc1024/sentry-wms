@@ -1,9 +1,9 @@
--- Migration 087: stock ownership by customer (Customer Portal phase 1)
+-- Migration 093: stock ownership by customer (Customer Portal phase 1)
 --
 -- Before this migration the operational layer had no notion of "which
 -- customer owns this stock": inventory/items carried no owner and
 -- sales_orders.customer_id was a free-text VARCHAR that did not point at
--- customers.canonical_id. Only pallets.customer_id (mig 081) and the
+-- customers.canonical_id. Only pallets.customer_id (mig 087) and the
 -- billing tables carried a real FK, so a customer-facing surface could
 -- not answer "what is my on-hand" for non-palletised stock.
 --
@@ -26,7 +26,7 @@ BEGIN;
 -- ------------------------------------------------------------
 -- ON DELETE RESTRICT: a customer that still owns SKUs must not be
 -- deletable out from under its inventory. Matches the posture on
--- customer_contracts.customer_id (mig 085).
+-- customer_contracts.customer_id (mig 091).
 ALTER TABLE items
     ADD COLUMN IF NOT EXISTS owner_customer_id UUID
         REFERENCES customers(canonical_id) ON DELETE RESTRICT;
@@ -55,7 +55,7 @@ CREATE INDEX IF NOT EXISTS ix_sales_orders_customer_ref
 -- match stay NULL and are attributed by an operator later.
 --
 -- Guarded on the column's existence: customers.customer_code arrives in
--- mig 085, so the ordered migration sequence always has it -- but this
+-- mig 091, so the ordered migration sequence always has it -- but this
 -- repo's db/schema.sql has lagged its migrations before, so a database
 -- bootstrapped from a stale schema.sql can reach 087 without it. Skipping
 -- the backfill leaves customer_ref NULL for an operator to attribute,
@@ -74,7 +74,7 @@ BEGIN
           AND so.customer_id <> ''
           AND c.customer_code = so.customer_id;
     ELSE
-        RAISE NOTICE 'mig 087: customers.customer_code absent (mig 085 not applied); skipping sales_orders.customer_ref backfill';
+        RAISE NOTICE 'mig 093: customers.customer_code absent (mig 091 not applied); skipping sales_orders.customer_ref backfill';
     END IF;
 END $$;
 

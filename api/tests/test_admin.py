@@ -187,6 +187,16 @@ class TestBins:
         assert data["bin"]["bin_code"] == "A-01-01"
         assert len(data["inventory"]) >= 1
 
+    def test_get_bin_inventory_carries_row_identity(self, client, auth_headers):
+        # The admin grid keys these rows on inventory_id. item_id is not
+        # unique here -- inventory is UNIQUE(item_id, bin_id, lot_number), so
+        # one item in this bin across two lots is two rows.
+        resp = client.get("/api/admin/bins/3", headers=auth_headers)
+        rows = resp.get_json()["inventory"]
+        ids = [r["inventory_id"] for r in rows]
+        assert all(isinstance(i, int) for i in ids)
+        assert len(set(ids)) == len(ids)
+
     def test_create_bin(self, client, auth_headers):
         resp = client.post("/api/admin/bins", json={
             "zone_id": 2, "warehouse_id": 1, "bin_code": "C-01-01", "bin_barcode": "BIN-C-01-01",
@@ -417,6 +427,16 @@ class TestItems:
         assert data["item"]["sku"] == "TST-001"
         assert len(data["inventory"]) >= 1
 
+    def test_get_item_inventory_carries_row_identity(self, client, auth_headers):
+        # the admin grid keys these rows on inventory_id. bin_id is not
+        # unique here -- inventory is UNIQUE(item_id, bin_id, lot_number), so
+        # one item in one bin across two lots is two rows.
+        resp = client.get("/api/admin/items/1", headers=auth_headers)
+        rows = resp.get_json()["inventory"]
+        ids = [r["inventory_id"] for r in rows]
+        assert all(isinstance(i, int) for i in ids)
+        assert len(set(ids)) == len(ids)
+
     def test_get_item_not_found(self, client, auth_headers):
         resp = client.get("/api/admin/items/9999", headers=auth_headers)
         assert resp.status_code == 404
@@ -446,6 +466,35 @@ class TestItems:
         resp = client.put("/api/admin/items/1", json={"item_name": "Updated Widget"}, headers=auth_headers)
         assert resp.status_code == 200
         assert resp.get_json()["item_name"] == "Updated Widget"
+
+    def test_item_mpn_round_trip(self, client, auth_headers):
+        # MPN is set on create, surfaced on read, and editable on update,
+        # mirroring upc. It is not unique, so no duplicate guard applies.
+        created = client.post("/api/admin/items", json={
+            "sku": "MPN-ITEM", "item_name": "MPN Item", "mpn": "MFG-12345"
+        }, headers=auth_headers)
+        assert created.status_code == 201
+        assert created.get_json()["mpn"] == "MFG-12345"
+        item_id = created.get_json()["item_id"]
+
+        detail = client.get(f"/api/admin/items/{item_id}", headers=auth_headers)
+        assert detail.get_json()["item"]["mpn"] == "MFG-12345"
+
+        updated = client.put(f"/api/admin/items/{item_id}", json={"mpn": "MFG-67890"}, headers=auth_headers)
+        assert updated.status_code == 200
+        assert updated.get_json()["mpn"] == "MFG-67890"
+
+        reread = client.get(f"/api/admin/items/{item_id}", headers=auth_headers)
+        assert reread.get_json()["item"]["mpn"] == "MFG-67890"
+
+    def test_item_search_matches_mpn(self, client, auth_headers):
+        client.post("/api/admin/items", json={
+            "sku": "MPN-SEARCH", "item_name": "Searchable Item", "mpn": "ZZZUNIQUEMPN"
+        }, headers=auth_headers)
+        resp = client.get("/api/admin/items?q=ZZZUNIQUEMPN", headers=auth_headers)
+        assert resp.status_code == 200
+        skus = [i["sku"] for i in resp.get_json()["items"]]
+        assert "MPN-SEARCH" in skus
 
     def test_delete_item_with_inventory(self, client, auth_headers):
         # Item 1 has inventory, should fail
@@ -487,6 +536,23 @@ class TestPurchaseOrders:
         data = resp.get_json()
         assert data["purchase_order"]["po_number"] == "PO-2026-001"
         assert len(data["lines"]) == 10
+
+    def test_purchase_order_line_includes_mpn(self, client, auth_headers):
+        # PO detail lines carry mpn (and upc) alongside sku, joined from items.
+        item = client.post("/api/admin/items", json={
+            "sku": "PO-MPN-ITEM", "item_name": "PO MPN Item", "mpn": "PO-MFG-555"
+        }, headers=auth_headers).get_json()
+        created = client.post("/api/admin/purchase-orders", json={
+            "po_number": "PO-MPN-TEST", "warehouse_id": 1,
+            "lines": [{"item_id": item["item_id"], "quantity_ordered": 5, "line_number": 1}],
+        }, headers=auth_headers)
+        assert created.status_code == 200
+        po_id = created.get_json()["purchase_order"]["po_id"]
+
+        resp = client.get(f"/api/admin/purchase-orders/{po_id}", headers=auth_headers)
+        line = resp.get_json()["lines"][0]
+        assert "upc" in line
+        assert line["mpn"] == "PO-MFG-555"
 
     def test_create_purchase_order(self, client, auth_headers):
         resp = client.post("/api/admin/purchase-orders", json={
@@ -1206,6 +1272,31 @@ class TestSalesOrdersPrimaryBin:
         # audit_log_id is None on the idempotent re-cancel; the original
         # cancel's audit row remains the single source of record.
         assert body["audit_log_id"] is None
+
+
+class TestPickingTicketDetail:
+    """The picking-ticket payload must carry the legacy single-string
+    ship_address alongside the structured shipping_address_* fields:
+    the print page's Multi-Orders grouping falls back to it for orders
+    whose structured address is not yet backfilled, and without it
+    those orders group on screen but lose their SHIP WITH banner in
+    print."""
+
+    def test_picking_ticket_returns_legacy_ship_address(self, client, auth_headers):
+        conn = get_raw_connection()
+        cur = conn.cursor()
+        cur.execute(
+            "UPDATE sales_orders SET ship_address = '99 Oak Ave, Boulder CO 80301' "
+            "WHERE so_id = 1"
+        )
+        cur.close()
+
+        resp = client.get(
+            "/api/admin/sales-orders/1/picking-ticket", headers=auth_headers
+        )
+        assert resp.status_code == 200
+        so = resp.get_json()["sales_order"]
+        assert so["ship_address"] == "99 Oak Ave, Boulder CO 80301"
 
 
 # ── Users ─────────────────────────────────────────────────────────────────────

@@ -172,6 +172,7 @@ CREATE TABLE items (
     item_name VARCHAR(200) NOT NULL,
     description VARCHAR(1000),
     upc VARCHAR(50),                       -- primary barcode
+    mpn VARCHAR(64),                        -- manufacturer part number (mig 079)
     barcode_aliases JSONB,                 -- array of alternate barcodes
     category VARCHAR(100),
     storage_profile VARCHAR(20) CHECK (
@@ -197,6 +198,7 @@ CREATE TABLE items (
 );
 
 CREATE INDEX ix_items_upc ON items(upc);
+CREATE INDEX ix_items_mpn ON items(mpn);
 CREATE INDEX ix_items_sku ON items(sku);
 CREATE INDEX ix_items_storage_profile ON items(storage_profile);
 
@@ -229,7 +231,7 @@ CREATE UNIQUE INDEX ux_pallets_barcode ON pallets(pallet_barcode)
 CREATE INDEX ix_pallets_expiry ON pallets(expiry_date)
     WHERE status = 'STORED';
 
--- Gate / yard sessions (mig 080 + 086). Linked to PO inbound or SO outbound.
+-- Gate / yard sessions (mig 086 + 092). Linked to PO inbound or SO outbound.
 CREATE TABLE vehicle_movements (
     movement_id BIGSERIAL PRIMARY KEY,
     movement_type VARCHAR(20) NOT NULL,
@@ -349,8 +351,12 @@ CREATE TABLE sales_orders (
     customer_name VARCHAR(200),
     customer_id VARCHAR(50),
     customer_phone VARCHAR(50),
+    -- mig 078: customer email for display on the SO. POS checkout supplies it
+    -- (receipt / loyalty capture); the inbound mapping populates it when the
+    -- upstream payload carries email. Free-text nullable, matches customers.email.
+    customer_email VARCHAR(255),
     customer_address TEXT,
-    status VARCHAR(20) NOT NULL DEFAULT 'OPEN',  -- 'OPEN', 'PICKED', 'PACKED', 'SHIPPED', 'CANCELLED', 'REFUNDED', 'FRAUD_REVIEW', 'WAITING_STOCK'. PICKING/PACKING retired in mig 060; "in picking" is derived from pick_batches. WAITING_STOCK added in mig 067 (backorder-only off-ramp); REFUNDED added in mig 074 (refund distinct from cancel).
+    status VARCHAR(20) NOT NULL DEFAULT 'OPEN',  -- 'OPEN', 'PICKED', 'PACKED', 'SHIPPED', 'CANCELLED', 'REFUNDED', 'FRAUD_REVIEW', 'WAITING_STOCK'. PICKING/PACKING retired in mig 060; "in picking" is derived from pick_batches. WAITING_STOCK added in mig 067 (backorder-only off-ramp; releases on any inventory increase in the warehouse that satisfies every line, mig 081); REFUNDED added in mig 074 (refund distinct from cancel).
     priority INT DEFAULT 0,                -- higher = pick first
     warehouse_id INT NOT NULL REFERENCES warehouses(warehouse_id),
     ship_method VARCHAR(50),
@@ -450,7 +456,15 @@ CREATE TABLE sales_orders (
     -- confirmed-rendered for this SO. POST /sales-orders/mark-printed
     -- writes it once the client-side ticket render succeeds. NULL
     -- means "still in the picking queue".
-    printed_at              TIMESTAMPTZ
+    printed_at              TIMESTAMPTZ,
+    -- mig 076: return-SO (RMA) soft-delete. voided_at NULL = live; the
+    -- sales-order list endpoint excludes rows where it is set, so a
+    -- voided RMA drops off the page while the row + audit trail persist.
+    -- voided_by is the actor, denormalised alongside the RETURN_VOID
+    -- audit_log entry. Gated in the service to OPEN, un-received returns
+    -- with no linked refund.
+    voided_at               TIMESTAMPTZ,
+    voided_by               VARCHAR(255)
 );
 
 CREATE INDEX IF NOT EXISTS ix_sales_orders_unprinted
@@ -623,7 +637,8 @@ CREATE TABLE cycle_count_lines (
     scanned BOOLEAN DEFAULT FALSE,
     unexpected BOOLEAN DEFAULT FALSE,
     counted_by VARCHAR(100),
-    counted_at TIMESTAMPTZ
+    counted_at TIMESTAMPTZ,
+    CONSTRAINT uq_cycle_count_lines_count_item UNIQUE (count_id, item_id)  -- one line per item per count (mig 080)
 );
 
 -- ============================================================
@@ -909,7 +924,11 @@ CREATE INDEX ix_zones_warehouse ON zones(warehouse_id);
 
 -- Orders
 CREATE INDEX ix_purchase_orders_warehouse ON purchase_orders(warehouse_id);
-CREATE INDEX ix_purchase_order_lines_po ON purchase_order_lines(po_id);
+-- Composite (po_id, item_id): receive_items() probes one PO line per
+-- received item by (po_id, item_id); the leading po_id also serves the
+-- plain WHERE po_id scans, so no separate single-column index is needed
+-- (see mig 078).
+CREATE INDEX ix_purchase_order_lines_po_item ON purchase_order_lines(po_id, item_id);
 CREATE INDEX ix_sales_orders_warehouse ON sales_orders(warehouse_id);
 CREATE INDEX ix_sales_order_lines_so ON sales_order_lines(so_id);
 -- mig 062: partial index because POS-created
@@ -2451,18 +2470,18 @@ ON CONFLICT (only_row) DO NOTHING;
 -- Placed at the end of the file rather than inline on each CREATE TABLE
 -- because every column here references customers(canonical_id), and
 -- `customers` is declared well after items / sales_orders /
--- purchase_orders. Same reason pallets.customer_id (mig 081) sits under
+-- purchase_orders. Same reason pallets.customer_id (mig 087) sits under
 -- the customers block instead of in the pallets DDL.
 --
 -- Existing deploys pick these up via:
---   db/migrations/087_customer_ownership.sql
---   db/migrations/088_customer_users.sql
---   db/migrations/089_customer_token_scope.sql
+--   db/migrations/093_customer_ownership.sql
+--   db/migrations/094_customer_users.sql
+--   db/migrations/095_customer_token_scope.sql
 -- Those files carry the full rationale (ownership model, why customer
 -- logins are a separate table, backfill posture). No backfill is repeated
 -- here: schema.sql only ever runs against an empty database.
 
--- mig 087: stock ownership. Owner lives on `items`, so no inventory write
+-- mig 093: stock ownership. Owner lives on `items`, so no inventory write
 -- path changes. NULL = owned by the warehouse operator itself; the portal
 -- must read NULL as "not visible to any customer", never "visible to all".
 ALTER TABLE items
@@ -2487,7 +2506,7 @@ CREATE INDEX ix_purchase_orders_owner_customer
     ON purchase_orders(owner_customer_id, status)
     WHERE owner_customer_id IS NOT NULL;
 
--- mig 088: portal logins. Separate table from `users` on purpose -- see
+-- mig 094: portal logins. Separate table from `users` on purpose -- see
 -- the migration header. Login rate limiting reuses `login_attempts` with
 -- a 'customer:<username>' key.
 CREATE TABLE customer_users (
@@ -2524,7 +2543,7 @@ CREATE TABLE customer_user_permissions (
 CREATE INDEX ix_customer_user_permissions_user
     ON customer_user_permissions(customer_user_id);
 
--- mig 089: per-customer token scope. NULL = operator-owned, unscoped
+-- mig 095: per-customer token scope. NULL = operator-owned, unscoped
 -- (existing behaviour). Enforcement in the inbound/snapshot handlers
 -- lands in phase 6; the column exists now so tokens can be provisioned.
 ALTER TABLE wms_tokens
@@ -2533,7 +2552,7 @@ ALTER TABLE wms_tokens
 CREATE INDEX ix_wms_tokens_customer
     ON wms_tokens(customer_id) WHERE customer_id IS NOT NULL;
 
--- mig 090: unique so_number for portal-submitted orders. A sequence
+-- mig 096: unique so_number for portal-submitted orders. A sequence
 -- rather than a timestamp or MAX(...)+1, both of which collide under
 -- concurrent submissions. See the migration for the full reasoning.
 CREATE SEQUENCE portal_order_seq AS BIGINT START WITH 1;

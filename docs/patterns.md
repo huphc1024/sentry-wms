@@ -51,7 +51,7 @@ by QR, tied to customer, SKU, lot, and expiry.
 
 **Reference files:**
 
-- Schema: `db/migrations/078_create_pallets.sql`, `081_pallet_customer.sql`, `082_pallet_expiry_fefo.sql`
+- Schema: `db/migrations/084_create_pallets.sql`, `087_pallet_customer.sql`, `088_pallet_expiry_fefo.sql`
 - Admin: `admin/src/pages/Pallets.jsx`, `api/routes/admin/admin_pallets.py`
 - Mobile: `mobile/src/components/map/PalletInfoModal.js`, `PalletSlotGrid.js`
 - Code format: `{warehouse_code}-PLT-{5-digit seq}` in `admin_pallets._next_pallet_code`
@@ -72,7 +72,7 @@ so admin simulation and mobile map stay aligned.
 **Reference files:**
 
 - `api/services/warehouse_layout_service.py` — validate, save, audit snapshot
-- `db/migrations/083_warehouse_layout.sql`, `084_warehouse_layout_phase2.sql`
+- `db/migrations/089_warehouse_layout.sql`, `090_warehouse_layout_phase2.sql`
 - Admin editor: `admin/src/pages/WarehouseSimulation.jsx`, `components/warehouse-map/`
 - Mobile: `mobile/src/components/map/WarehouseFloorPlan.js`
 
@@ -92,7 +92,7 @@ and contracts, then aggregated into invoices.
 **Reference files:**
 
 - `api/services/billing_service.py` — `create_billing_event`, `_find_rate_card`
-- Schema: `db/migrations/079_billing.sql`, `085_customer_contracts_billing.sql`
+- Schema: `db/migrations/085_billing.sql`, `091_customer_contracts_billing.sql`
 - Admin: `admin/src/pages/Customers.jsx`, `RateCards.jsx`, `Invoices.jsx`
 - PDF: `api/utils/pdf.py`, templates `contract_print.html`, `invoice_print.html`
 - Daily storage: `api/jobs/billing_tasks.py`, manual trigger `POST /api/admin/billing/run_storage_billing`
@@ -157,7 +157,7 @@ outbound SOs so partner webhooks include plate context.
 
 **Reference files:**
 
-- Schema: `db/migrations/080_vehicle_movements.sql`, `086_vehicle_gate_sessions.sql`
+- Schema: `db/migrations/086_vehicle_movements.sql`, `092_vehicle_gate_sessions.sql`
 - Service: `api/services/vehicle_service.py`
 - Floor API: `api/routes/gate.py` — `/api/gate/check-in`, `/active`, `/sessions/:id/complete`
 - Admin: `admin/src/pages/VehicleMovements.jsx`, `api/routes/admin/admin_vehicle_movements.py`
@@ -181,9 +181,9 @@ belonging to customer B.
 
 **Reference files:**
 
-- Ownership columns: `db/migrations/087_customer_ownership.sql` — `items.owner_customer_id`, `purchase_orders.owner_customer_id`, `sales_orders.customer_ref`
+- Ownership columns: `db/migrations/093_customer_ownership.sql` — `items.owner_customer_id`, `purchase_orders.owner_customer_id`, `sales_orders.customer_ref`
 - Portal reads: `api/middleware/auth_middleware.py` — `customer_scope_clause`, `require_customer_auth`, `require_customer_feature`
-- Token writes: `api/services/customer_token_scope.py`; token binding `db/migrations/089_customer_token_scope.sql`
+- Token writes: `api/services/customer_token_scope.py`; token binding `db/migrations/095_customer_token_scope.sql`
 - Token reads: `api/routes/snapshot.py` — `_run_keyset_query(owner_customer_id=...)`
 - Docs: [customer-api.md](customer-api.md), [api/portal-openapi.yaml](api/portal-openapi.yaml)
 

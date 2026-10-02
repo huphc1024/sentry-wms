@@ -1,5 +1,5 @@
 -- ============================================================
--- Migration 083: editable warehouse floor plan (meters)
+-- Migration 089: editable warehouse floor plan (meters)
 -- ============================================================
 -- Persists warehouse canvas size, rack geometry, and traffic paths
 -- (forklift / pedestrian). Coordinates are in meters.

@@ -25,6 +25,8 @@ export const en = {
   'pickingTicketPrint.shippingMethod': 'Shipping Method',
   'pickingTicketPrint.soLoadFailed': 'Could not load sales order #{id}.',
   'pickingTicketPrint.soNotFound': 'Sales order #{id} not found.',
+  'pickingTicketPrint.shipWith': 'SHIP WITH:',
+  'pickingTicketPrint.combineCount': '({count} orders, one shipment)',
 };
 
 export const vi = {
@@ -46,4 +48,6 @@ export const vi = {
   'pickingTicketPrint.shippingMethod': 'Phương thức giao',
   'pickingTicketPrint.soLoadFailed': 'Không tải được đơn bán số {id}.',
   'pickingTicketPrint.soNotFound': 'Không tìm thấy đơn bán số {id}.',
+  'pickingTicketPrint.shipWith': 'GIAO CÙNG:',
+  'pickingTicketPrint.combineCount': '({count} đơn, một lô hàng)',
 };

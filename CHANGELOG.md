@@ -26,13 +26,13 @@ until a mobile release is made from it.
 
 ### Added
 
-- **Stock ownership by customer** (migration 087): `items.owner_customer_id`, `purchase_orders.owner_customer_id`, and `sales_orders.customer_ref` - a real FK alongside the existing free-text `customer_id` code, which is kept so inbound mappings do not break. No backfill exists for any of them (there was no prior column to derive one from), so stock reaches a customer's view only once an operator attributes it: an **Owner** picker on Items and a **For customer** picker on Purchase Orders.
-- **Customer portal logins** (migrations 088-089): `customer_users` + `customer_user_permissions` in their own tables, deliberately not rows in `users` - a portal account has no `role`, no `page_keys` and no `warehouse_ids`, so no path exists from a customer account into staff permissions. Portal JWTs carry `subject_type=customer` and ride separate cookies (`sentry_portal_auth` / `sentry_portal_csrf`), so an operator can hold an admin session and a portal session in one browser. Login rate-limiting reuses the staff `login_attempts` table under a `customer:` key prefix, so a customer spraying passwords cannot lock out a staff account with the same username.
-- **Customer portal API** (`/api/portal/*`, migration 090): login / logout / me / change-password, plus own-stock inventory, expected inbound, outbound orders with detail, order submission, and issued invoices. Every route carries `@require_customer_auth` plus a `@require_customer_feature` grant, and every read filters through `customer_scope_clause`. Deliberately withheld: bin, zone and any other locator (the warehouse layout is the operator's, and a per-bin breakdown reconstructs it), and DRAFT invoices (a number the operator has not committed to).
+- **Stock ownership by customer** (migration 093): `items.owner_customer_id`, `purchase_orders.owner_customer_id`, and `sales_orders.customer_ref` - a real FK alongside the existing free-text `customer_id` code, which is kept so inbound mappings do not break. No backfill exists for any of them (there was no prior column to derive one from), so stock reaches a customer's view only once an operator attributes it: an **Owner** picker on Items and a **For customer** picker on Purchase Orders.
+- **Customer portal logins** (migrations 094-095): `customer_users` + `customer_user_permissions` in their own tables, deliberately not rows in `users` - a portal account has no `role`, no `page_keys` and no `warehouse_ids`, so no path exists from a customer account into staff permissions. Portal JWTs carry `subject_type=customer` and ride separate cookies (`sentry_portal_auth` / `sentry_portal_csrf`), so an operator can hold an admin session and a portal session in one browser. Login rate-limiting reuses the staff `login_attempts` table under a `customer:` key prefix, so a customer spraying passwords cannot lock out a staff account with the same username.
+- **Customer portal API** (`/api/portal/*`, migration 096): login / logout / me / change-password, plus own-stock inventory, expected inbound, outbound orders with detail, order submission, and issued invoices. Every route carries `@require_customer_auth` plus a `@require_customer_feature` grant, and every read filters through `customer_scope_clause`. Deliberately withheld: bin, zone and any other locator (the warehouse layout is the operator's, and a per-bin breakdown reconstructs it), and DRAFT invoices (a number the operator has not committed to).
 - **Portal order submission** with every trust-sensitive field server-controlled: the owning customer comes from the session, `so_number` from a dedicated sequence, `status` from `SO_OPEN`, and `order_origin` from `customer-portal`; `priority` and `status` are not accepted at all, so a customer cannot jump the operator's pick queue. Line SKUs are resolved under the caller's ownership scope, so an SKU it does not own is reported exactly like one that does not exist.
 - **Admin: Portal accounts page** (page key `customer-users`): provision customer logins, set feature grants, reset a password (which invalidates that login's already-issued tokens), deactivate (which kills live sessions on the next request). A login cannot be moved between customers after creation.
 - **Customer portal SPA** (`sentry-wms/portal`): a third Vite workspace with its own image, origin and nginx hardening, published on host port 8081, rather than a route inside the admin panel - a customer-facing bundle sharing an origin with the operator panel shares its cookie jar and its CSP, and every admin page added later becomes a surface a tenant could reach. Pages: sign-in, dashboard, inventory, orders (with submission), inbound, invoices, change password. Dev overlay runs it on port 3100; `PORTAL_BIND_HOST` (loopback by default) controls the published bind.
-- **Customer-bound API tokens**: enforcement for `wms_tokens.customer_id`, which migration 089 added and nothing read. A bound token's inbound writes are stamped with the owning customer and refused when they name another or when the record they address already belongs to someone else; `snapshot.inventory` filters to that customer's items; `inventory_update` answers 404 for an item owned by another customer. Surfaces with no owning-customer dimension - the event feed, dockd, POS - and the shared `customers` / `vendors` inbound resources are refused outright rather than served unscoped. Issued from the API tokens page via a new **Customer binding** field, which will not issue a binding the enforcement layer cannot honour.
+- **Customer-bound API tokens**: enforcement for `wms_tokens.customer_id`, which migration 095 added and nothing read. A bound token's inbound writes are stamped with the owning customer and refused when they name another or when the record they address already belongs to someone else; `snapshot.inventory` filters to that customer's items; `inventory_update` answers 404 for an item owned by another customer. Surfaces with no owning-customer dimension - the event feed, dockd, POS - and the shared `customers` / `vendors` inbound resources are refused outright rather than served unscoped. Issued from the API tokens page via a new **Customer binding** field, which will not issue a binding the enforcement layer cannot honour.
 - **Docs**: [customer-api.md](docs/customer-api.md) (both customer surfaces, the scoping rules and the operator checklist), [portal-openapi.yaml](docs/api/portal-openapi.yaml) with a route-parity test, a *Customer tenancy* pattern in [patterns.md](docs/patterns.md), and a Customer persona in [role-matrix.md](docs/role-matrix.md).
 
 ### Changed
@@ -88,10 +88,159 @@ until a mobile release is made from it.
 
 ### Migrations
 
-- **087** - stock ownership by customer: `items.owner_customer_id`, `purchase_orders.owner_customer_id`, `sales_orders.customer_ref`, all nullable with partial indexes. NULL means operator-owned / unattributed, which is every existing row.
-- **088** - `customer_users` + `customer_user_permissions`. `must_change_password` defaults TRUE, so every provisioned login starts behind a forced change.
-- **089** - `wms_tokens.customer_id`. NULL = operator token, unscoped; every token issued before this keeps working unchanged.
-- **090** - `portal_order_seq`, the sequence backing portal-submitted SO numbers. A timestamp or a `COUNT(*)` would collide under concurrent submissions from the same customer.
+**Numbering.** This work was developed against v1.30.0 and numbered its migrations 076-090. Upstream v1.31.0-v1.37.0 meanwhile took 076-081 for unrelated changes (returns void, PO line index, customer email, `items.mpn`, cycle-count uniqueness, backorder comment), so all of this work's migrations (warehouse map through portal order sequence) are renumbered **082-096**, in the same order and with unchanged SQL. A database that applied the earlier 076-090 numbering from a working-tree build must be reconciled by hand before upgrading: the files are the same, only their prefixes moved.
+
+- **093** - stock ownership by customer: `items.owner_customer_id`, `purchase_orders.owner_customer_id`, `sales_orders.customer_ref`, all nullable with partial indexes. NULL means operator-owned / unattributed, which is every existing row.
+- **094** - `customer_users` + `customer_user_permissions`. `must_change_password` defaults TRUE, so every provisioned login starts behind a forced change.
+- **095** - `wms_tokens.customer_id`. NULL = operator token, unscoped; every token issued before this keeps working unchanged.
+- **096** - `portal_order_seq`, the sequence backing portal-submitted SO numbers. A timestamp or a `COUNT(*)` would collide under concurrent submissions from the same customer.
+
+## [v1.37.0] - 2026-08-20
+
+Sales orders open in place from any queue, a related-records tab, and admin tables that no longer hand a cell's state to the wrong record.
+
+**Mobile.** Zero mobile/ diffs on this release. The current mobile build (version 1.36.0, versionCode 13) remains current; no new APK for v1.37.0.
+
+### Added
+
+- **Open sales orders in place from any queue** (#459): the Backorders, Dashboard, RMA and Refunds pages could show an order but not open it, so reaching one meant navigating to Sales Orders, searching for the number you had just been looking at, and losing your place in the list. The SO edit modal moves out of `SalesOrders.jsx` into its own `SalesOrderModal` component, unchanged in behaviour, and the four queue pages mount it directly; clicking a row opens the order where you are, and closing it returns you to the same list at the same scroll position. `SalesOrders.jsx` keeps the list and the deep-link, dropping from about 2,300 lines to 150. Rows now open from a named column rather than anywhere in the row, so selecting text in a cell to copy an SO number or a SKU no longer navigates.
+- **Related records tab on the sales order modal** (#458): an order rarely stands alone, since a sale spawns a backorder, a refund mints a replacement and an exchange creates an RMA, but following those links meant reading a parent id off one screen and searching for it on another. `GET /admin/sales-orders/<id>/related` walks the family in both directions and returns ancestors, descendants and siblings with their status, type and relationship to the order asked about; each row opens that order in place. The walk is depth-capped at 32 in both directions, because `parent_so_id` is a self-FK with no CHECK forbidding a cycle and an UPDATE pointing an ancestor at its own descendant would otherwise spin the recursive CTE forever.
+
+### Fixed
+
+- **Admin table rows keyed by record instead of array position** (#457): rows were keyed `row.id || i`, and no admin list payload carries a bare `id`, so every table in the admin fell through to the array index and React reconciled rows by position. A row removed from the middle of the list shifted every row below it up one index, and any cell holding state was handed a different record's props without remounting. Fraud Review's memo box is where that surfaced: the note a CSR had typed stayed on screen while the order under it changed, so an edit-in-place wrote the note onto the wrong sales order. `DataTable` gains a `rowKey` naming what identifies a row, resolving to undefined rather than falling back to the index so a `rowKey` that silently misses is detectable; every call site supplies one and a test asserts that, so a new table cannot quietly reintroduce index keying.
+- **Text selection inside a cell no longer fires the row handler** (#457), which on some pages meant a navigation.
+
+## [v1.36.0] - 2026-08-20
+
+Backorders you can sell into and release from anywhere stock lands, an Admin Ship escape hatch, and wave-create that scales past twenty orders.
+
+**Mobile.** The pick-scan screen and the api client change, so the mobile build moves to version 1.36.0, versionCode 13. The APK is rebuilt at the end of the current migration round.
+
+### Added
+
+- **Create-without-stock backorder at POS checkout** (#450): the register can take payment for an item it has no stock of. `backorder=true` skips the stock gate entirely, since the lines carry no location: only the SKU has to resolve, and each line is inserted PENDING with `quantity_ordered` alone, nothing reserved and nothing decremented. The order lands at WAITING_STOCK with `backorder_opened_at` stamped, shows on the backorder screen, sorts by waiting age, and clears through the receiving auto-fulfill hook when stock arrives. Emits `backorder.opened/1`. A replacement or exchange backorder keeps its `order_type` and parent link, and an exchange still auto-creates its RMA. **New setting `BACKORDER_WAREHOUSE_CODE`** names the warehouse the order is assigned to, which must be the one that receives restock: unset on a single-warehouse deployment uses that warehouse, and a multi-warehouse deployment must set it or checkout returns 422 rather than guessing.
+- **Admin Ship** (#455): an order can end up physically shipped without Sentry recording it, whether an external shipping system stamped the label or a legacy backfill left picked quantity with nothing shipped against it. `POST /admin/sales-orders/<id>/admin-ship` stamps `quantity_shipped` from `quantity_picked` across every line where picked exceeds shipped, writes one fulfillment and one `ship.confirmed`, and moves the order to SHIPPED. It ships all eligible lines rather than offering per-line selection, so the order gets exactly one fulfillment. Returns are refused, and a line under-picked with no explicit shortfall marker refuses with `kind=silent_shortfall` naming the blocking SKUs until the operator re-submits with `acknowledge_shortfall`, so the quantity gap is a decision someone made rather than one the action made silently.
+- **Item name and open-PO status on the backorder queue** (#452): the queue shows each item's name under its SKU, and whether the item is already on an open PO. Nothing links a backorder to the PO that will satisfy it, so the answer is derived from open PO lines for the same item in the backorder's warehouse and names the PO and its expected date rather than showing a bare checkbox, which would hide that ambiguity behind a tick. "Not on an open PO" renders explicitly, so a missing answer reads differently from a field that failed to load.
+
+### Changed
+
+- **Backorders release on any inventory increase** (#451): a backorder released only when a PO receipt landed, because the matcher lived in `receiving.py` and ran only on `POST /receive`. Stock reaches a warehouse by several routes, so a backorder could sit in WAITING_STOCK while the item was already on the shelf in a pickable bin in that exact warehouse. The matcher moves into `inventory_service.release_satisfiable_backorders()` and direct adjustments, cycle-count approvals, the adjustment CSV import, inter-warehouse transfers and the inventory sync all call it, each inside the same transaction as the stock that caused the release. It is deliberately not hooked inside `add_inventory()`: the cycle-count approval path writes stock with raw SQL and would be missed, and a blanket hook would fire on restock-on-revert, where stock is only transiently back on the shelf.
+- **`ship.voided/1` accepts `SHIPPED` as `reverted_to_status`** (#455): the enum was `PICKED` / `PACKED`, correct while an order could only be shipped from one of those. Admin Ship can correct an order that already reads SHIPPED, so voiding that ship reverts it to SHIPPED and the emit has to be able to say so. Additive, but a wire contract: a consumer switching exhaustively on that field now has a third case. `OPEN` stays rejected.
+
+### Fixed
+
+- **Wave-create no longer times out past twenty orders** (#454): the endpoint validated each selected order with its own round trip and then built the batch order by order, so query count and wall clock both grew linearly while the request sat in one transaction. Validation collapses to a single set-based query and the batch build stops re-querying per order; the mobile client raises its timeout for this call alone. Two correctness guards ride along, both reachable once the endpoint was fast enough to use on large selections: a double-tapped create could open two batches over the same orders, and the auto-cancel that tidied an empty batch could fire against one a concurrent request had just populated.
+- **Adjustments list no longer 500s on a username-authored row** (#453): `GET /admin/adjustments/list` failed on any warehouse that had ever had a cycle count, including the unfiltered default the page loads, so the page was dead for every user. `inventory_adjustments.adjusted_by` is VARCHAR and its writers disagree: direct adjustments and the CSV import store a numeric `user_id`, cycle-count submission stores a username. The join guarded its cast with a regex, but Postgres does not promise to evaluate join conditions left to right, so the planner could run `adjusted_by::int` against every row first. Casting `user_id` to text instead can never fail.
+
+### Migrations
+
+- **081** `backorder_release_comment`: documentation only, no schema change, re-runnable. Corrects the `sales_orders.status` comment, which still described a PO receipt as the sole backorder release trigger.
+
+## [v1.35.0] - 2026-08-20
+
+Inventory rows are retained at zero instead of being deleted when a bin empties. Single-change release, because it alters what the inventory snapshot contains.
+
+**Mobile.** Zero mobile/ diffs on this release. The current mobile build (version 1.33.0, versionCode 12) remains current; no new APK for v1.35.0.
+
+### Fixed
+
+- **Inventory rows retained at zero when a bin empties** (#448): when stock fully left a bin, five mutation paths deleted the inventory row outright while picking, receiving reversal, and cycle-count approval kept it at 0. A `(item, bin)` pair could silently vanish from the snapshot, so downstream consumers could not distinguish "went to zero" from "never tracked", and stale mirrors accumulated phantom on-hand. Zero is now a first-class state: a shared `set_inventory_quantity()` helper always updates in place, and the bin transfer, inter-warehouse transfer, direct adjustment, CSV adjustment import, and inbound inventory-set paths all route through it. Rows are only removed when their item or bin is itself deleted. The snapshot endpoint already emitted rows unfiltered, so every pair now stays reconcilable to its true on-hand, including 0.
+
+### Behavior change
+
+The inventory snapshot now contains `(item, bin)` rows at `quantity_on_hand = 0` that it previously omitted. A consumer that treated "row absent" as "no stock" still reads correctly; a consumer that treated row count as SKU-locations-in-use will see higher counts. Distinguishing absence from zero is the point of the change.
+
+**The fix is forward-only.** A deployment that already lost rows to the delete paths keeps those gaps until it reconciles its mirror against a fresh snapshot; nothing in this release reconstructs history.
+
+## [v1.34.0] - 2026-08-19
+
+Picking Tickets gains Multi-Orders and Long Orders views, and fulfillment actions stop being blocked on replacement and exchange orders.
+
+**Mobile.** Zero mobile/ diffs on this release. The current mobile build (version 1.33.0, versionCode 12) remains current; no new APK for v1.34.0.
+
+### Added
+
+- **Multi-Orders view on Picking Tickets** (#444): a toggle collapses the queue to orders sharing a shipping address, clustered so same-destination orders can be boxed and shipped together to save postage. Singletons are hidden; each cluster is labelled with a group number and size, ordered by the earliest ship-by date. Grouping is derived on the client from the `shipping_address_*` fields the queue endpoint already returns, through a shared side-effect-free helper, so the on-screen groups and the printed tickets cannot drift. Printed tickets in a grouped stack carry a SHIP WITH banner naming their same-address siblings.
+- **Long Orders filter on Picking Tickets** (#446): a toggle keeps only orders with more than four line items, the picking-heavy ones, so they can be batch-printed together, with an Items column showing each order's line count. It composes with Multi-Orders: with both on, the queue shows long orders that also share a shipping address. Long-ness is read from the order's current lines rather than a stored flag, so it never goes stale when a line is added or removed. `GET /admin/sales-orders` gains an opt-in `include_line_count`; pages that do not filter by size skip the subquery entirely.
+- **Order memo on POS checkout** (#441): the checkout body accepts an optional `memo` (4096 cap) written to `sales_orders.memo`, the same column the admin SO page, the floor screens, and the RMA operator note already use, so no display-side change was needed. Whitespace-only trims to NULL, matching the admin memo PATCH, and the memo rides in the `POS_CHECKOUT` audit details. Not gated on `is_phone_order`, so offering it on counter sales later is a UI-only change.
+- **Sell (POS) in the user grant list** (#442): the register already gated login on the `sell` grant (ADMIN exempt), but it was not offered in the admin user editor and could only be set by hand.
+
+### Changed
+
+- **Fulfillment actions allowed on all order types except returns** (#443): partial fulfill keyed off `parent_so_id`, which swept up every child SO (replacement, exchange, return, backorder) even though only backorders needed the no-chaining cap, and admin pick and release picked quantity had no server-side `order_type` gate at all, relying on the sales-orders ledger hiding returns. `order_type_allows_fulfillment_ops()` is now the single rule: every `order_type` is eligible except `return`, which is inbound RMA goods-in on a separate status lifecycle. Partial fulfill layers one extra exclusion on top, `backorder`, to preserve the one-level chaining cap, now keyed on `order_type` rather than `parent_so_id`. **Behavior change:** replacement and exchange children can now be partially fulfilled, admin-picked and released, where previously they could not; returns are blocked server-side rather than only hidden in the UI.
+
+### Fixed
+
+- **SHIP WITH banners are opt-in and recipient-aware** (#445): the printed combine banner grouped on the shipping address alone, so two different customers at one street address (an apartment block, a business park) grouped together and each ticket told the packer to box them into one shipment. The grouping key now includes the normalized recipient name, falling back to `customer_name`; name variants of one person split into separate groups instead, which is the safe direction to err in. Banners are also opt-in now: a plain Print All or a bare deep link used to stamp them, instructing a combine the operator never asked for, and the list page sets `combine=1` only from the Multi-Orders view. The picking-ticket detail payload carries the legacy `ship_address` so an order grouped through the legacy fallback keeps its banner in print.
+
+## [v1.33.0] - 2026-08-19
+
+Manufacturer part number on the item master, and a cycle count that can no longer double-count itself.
+
+**Mobile.** The cycle-count screen changes, so the mobile build moves to version 1.33.0, versionCode 12. The APK is rebuilt at the end of the current migration round rather than per release.
+
+### Added
+
+- **Manufacturer part number on items** (#438): items carry an MPN alongside the SKU and UPC, the manufacturer's own catalogue number, used to match an arriving shipment line back to what was ordered when the SKU and UPC are not enough on their own. Migration 079 adds `items.mpn`, nullable and deliberately not unique, since one MPN can legitimately map to several SKUs (kits, re-packs, reseller renames) and is shared across manufacturers; `ix_items_mpn` mirrors `ix_items_upc` for lookup. The field is surfaced through item read, create and update, the CSV import schema, PO lines and receiving, and item search matches on it the way it matches on UPC. Items, Purchase Order and Receiving views show it, and the PO line table grows UPC and MPN columns, neither of which it carried before. The inbound mapping can populate it where the sending system supplies one.
+
+### Fixed
+
+- **Duplicate cycle-count lines from a double-submitted count** (#439): a cycle count is scoped to a single bin, so each item should appear on exactly one line, but nothing enforced it. The mobile SUBMIT button could fire twice and `submit_cycle_count` re-checked status without locking the count row, so the second call re-ran the whole submit and re-INSERTed every "unexpected" line. Snapshot lines were spared because they UPDATE by `count_line_id`, but the unexpected lines duplicated, became duplicate PENDING `inventory_adjustments`, and approval then applied each variance as its own delta, double-counting on-hand. Four layers now hold the invariant: the submit locks the count row and re-checks status under that lock; the unexpected-line write is idempotent per `(count_id, item_id)` and the create-time snapshot is aggregated per item; `UNIQUE(count_id, item_id)` (migration 080) is the structural backstop; and the mobile submit button disables itself while a submit is in flight, removing the common trigger at the source.
+
+### Migrations
+
+- **079** `items_mpn`: adds `mpn VARCHAR(64)` to `items` plus `ix_items_mpn`. Nullable, not unique.
+- **080** `cycle_count_lines_unique`: adds `UNIQUE(count_id, item_id)` on `cycle_count_lines`. **This migration does not auto-dedupe.** It fails if the database already holds duplicate `(count_id, item_id)` rows; its header carries the query to find them and what to clean up (the surplus lines and any still-PENDING adjustments they produced). A fresh install applies it immediately.
+
+## [v1.32.0] - 2026-08-19
+
+Receiving performance on large POs, and customer email carried through onto the sales order.
+
+**Mobile.** The receive screen changes, so the mobile build moves to version 1.32.0, versionCode 11. The APK is rebuilt at the end of the current migration round rather than per release, so this build ships alongside the other pending mobile work.
+
+### Added
+
+- **Customer email on sales orders** (#436): POS checkout already collected `customer_email` as a receipt and loyalty capture field, but there was no column on `sales_orders` for it to land in, so the value was dropped on the way through. Migration 078 adds it: free-text, nullable, no FK or CHECK, matching the other `customer_*` fields and `customers.email`. POS checkout writes it through, admin sales-order read and edit carry it, and the sales-order modal shows it in the summary with an editable input. The inbound mapping can populate it when the upstream payload carries an email; `db/mappings/example-template.yaml.template` documents the field, and a deployment whose sending system omits email leaves it unmapped so the column stays NULL. Display only.
+
+### Changed
+
+- **Handheld receive line list is paged** (#435): the receive screen rendered every PO line as a row in a `ScrollView` and re-rendered all of them on each scan, so receiving a 700-line PO stuttered in proportion to its size. The list is now paged 50 at a time behind a memoized sort, the way Pick and PutAway already bound their lists, so the rendered row count no longer grows with the PO. The sort and paging logic moves into `mobile/src/utils/receiveLines.js` with its own tests.
+
+### Fixed
+
+- **Per-item PO line lookup no longer scans the whole PO** (#435): `receive_items` resolved each received item's line with `WHERE po_id AND item_id`, but `purchase_order_lines` was indexed on `po_id` alone, giving an O(lines) scan per item and O(lines^2) across a full receive. Migration 077 adds a composite `(po_id, item_id)` index and drops the now-redundant single-column one, whose `po_id` prefix the composite still covers. Receiving-bin validation is memoized as well, so a client sending one bin for every scan does not re-query it per item.
+
+### Migrations
+
+- **077** `purchase_order_lines_po_item_index`: adds composite `(po_id, item_id)` index, drops the superseded `ix_purchase_order_lines_po`.
+- **078** `sales_orders_customer_email`: adds `customer_email VARCHAR(255)` to `sales_orders`, nullable.
+
+## [v1.31.0] - 2026-08-18
+
+Returns handling, transfer-order and shipping fixes, and a dependency-audit gate that can accept a single advisory without dropping the whole check.
+
+**Mobile.** No mobile source diffs on this release. The current mobile build (version 1.29.0, versionCode 10) remains current; no new APK for v1.31.0. The mobile dependency tree does move: `js-yaml`, `tar` and `nanoid` are updated and `postcss` / `nanoid` pinned through overrides, all build-tooling only.
+
+### Added
+
+- **ADMIN void (soft-delete) for return orders** (#430): operators occasionally create a return SO (`order_type='return'`, the `<orig>-RMA` goods-in record) by mistake, and there was no order-level delete. The generic cancel unwinds outbound allocation and picking, which is wrong for a goods-in return. `POST /admin/sales-orders/<id>/void-return` stamps `voided_at` / `voided_by` (migration 076) and writes a RETURN_VOID audit entry; the row and its audit trail persist while the sales-order list hides it, so the RMA drops off the page. Gated to `order_type='return'`, status OPEN, no received goods, and no linked refund; re-voiding is idempotent. ADMIN-only, stricter than the cancel route, because the action is destructive from the operator's point of view.
+- **Per-advisory npm audit allowlist** (#429): `npm audit` has no `--ignore-vuln`, so accepting one unreachable advisory previously meant dropping the gate entirely. `.github/scripts/npm_audit_gate.py` wraps `npm audit --json` and applies an `AUDIT_ALLOW` list of GHSA ids, where an entry suppresses only its own id. A new advisory on an allowlisted package still blocks the merge, and an allowlisted id that stops being reported is warned about as stale so the list cannot rot into a blanket bypass.
+
+### Changed
+
+- **RMA disposition bin is a searchable field** (#431): the receive screen preloaded up to 500 bins into a dropdown and auto-selected whichever sorted first, so returned goods could land in the wrong bin unnoticed and a large warehouse was silently truncated to its first page. It now uses the same debounced server-side bin search as Adjustments, scoped to the chosen disposition warehouse. The bin starts empty and must be picked, and clears when the warehouse changes.
+- **Dependency advisories cleared across all three trees** (#429): `cryptography` 48.0.1 to 50.0.0; admin `react-router` 7.17.0 to 7.18.2, `undici` 7.28.0 to 7.29.0, plus `js-yaml`, `nanoid`, `brace-expansion` and `postcss` inside their existing ranges. The admin tree reports zero vulnerabilities. `image-size` is allowlisted on the two mobile jobs: both parser advisories name a vulnerable range of `<= 2.0.2` and 2.0.2 is the latest published release, so there is nothing to move to, and it is reached only through Expo's bundler at build time, never on device.
+
+### Fixed
+
+- **Transfer order auto-submits when its pick batch completes** (#432): `complete_batch` only ever flipped sales orders to PICKED, so finishing a transfer-order pick batch left the TO at PARTIALLY_PICKED with no approval row. With the batch then COMPLETED, the handheld's pick guard found no open batch and admin start-picking refused because no lines remained, deadlocking the TO. The picker submit logic moves into `transfer_order_service.submit_picks` and `complete_batch` calls it for each transfer order the batch picked, so a hand submit and a batch completion take the same path.
+- **Actual ship method persisted on the SO header** (#433): `record_ship` wrote carrier and tracking number to the header but left `ship_method` at its ingestion value, so an order shipped on a different carrier kept a stale method above a contradicting tracking number. `ship_method` joins the header UPDATE, COALESCE-guarded so methodless local-pickup ships keep their value. This is the stored-value complement to the display-only fix in v1.29.1.
+- **Admin version display** was stuck at 1.29.1 on the Settings page and is corrected here.
+
+### Migrations
+
+- **076** `sales_orders_void_return`: adds `voided_at TIMESTAMPTZ` and `voided_by VARCHAR(255)` to `sales_orders`. NULL `voided_at` means live. Only return SOs ever carry it, so normal sales orders are unaffected.
 
 ## [v1.30.0] - 2026-06-19
 

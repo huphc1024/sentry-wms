@@ -1,10 +1,11 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { api } from '../api.js';
 import DataTable from '../components/DataTable.jsx';
 import PageHeader from '../components/PageHeader.jsx';
 import StatusTag from '../components/StatusTag.jsx';
 import Modal from '../components/Modal.jsx';
 import { useLocale } from '../i18n/locale.jsx';
+import { useAuth } from '../auth.jsx';
 
 // A return SO (the <orig>-RMA) is received one item at a time into a chosen
 // disposition: the warehouse + bin decide whether the goods go back as
@@ -18,6 +19,8 @@ const RMA_STATUS_OPTIONS = ['All', 'OPEN', 'PARTIALLY_RECEIVED', 'RECEIVED'];
 
 export default function RMA() {
   const { t } = useLocale();
+  const { user } = useAuth();
+  const isAdmin = user?.role === 'ADMIN';
   const [rmas, setRmas] = useState([]);
   const [search, setSearch] = useState('');
   const [statusFilter, setStatusFilter] = useState('All');
@@ -25,15 +28,27 @@ export default function RMA() {
   const [detail, setDetail] = useState(null);
   const [lines, setLines] = useState([]);
   const [warehouses, setWarehouses] = useState([]);
-  const [bins, setBins] = useState([]);
   const [dispWarehouseId, setDispWarehouseId] = useState('');
+  // The disposition bin is chosen via a searchable typeahead (mirrors the
+  // Adjustments bin lookup): the operator types a bin code, picks a result,
+  // and dispBinId carries the chosen bin_id while binSearch is the visible
+  // text. Server-side search avoids the old preload-and-truncate behaviour.
   const [dispBinId, setDispBinId] = useState('');
+  const [binSearch, setBinSearch] = useState('');
+  const [binResults, setBinResults] = useState([]);
+  const [binOpen, setBinOpen] = useState(false);
+  const [binSearching, setBinSearching] = useState(false);
+  const binRef = useRef(null);
   // Per-line draft state keyed by item_id: { qty, saving, error }.
   const [lineDrafts, setLineDrafts] = useState({});
   // Free-form operator note on the RMA (sales_orders.memo), editable anytime.
   const [memoDraft, setMemoDraft] = useState('');
   const [memoSaving, setMemoSaving] = useState(false);
   const [memoMsg, setMemoMsg] = useState('');
+  // ADMIN-only soft-delete (void) of a mistakenly created RMA.
+  const [confirmVoid, setConfirmVoid] = useState(false);
+  const [voiding, setVoiding] = useState(false);
+  const [voidError, setVoidError] = useState('');
 
   useEffect(() => {
     loadRmas();
@@ -50,22 +65,48 @@ export default function RMA() {
     }
   }
 
-  async function loadBins(warehouseId) {
-    setDispBinId('');
-    if (!warehouseId) {
-      setBins([]);
+  // Close the bin results dropdown when the operator clicks away.
+  useEffect(() => {
+    function handleClick(e) {
+      if (binRef.current && !binRef.current.contains(e.target)) setBinOpen(false);
+    }
+    document.addEventListener('mousedown', handleClick);
+    return () => document.removeEventListener('mousedown', handleClick);
+  }, []);
+
+  // Debounced server-side bin search, scoped to the chosen disposition
+  // warehouse. Skips empty queries and stops once a bin is selected. 200 ms
+  // matches the Adjustments / PO-line typeahead.
+  useEffect(() => {
+    const q = binSearch.trim();
+    if (!dispWarehouseId || q.length < 1 || dispBinId) {
+      setBinResults([]);
       return;
     }
-    const res = await api.get(
-      `/admin/bins?warehouse_id=${warehouseId}&per_page=500`,
-    );
-    if (res?.ok) {
-      const b = (await res.json()).bins || [];
-      setBins(b);
-      setDispBinId(b[0] ? String(b[0].bin_id) : '');
-    } else {
-      setBins([]);
-    }
+    setBinSearching(true);
+    const handle = setTimeout(async () => {
+      const res = await api.get(
+        `/admin/bins?warehouse_id=${dispWarehouseId}&q=${encodeURIComponent(q)}&per_page=25`,
+      );
+      setBinSearching(false);
+      if (!res?.ok) return;
+      const data = await res.json();
+      setBinResults(data.bins || []);
+    }, 200);
+    return () => clearTimeout(handle);
+  }, [binSearch, dispWarehouseId, dispBinId]);
+
+  function clearBin() {
+    setDispBinId('');
+    setBinSearch('');
+    setBinResults([]);
+    setBinOpen(false);
+  }
+
+  function selectBin(bin) {
+    setDispBinId(String(bin.bin_id));
+    setBinSearch(bin.bin_code);
+    setBinOpen(false);
   }
 
   async function openRma(rma) {
@@ -89,13 +130,16 @@ export default function RMA() {
     // sellable-restock case); the operator can switch to a defective bin.
     const defaultWh = data.sales_order?.warehouse_id || whs[0]?.warehouse_id || '';
     setDispWarehouseId(defaultWh ? String(defaultWh) : '');
-    await loadBins(defaultWh || null);
+    // Bin starts unselected: the operator searches and picks it, rather than
+    // silently inheriting whichever bin happened to sort first.
+    clearBin();
   }
 
   function onWarehouseChange(e) {
-    const wid = e.target.value;
-    setDispWarehouseId(wid);
-    loadBins(wid ? parseInt(wid, 10) : null);
+    // Switching warehouses invalidates any chosen bin -- a bin belongs to one
+    // warehouse, and receive-return rejects a cross-warehouse bin server-side.
+    setDispWarehouseId(e.target.value);
+    clearBin();
   }
 
   function closeDetail() {
@@ -103,12 +147,30 @@ export default function RMA() {
     setDetail(null);
     setLines([]);
     setWarehouses([]);
-    setBins([]);
     setDispWarehouseId('');
-    setDispBinId('');
+    clearBin();
     setLineDrafts({});
     setMemoDraft('');
     setMemoMsg('');
+    setConfirmVoid(false);
+    setVoiding(false);
+    setVoidError('');
+  }
+
+  async function voidReturn() {
+    if (!detail) return;
+    setVoiding(true);
+    setVoidError('');
+    const res = await api.post(`/admin/sales-orders/${detail.so_id}/void-return`, {});
+    setVoiding(false);
+    if (res?.ok) {
+      setConfirmVoid(false);
+      closeDetail();
+      loadRmas();
+    } else {
+      const data = await res?.json().catch(() => ({}));
+      setVoidError(data?.error || t('rma.voidFailed'));
+    }
   }
 
   async function refreshDetail() {
@@ -216,9 +278,11 @@ export default function RMA() {
         />
       </div>
       <DataTable
+        rowKey="so_id"
         columns={columns}
         data={rmas}
         onRowClick={openRma}
+        clickColumn="so_number"
         emptyMessageKey="rma.empty"
       />
 
@@ -226,7 +290,20 @@ export default function RMA() {
         <Modal
           title={t('rma.title', { number: detail.so_number })}
           onClose={closeDetail}
-          footer={<button className="btn" onClick={closeDetail}>{t('common.close')}</button>}
+          footer={
+            <div style={{ display: 'flex', justifyContent: 'space-between', width: '100%' }}>
+              {isAdmin ? (
+                <button
+                  className="btn btn-danger"
+                  onClick={() => { setVoidError(''); setConfirmVoid(true); }}
+                  data-testid="rma-void"
+                >
+                  {t('rma.deleteRma')}
+                </button>
+              ) : <span />}
+              <button className="btn" onClick={closeDetail}>{t('common.close')}</button>
+            </div>
+          }
           size="wide"
         >
           <section className="section">
@@ -290,21 +367,43 @@ export default function RMA() {
                     ))}
                   </select>
                 </div>
-                <div className="form-group">
-                  <label>{t('common.bin')}</label>
-                  <select
-                    className="form-select"
-                    value={dispBinId}
-                    onChange={(e) => setDispBinId(e.target.value)}
+                <div className="form-group" ref={binRef} style={{ position: 'relative' }}>
+                  <label>
+                    {t('common.bin')}{' '}
+                    {binSearching && (
+                      <span style={{ fontSize: 11, color: 'var(--text-secondary)' }}>
+                        {t('rma.searching')}
+                      </span>
+                    )}
+                  </label>
+                  <input
+                    className="form-input mono"
+                    placeholder={t('rma.binPlaceholder')}
+                    value={binSearch}
                     data-testid="rma-disposition-bin"
-                  >
-                    <option value="">{t('settings.selectBin')}</option>
-                    {bins.map((b) => (
-                      <option key={b.bin_id} value={b.bin_id}>
-                        {b.bin_code}{b.bin_type ? ` (${b.bin_type})` : ''}
-                      </option>
-                    ))}
-                  </select>
+                    onChange={(e) => { setBinSearch(e.target.value); setDispBinId(''); setBinOpen(true); }}
+                    onFocus={() => setBinOpen(true)}
+                    autoComplete="off"
+                  />
+                  {binOpen && binResults.length > 0 && (
+                    <div style={dropdownStyle}>
+                      {binResults.map((b) => (
+                        <div
+                          key={b.bin_id}
+                          style={dropdownItemStyle}
+                          data-testid={`rma-bin-opt-${b.bin_id}`}
+                          onMouseDown={() => selectBin(b)}
+                        >
+                          <span className="mono">{b.bin_code}</span>{b.bin_type ? ` (${b.bin_type})` : ''}
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                  {binOpen && !binSearching && binSearch.trim().length >= 1 && !dispBinId && binResults.length === 0 && (
+                    <div style={{ ...dropdownStyle, padding: 12, fontSize: 12, color: 'var(--text-secondary)' }}>
+                      {t('rma.noBinsMatch', { query: binSearch.trim() })}
+                    </div>
+                  )}
                 </div>
               </div>
             </section>
@@ -400,6 +499,58 @@ export default function RMA() {
           </section>
         </Modal>
       )}
+
+      {confirmVoid && detail && (
+        <Modal
+          title={t('rma.deleteTitle')}
+          onClose={() => { if (!voiding) setConfirmVoid(false); }}
+          footer={
+            <>
+              <button className="btn" onClick={() => setConfirmVoid(false)} disabled={voiding}>
+                {t('common.cancel')}
+              </button>
+              <button
+                className="btn btn-danger"
+                onClick={voidReturn}
+                disabled={voiding}
+                data-testid="rma-void-confirm"
+              >
+                {t(voiding ? 'rma.deleting' : 'rma.deleteRma')}
+              </button>
+            </>
+          }
+        >
+          <p style={{ marginTop: 0 }}>
+            {t('rma.deleteBefore')} <span className="mono">{detail.so_number}</span> {t('rma.deleteAfter')}
+          </p>
+          {voidError && (
+            <div className="form-error" data-testid="rma-void-error" style={{ marginTop: 8 }}>
+              {voidError}
+            </div>
+          )}
+        </Modal>
+      )}
     </div>
   );
 }
+
+const dropdownStyle = {
+  position: 'absolute',
+  top: '100%',
+  left: 0,
+  right: 0,
+  maxHeight: 200,
+  overflowY: 'auto',
+  background: '#fff',
+  border: '1px solid #ddd',
+  borderRadius: 8,
+  boxShadow: '0 4px 12px rgba(0,0,0,0.1)',
+  zIndex: 100,
+};
+
+const dropdownItemStyle = {
+  padding: '8px 12px',
+  cursor: 'pointer',
+  borderBottom: '1px solid #f0f0f0',
+  fontSize: 13,
+};

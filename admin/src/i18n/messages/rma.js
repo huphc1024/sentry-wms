@@ -26,6 +26,15 @@ export const en = {
   'rma.returnQty': 'Return Qty',
   'rma.selectLine': 'Select at least one line to return',
   'rma.shipped': 'Shipped',
+  'rma.deleteRma': 'Delete RMA',
+  'rma.deleteTitle': 'Delete RMA?',
+  'rma.deleting': 'Deleting...',
+  'rma.voidFailed': 'Failed to void this RMA',
+  'rma.deleteBefore': 'Remove RMA',
+  'rma.deleteAfter': 'from the RMA list? It is hidden rather than erased (an admin can restore it), and only an un-received return can be deleted -- received goods or a linked refund will block it.',
+  'rma.searching': '(searching...)',
+  'rma.binPlaceholder': 'Type bin code to search',
+  'rma.noBinsMatch': 'No bins match "{query}" in this warehouse.',
 };
 
 export const vi = {
@@ -52,4 +61,13 @@ export const vi = {
   'rma.returnQty': 'SL trả',
   'rma.selectLine': 'Chọn ít nhất một dòng để trả',
   'rma.shipped': 'Đã gửi',
+  'rma.deleteRma': 'Xóa RMA',
+  'rma.deleteTitle': 'Xóa RMA?',
+  'rma.deleting': 'Đang xóa…',
+  'rma.voidFailed': 'Không thể hủy phiếu trả hàng này',
+  'rma.deleteBefore': 'Gỡ RMA',
+  'rma.deleteAfter': 'khỏi danh sách RMA? Phiếu chỉ bị ẩn chứ không bị xóa hẳn (quản trị viên có thể khôi phục), và chỉ phiếu trả hàng chưa nhận mới xóa được -- hàng đã nhận hoặc khoản hoàn tiền liên quan sẽ chặn việc xóa.',
+  'rma.searching': '(đang tìm…)',
+  'rma.binPlaceholder': 'Nhập mã ô để tìm',
+  'rma.noBinsMatch': 'Kho này không có ô nào khớp "{query}".',
 };

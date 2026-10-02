@@ -183,8 +183,8 @@ export default function Customers() {
       {error && !customerForm && !contractForm && <div className="alert alert-error">{error}</div>}
 
       {tab === 'customers'
-        ? <DataTable columns={customerColumns} data={customers} />
-        : <DataTable columns={contractColumns} data={contracts} />}
+        ? <DataTable columns={customerColumns} data={customers} rowKey="customer_id" />
+        : <DataTable columns={contractColumns} data={contracts} rowKey="contract_id" />}
 
       {customerForm && (
         <Modal title={t(customerForm.customer_id ? 'customers.editCustomer' : 'customers.addCustomer')} onClose={() => setCustomerForm(null)} footer={<><button type="button" className="btn" onClick={() => setCustomerForm(null)}>{t('common.cancel')}</button><button type="button" className="btn btn-primary" disabled={saving} onClick={saveCustomer}>{t(saving ? 'common.saving' : 'common.save')}</button></>}>

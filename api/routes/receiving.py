@@ -12,8 +12,6 @@ from constants import (
     PO_OPEN, PO_PARTIAL, PO_RECEIVED, PO_CLOSED,
     POL_PENDING, POL_PARTIAL, POL_RECEIVED,
     ACTION_RECEIVE, ACTION_RECEIVE_CANCEL,
-    SO_OPEN, SO_WAITING_STOCK,
-    BIN_PICKABLE, BIN_PICKABLE_STAGING,
 )
 from middleware.auth_middleware import require_auth, warehouse_scope_clause
 from middleware.db import with_db
@@ -21,7 +19,11 @@ from schemas.receiving import CancelReceivingRequest, ReceiveItemsRequest
 from services.audit_service import write_audit_log
 from services.billing_service import create_billing_event
 from services.events_service import emit_event, get_user_external_id, resolve_source_external_id
-from services.inventory_service import add_inventory
+from services.inventory_service import (
+    add_inventory,
+    release_satisfiable_backorders,
+    RELEASE_SOURCE_RECEIPT,
+)
 from services.pallet_service import lookup_pallet_by_code
 from services.webhook_dispatcher.backorder_notifier import (
     dispatch_backorder_notification,
@@ -29,151 +31,6 @@ from services.webhook_dispatcher.backorder_notifier import (
 from utils.validation import validate_body
 
 receiving_bp = Blueprint("receiving", __name__)
-
-
-def _check_waiting_backorders_for_item(db, *, warehouse_id, item_id, source_txn_id, deferred_notifications):
-    """After a receipt lands inventory for (warehouse_id, item_id),
-    look at WAITING_STOCK backorders in that warehouse that carry a line
-    on this item. For each, check whether ALL its lines are now satisfiable
-    against current pickable on-hand. Flip the satisfiable ones to OPEN,
-    stamp backorder_fulfillable_at, and emit backorder.fulfillable. The
-    helper appends one (event_type, payload, warehouse_id) tuple per
-    flipped BO to ``deferred_notifications``; the caller drains the
-    list AFTER its commit to fire the corresponding Teams cards.
-
-    Partial-satisfaction stays in WAITING_STOCK with no event (matches the
-    spec's "notify only when fully available" decision so a Teams ping
-    doesn't fire until the warehouse can actually pull the BO).
-
-    Inventory is NOT consumed here; the BO becomes pickable for the
-    next batch builder.
-    """
-    candidates = db.execute(
-        text(
-            """
-            SELECT bo.so_id, bo.so_number, bo.external_id, bo.warehouse_id,
-                   bo.backorder_opened_at, bo.parent_so_id, bo.customer_name
-              FROM sales_orders bo
-             WHERE bo.status = :waiting
-               AND bo.warehouse_id = :wid
-               AND EXISTS (
-                 SELECT 1 FROM sales_order_lines bol
-                  WHERE bol.so_id = bo.so_id
-                    AND bol.item_id = :iid
-               )
-             ORDER BY bo.backorder_opened_at ASC
-            """
-        ),
-        {"waiting": SO_WAITING_STOCK, "wid": warehouse_id, "iid": item_id},
-    ).fetchall()
-
-    for bo in candidates:
-        bo_lines = db.execute(
-            text(
-                """
-                SELECT sol.so_line_id, sol.item_id, sol.quantity_ordered,
-                       i.sku, i.item_name, i.external_id AS item_external_id
-                  FROM sales_order_lines sol
-                  JOIN items i ON i.item_id = sol.item_id
-                 WHERE sol.so_id = :bid
-                """
-            ),
-            {"bid": bo.so_id},
-        ).fetchall()
-        if not bo_lines:
-            continue
-
-        all_satisfiable = True
-        for line in bo_lines:
-            available = db.execute(
-                text(
-                    """
-                    SELECT COALESCE(
-                             SUM(GREATEST(inv.quantity_on_hand - inv.quantity_allocated, 0)),
-                             0
-                           )
-                      FROM inventory inv
-                      JOIN bins b ON b.bin_id = inv.bin_id
-                     WHERE inv.item_id = :iid
-                       AND inv.warehouse_id = :wid
-                       AND b.bin_type IN (:bp, :bps)
-                    """
-                ),
-                {
-                    "iid": line.item_id,
-                    "wid": warehouse_id,
-                    "bp": BIN_PICKABLE,
-                    "bps": BIN_PICKABLE_STAGING,
-                },
-            ).scalar() or 0
-            if available < line.quantity_ordered:
-                all_satisfiable = False
-                break
-        if not all_satisfiable:
-            continue
-
-        db.execute(
-            text(
-                "UPDATE sales_orders "
-                "   SET status = :open, backorder_fulfillable_at = NOW() "
-                " WHERE so_id = :bid"
-            ),
-            {"open": SO_OPEN, "bid": bo.so_id},
-        )
-
-        days_waiting = 0
-        if bo.backorder_opened_at:
-            row = db.execute(
-                text(
-                    "SELECT EXTRACT(EPOCH FROM (NOW() - :opened))::bigint AS s"
-                ),
-                {"opened": bo.backorder_opened_at},
-            ).fetchone()
-            if row and row.s:
-                days_waiting = int(row.s) // 86400
-
-        parent_so_number = ""
-        if bo.parent_so_id is not None:
-            parent_so_number = db.execute(
-                text("SELECT so_number FROM sales_orders WHERE so_id = :sid"),
-                {"sid": bo.parent_so_id},
-            ).scalar() or ""
-
-        fulfillable_at = (
-            datetime.now(timezone.utc).isoformat().replace("+00:00", "Z")
-        )
-        fulfillable_payload = {
-            "backorder_so_external_id": str(bo.external_id),
-            "backorder_so_number": bo.so_number,
-            "parent_so_number": parent_so_number,
-            "warehouse_id": warehouse_id,
-            "customer_name": bo.customer_name,
-            "items": [
-                {
-                    "item_external_id": str(line.item_external_id),
-                    "sku": line.sku,
-                    "item_name": line.item_name,
-                    "qty": line.quantity_ordered,
-                }
-                for line in bo_lines
-            ],
-            "days_waiting": days_waiting,
-            "fulfillable_at": fulfillable_at,
-        }
-        emit_event(
-            db,
-            event_type="backorder.fulfillable",
-            event_version=1,
-            aggregate_type="sales_order",
-            aggregate_id=bo.so_id,
-            aggregate_external_id=bo.external_id,
-            warehouse_id=warehouse_id,
-            source_txn_id=source_txn_id,
-            payload=fulfillable_payload,
-        )
-        deferred_notifications.append(
-            ("backorder.fulfillable", fulfillable_payload, warehouse_id)
-        )
 
 
 @receiving_bp.route("/po/<barcode>")
@@ -210,7 +67,7 @@ def lookup_po(barcode):
         text(
             """
             SELECT pol.po_line_id, pol.line_number, pol.item_id,
-                   i.sku, i.item_name, i.upc,
+                   i.sku, i.item_name, i.upc, i.mpn,
                    pol.quantity_ordered, pol.quantity_received,
                    (pol.quantity_ordered - pol.quantity_received) AS quantity_remaining,
                    pol.status
@@ -243,6 +100,7 @@ def lookup_po(barcode):
                 "sku": l.sku,
                 "item_name": l.item_name,
                 "upc": l.upc,
+                "mpn": l.mpn,
                 "quantity_ordered": l.quantity_ordered,
                 "quantity_received": l.quantity_received,
                 "quantity_remaining": l.quantity_remaining,
@@ -295,8 +153,8 @@ def receive_items(validated):
     username = g.current_user["username"]
     receipt_ids = []
     warnings = []
-    # Collected by _check_waiting_backorders_for_item per flipped BO,
-    # drained after g.db.commit() to fire Teams cards.
+    # Collected by release_satisfiable_backorders per
+    # flipped BO, drained after g.db.commit() to fire Teams cards.
     _deferred_notifications: list = []
 
     # Hoist request-constant external-id resolution out of the per-item
@@ -313,6 +171,13 @@ def receive_items(validated):
     # Per-request memo for item external-id resolution so a repeated
     # item_id resolves once.
     _item_external_id_cache: dict = {}
+
+    # Per-request memo for bin validation. The turbo receive client sends
+    # the same receiving bin for every item in a batch, so without this the
+    # same (existence + warehouse-match) lookup runs once per item. Only
+    # valid bins are cached; an invalid bin short-circuits below with the
+    # same error as the unmemoized path, so behavior is unchanged.
+    _validated_bin_warehouse: dict = {}
 
     # v1.5.0 #112 audit window shrink: instead of writing each item's
     # audit_log row mid-loop (which fires the chain-hash trigger and
@@ -336,15 +201,21 @@ def receive_items(validated):
         if require_pallet and not pallet_code:
             return jsonify({"error": "pallet_code is required for receiving"}), 400
 
-        # Validate bin exists and belongs to PO warehouse
-        bin_row = g.db.execute(
-            text("SELECT bin_id, warehouse_id FROM bins WHERE bin_id = :bin_id"),
-            {"bin_id": bin_id},
-        ).fetchone()
-        if not bin_row:
-            return jsonify({"error": f"Bin {bin_id} not found"}), 404
-        if bin_row.warehouse_id != warehouse_id:
-            return jsonify({"error": f"Bin {bin_id} does not belong to this PO's warehouse"}), 400
+        # Validate bin exists and belongs to PO warehouse. Memoized per
+        # request (_validated_bin_warehouse): a repeated bin_id -- the turbo
+        # client's single receiving bin -- skips the round trip. Invalid
+        # bins are never cached; they return here with the same error as
+        # the unmemoized path.
+        if bin_id not in _validated_bin_warehouse:
+            bin_row = g.db.execute(
+                text("SELECT bin_id, warehouse_id FROM bins WHERE bin_id = :bin_id"),
+                {"bin_id": bin_id},
+            ).fetchone()
+            if not bin_row:
+                return jsonify({"error": f"Bin {bin_id} not found"}), 404
+            if bin_row.warehouse_id != warehouse_id:
+                return jsonify({"error": f"Bin {bin_id} does not belong to this PO's warehouse"}), 400
+            _validated_bin_warehouse[bin_id] = bin_row.warehouse_id
 
         pallet = None
         if pallet_code:
@@ -574,12 +445,13 @@ def receive_items(validated):
         # Notifications are collected here and fired AFTER the commit
         # below so a fire-and-forget Teams send does not block the
         # receipt's HTTP response.
-        _check_waiting_backorders_for_item(
+        release_satisfiable_backorders(
             g.db,
             warehouse_id=warehouse_id,
             item_id=item_id,
             source_txn_id=g.source_txn_id,
             deferred_notifications=_deferred_notifications,
+            source=RELEASE_SOURCE_RECEIPT,
         )
 
     # Deferred audit writes. Done here -- after the per-item loop and
@@ -638,7 +510,7 @@ def receive_items(validated):
     g.db.commit()
 
     # Drain backorder.fulfillable notifications collected by
-    # _check_waiting_backorders_for_item. Fire-and-forget Teams cards
+    # release_satisfiable_backorders. Fire-and-forget Teams cards
     # spawned in daemon threads.
     for event_type, payload, wid in _deferred_notifications:
         dispatch_backorder_notification(

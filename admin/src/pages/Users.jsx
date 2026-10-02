@@ -17,6 +17,9 @@ const ALL_FUNCTIONS = [
   { key: 'count', labelKey: 'users.fnCount' },
   { key: 'transfer', labelKey: 'users.fnTransfer' },
   { key: 'map', labelKey: 'users.fnMap' },
+  // Retail POS: the register gates login on this grant (ADMIN exempt). Grant it
+  // to retail / customer-service accounts that should be able to sell.
+  { key: 'sell', labelKey: 'users.fnSell' },
 ];
 
 // Web-admin page grants (mig 061). Mirrors the sidebar
@@ -397,7 +400,7 @@ export default function Users() {
       <PageHeader title={t('nav.users')}>
         <button className="btn btn-primary" onClick={openCreate}>{t('users.newUser')}</button>
       </PageHeader>
-      <DataTable columns={columns} data={users} emptyMessageKey="users.noUsers" />
+      <DataTable rowKey="user_id" columns={columns} data={users} emptyMessageKey="users.noUsers" />
 
       {showModal && (
         <Modal title={editId ? t('users.editUser') : t('users.newUser')} onClose={() => setShowModal(false)}

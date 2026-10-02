@@ -97,7 +97,7 @@ codes in `choices` rather than the server guessing a site.
 
 ## 2. Customer-bound WMS token
 
-`wms_tokens.customer_id` (migration 089) binds an integration token to
+`wms_tokens.customer_id` (migration 095) binds an integration token to
 one customer. `NULL` means an operator-owned token — the default, and
 the shape of every token issued before this existed. Enforcement lives
 in `services/customer_token_scope.py` (writes),

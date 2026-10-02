@@ -1,10 +1,10 @@
-"""Throwaway validator for Customer Portal DDL (migrations 087-090).
+"""Throwaway validator for Customer Portal DDL (migrations 093-096).
 
 Checks both install paths and drops its scratch objects after:
 
   1. fresh install  -- load the current db/schema.sql
   2. upgrade        -- load db/schema.sql truncated to its pre-phase-1
-                       state, then apply migrations 087 through 090
+                       state, then apply migrations 093 through 096
 
 then asserts both paths converge on the same tables, columns and FKs.
 
@@ -29,17 +29,17 @@ DSN = os.environ.get("MIG_CHECK_DSN", "postgresql://sentry:sentry@localhost:5432
 FRESH = "migchk_fresh"
 UPGRADE = "migchk_upgrade"
 MIGRATIONS = [
-    "087_customer_ownership.sql",
-    "088_customer_users.sql",
-    "089_customer_token_scope.sql",
-    "090_portal_order_seq.sql",
+    "093_customer_ownership.sql",
+    "094_customer_users.sql",
+    "095_customer_token_scope.sql",
+    "096_portal_order_seq.sql",
 ]
 
 # Objects that are neither tables nor columns, so the column/table
 # convergence checks below would not notice them going missing.
 EXPECTED_SEQUENCES = ["portal_order_seq"]
 
-# (table, column) pairs migrations 087-089 must add.
+# (table, column) pairs migrations 093-095 must add.
 EXPECTED_COLUMNS = [
     ("items", "owner_customer_id"),
     ("sales_orders", "customer_ref"),
@@ -133,11 +133,11 @@ PHASE1_MARKER = "-- CUSTOMER PORTAL (phase 1)"
 def pre_phase1_schema():
     """Current db/schema.sql truncated just before the phase-1 section.
 
-    NOT `git show HEAD:...` -- schema.sql at HEAD predates migrations 078
+    NOT `git show HEAD:...` -- schema.sql at HEAD predates migrations 084
     (pallets), 079 (billing) and 085 (customer_contracts, and with it
     customers.customer_code), so it does not represent any deploy that
     would actually be applying 087. The working tree minus the phase-1
-    block is the real "current as of mig 086" baseline.
+    block is the real "current as of mig 092" baseline.
     """
     with open(os.path.join(REPO, "db", "schema.sql"), encoding="utf-8") as f:
         sql = f.read()
@@ -161,7 +161,7 @@ def main():
     except psycopg2.Error:
         failures.append("fresh install (schema.sql does not load)")
 
-    print("[2] upgrade: pre-phase-1 schema.sql + migrations 087-090")
+    print("[2] upgrade: pre-phase-1 schema.sql + migrations 093-096")
     create_schema(UPGRADE)
     try:
         run_sql(UPGRADE, pre_phase1_schema(), "schema.sql (pre-phase-1)")

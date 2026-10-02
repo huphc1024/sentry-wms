@@ -167,6 +167,7 @@ export default function Items() {
       item_name: form.item_name,
       description: form.description || null,
       upc: form.upc || null,
+      mpn: form.mpn || null,
       barcode_aliases: (form.barcode_aliases_text || '')
         .split(/[\n,;]+/)
         .map((value) => value.trim())
@@ -239,6 +240,7 @@ export default function Items() {
     { key: 'sku', labelKey: 'common.sku', mono: true },
     { key: 'item_name', labelKey: 'common.itemName' },
     { key: 'upc', labelKey: 'common.upc', mono: true, render: (r) => r.upc || '-' },
+    { key: 'mpn', labelKey: 'items.mpn', mono: true, render: (r) => r.mpn || '-' },
     { key: 'default_bin_code', labelKey: 'items.defaultBin', mono: true, render: (r) => r.default_bin_code || '\u2013' },
     { key: 'storage_profile', labelKey: 'items.zone3pl', render: (r) => r.storage_profile || '-' },
     { key: 'category', labelKey: 'items.category', render: (r) => r.category || '-' },
@@ -286,7 +288,7 @@ export default function Items() {
           ))}
         </select>
       </div>
-      <DataTable columns={columns} data={items} pagination={pagination} onPageChange={setPage} onRowClick={viewItem} />
+      <DataTable rowKey="item_id" columns={columns} data={items} pagination={pagination} onPageChange={setPage} onRowClick={viewItem} />
 
       {detail && !showModal && (
         <Modal title={detail.item_name || detail.sku} onClose={() => setDetail(null)}
@@ -295,6 +297,7 @@ export default function Items() {
           <div className="detail-grid">
             <span className="detail-label">{t('common.sku')}</span><span className="mono">{detail.sku}</span>
             <span className="detail-label">{t('common.upc')}</span><span className="mono">{detail.upc || '-'}</span>
+            <span className="detail-label">{t('items.mpn')}</span><span className="mono">{detail.mpn || '-'}</span>
             <span className="detail-label">{t('items.category')}</span><span>{detail.category || '-'}</span>
             <span className="detail-label">{t('items.zone3pl')}</span><span>{detail.storage_profile || '-'}</span>
             <span className="detail-label">{t('items.weight')}</span><span>{detail.weight_lbs != null ? `${(detail.weight_lbs / KG_TO_LB).toFixed(3)} kg` : '-'}</span>
@@ -323,7 +326,7 @@ export default function Items() {
           {detail.preferred_bins && detail.preferred_bins.length > 0 && (
             <>
               <div className="section-title">{t('nav.preferredBins')}</div>
-              <DataTable columns={[
+              <DataTable rowKey="preferred_bin_id" columns={[
                 { key: 'bin_code', labelKey: 'common.bin', mono: true },
                 { key: 'zone_name', labelKey: 'common.zone' },
                 { key: 'priority', labelKey: 'items.priority' },
@@ -333,7 +336,7 @@ export default function Items() {
           {detail.inventory && detail.inventory.length > 0 && (
             <>
               <div className="section-title">{t('items.inventoryLocations')}</div>
-              <DataTable columns={invCols} data={detail.inventory} />
+              <DataTable rowKey="inventory_id" columns={invCols} data={detail.inventory} />
             </>
           )}
         </Modal>
@@ -367,6 +370,10 @@ export default function Items() {
               <label>{t('common.upc')}</label>
               <input className="form-input" value={form.upc || ''} onChange={(e) => setForm({ ...form, upc: e.target.value })} />
             </div>
+          </div>
+          <div className="form-group">
+            <label>{t('items.mpn')}</label>
+            <input className="form-input" value={form.mpn || ''} onChange={(e) => setForm({ ...form, mpn: e.target.value })} />
           </div>
           <div className="form-group">
             <label>{t('common.itemName')}</label>

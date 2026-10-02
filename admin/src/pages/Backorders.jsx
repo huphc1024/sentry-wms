@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useSearchParams } from 'react-router-dom';
 import { api } from '../api.js';
 import { useWarehouse } from '../warehouse.jsx';
 import DataTable from '../components/DataTable.jsx';
@@ -7,6 +7,11 @@ import PageHeader from '../components/PageHeader.jsx';
 import Modal from '../components/Modal.jsx';
 import RichText from '../i18n/RichText.jsx';
 import { useLocale } from '../i18n/locale.jsx';
+import SalesOrderModal from '../components/SalesOrderModal.jsx';
+// expected_date is a date-only string. new Date('2026-08-25') parses as UTC
+// midnight and renders a day early west of it, which is the bug this helper
+// exists to avoid.
+import { formatDateOnly } from '../utils/date.js';
 
 // Partial-fulfill / backorders dashboard. Two tabs:
 //   Waiting       - status=WAITING_STOCK, oldest backorder_opened_at
@@ -16,9 +21,12 @@ import { useLocale } from '../i18n/locale.jsx';
 //                   backorder_opened_at IS NOT NULL. These have been
 //                   flipped to OPEN by the receipt-hook matcher and
 //                   are eligible for the next pick batch.
-// Click row opens the existing SO edit modal via
-// /sales-orders?focus=<so_number>; the SO page reads the focus query
-// param and pops the modal in-place.
+//
+// Issue : clicking a row used to navigate to /sales-orders?focus=,
+// so working a queue cost one navigation away and one back per order,
+// and the return always landed on the Waiting tab. The order now opens
+// in a modal on this page, and the tab lives in the URL so it survives
+// navigation and can be linked to.
 
 // These two tables live at module scope, so they cannot call the hook.
 // They carry keys and the render resolves them; the alternative --
@@ -42,6 +50,26 @@ const REASON_KEY = Object.fromEntries(
 );
 
 
+// The operator asked for a way to tell whether the item has already
+// been ordered. open_po is derived (no backorder-to-PO link exists), so it
+// names the PO it is claiming rather than showing a bare checkbox. Null is
+// rendered explicitly: "no open PO" has to read differently from a field that
+// did not load.
+function OrderedLine({ openPo }) {
+  const { t } = useLocale();
+  if (!openPo) return <div>{t('backorders.notOnOpenPo')}</div>;
+  const po = <span className="mono">{openPo.po_number}</span>;
+  return (
+    <div>
+      {openPo.expected_date
+        ? <RichText text={t('backorders.onPoExpected', { date: formatDateOnly(openPo.expected_date) })} values={{ po }} />
+        : <RichText text={t('backorders.onPoNoDate')} values={{ po }} />}
+    </div>
+  );
+}
+
+// a SKU alone is not enough to know what you are looking at when
+// working the queue, so the name sits under the mono SKU line.
 function ItemsCell({ items }) {
   const { t } = useLocale();
   if (!items || items.length === 0) {
@@ -50,10 +78,14 @@ function ItemsCell({ items }) {
   return (
     <div style={{ fontSize: 12, lineHeight: 1.4 }}>
       {items.map((it, i) => (
-        <div key={i}>
-          <span className="mono">{it.sku}</span>
-          {' × '}
-          {it.qty}
+        <div key={i} style={i > 0 ? { marginTop: 6 } : undefined}>
+          <div>
+            <span className="mono">{it.sku}</span>
+            {' × '}
+            {it.qty}
+          </div>
+          {it.item_name && <div>{it.item_name}</div>}
+          <OrderedLine openPo={it.open_po} />
         </div>
       ))}
     </div>
@@ -63,9 +95,26 @@ function ItemsCell({ items }) {
 
 export default function Backorders() {
   const { t } = useLocale();
-  const navigate = useNavigate();
   const { warehouseId } = useWarehouse();
-  const [tab, setTab] = useState('waiting');
+  // : the tab lives in the URL, not local state, so returning to this
+  // page (or sharing the link) keeps the operator on the queue they were
+  // working instead of resetting to Waiting. An unknown ?tab= falls back
+  // rather than rendering an empty grid against a tab the API rejects.
+  const [searchParams, setSearchParams] = useSearchParams();
+  const tabParam = searchParams.get('tab');
+  const tab = TABS.some((t) => t.key === tabParam) ? tabParam : 'waiting';
+
+  function setTab(key) {
+    const next = new URLSearchParams(searchParams);
+    next.set('tab', key);
+    // replace, not push: flipping tabs should not stack history entries
+    // the operator has to click back through.
+    setSearchParams(next, { replace: true });
+  }
+
+  // Which backorder is open in the shared SO modal. Read-only view, the
+  // same surface a row click gives on the Sales Orders page.
+  const [openSoId, setOpenSoId] = useState(null);
   const [rows, setRows] = useState([]);
   const [loading, setLoading] = useState(false);
   const [actionError, setActionError] = useState('');
@@ -180,12 +229,11 @@ export default function Backorders() {
     ? [...baseColumns, readyColumn, actionsColumn]
     : [...baseColumns, actionsColumn];
 
-  function openRowInSalesOrders(row) {
-    // The SO list page reads ?focus=<so_number> to auto-open the
-    // edit modal for that row. Mirrors the deep-link pattern the
-    // Teams adaptive card uses so /backorders -> click -> SO modal
-    // is the same path as Teams ping -> Open in Sơn Lộc WMS -> SO modal.
-    navigate(`/sales-orders?focus=${encodeURIComponent(row.so_number)}`);
+  // : open the order here rather than navigating to the Sales Orders
+  // page. The operator keeps their tab, their scroll position and their
+  // place in the queue.
+  function openRow(row) {
+    setOpenSoId(row.so_id);
   }
 
   return (
@@ -226,15 +274,33 @@ export default function Backorders() {
           ))}
         </div>
         <DataTable
+          rowKey="so_id"
           columns={columns}
           data={rows}
           loading={loading}
           emptyMessageKey={tab === 'waiting'
             ? 'backorders.emptyWaiting'
             : 'backorders.emptyReady'}
-          onRowClick={openRowInSalesOrders}
+          onRowClick={openRow}
+          clickColumn="so_number"
         />
       </div>
+
+      <SalesOrderModal
+        soId={openSoId}
+        mode="view"
+        onClose={() => setOpenSoId(null)}
+        onChanged={(payload) => {
+          // An edit made inside the modal can move a backorder off the tab
+          // being viewed (a WAITING_STOCK order flipped to OPEN leaves
+          // Waiting), so the queue reloads rather than going stale.
+          load();
+          if (payload?.message) {
+            setSuccessBanner(payload.message);
+            setTimeout(() => setSuccessBanner(''), 6000);
+          }
+        }}
+      />
 
       {cancelTarget && (
         <Modal

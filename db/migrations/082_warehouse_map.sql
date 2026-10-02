@@ -1,5 +1,5 @@
 -- ============================================================
--- Migration 076: warehouse map coordinates for simulation UI
+-- Migration 082: warehouse map coordinates for simulation UI
 -- ============================================================
 -- Adds optional 2D layout fields to zones and bins. NULL map_x
 -- means the admin simulation view derives position from aisle/row/level.

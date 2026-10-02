@@ -14,7 +14,15 @@ from schemas.bins import CreateBinRequest, UpdateBinRequest
 from schemas.warehouses import CreateWarehouseRequest, InterWarehouseTransferRequest, UpdateWarehouseRequest
 from schemas.zones import CreateZoneRequest, UpdateZoneRequest
 from services.audit_service import write_audit_log
-from services.inventory_service import add_inventory
+from services.inventory_service import (
+    add_inventory,
+    set_inventory_quantity,
+    release_satisfiable_backorders,
+    RELEASE_SOURCE_TRANSFER,
+)
+from services.webhook_dispatcher.backorder_notifier import (
+    dispatch_backorder_notification,
+)
 from utils.validation import validate_body
 
 
@@ -376,7 +384,8 @@ def get_bin(bin_id):
 
     inv_rows = g.db.execute(
         text("""
-            SELECT inv.item_id, i.sku, i.item_name, inv.quantity_on_hand, inv.quantity_allocated
+            SELECT inv.inventory_id, inv.item_id, i.sku, i.item_name,
+                   inv.quantity_on_hand, inv.quantity_allocated
             FROM inventory inv JOIN items i ON i.item_id = inv.item_id
             WHERE inv.bin_id = :bid
         """),
@@ -391,7 +400,12 @@ def get_bin(bin_id):
                 "max_weight_lbs": float(b.max_weight_lbs) if b.max_weight_lbs is not None else None,
                 "max_volume_cuft": float(b.max_volume_cuft) if b.max_volume_cuft is not None else None,
                 "description": b.description, "is_active": b.is_active},
-        "inventory": [{"item_id": r.item_id, "sku": r.sku, "item_name": r.item_name,
+        # inventory_id is the row identity the admin grid keys on.
+        # item_id alone is not unique here: inventory is UNIQUE(item_id,
+        # bin_id, lot_number), so one item in this bin across two lots is
+        # two rows.
+        "inventory": [{"inventory_id": r.inventory_id, "item_id": r.item_id,
+                       "sku": r.sku, "item_name": r.item_name,
                        "quantity_on_hand": r.quantity_on_hand, "quantity_allocated": r.quantity_allocated} for r in inv_rows],
     })
 
@@ -590,16 +604,24 @@ def create_inter_warehouse_transfer(validated):
 
     # Decrement source
     new_source_qty = available - quantity
-    if new_source_qty == 0:
-        g.db.execute(text("DELETE FROM inventory WHERE inventory_id = :inv_id"), {"inv_id": source_inv.inventory_id})
-    else:
-        g.db.execute(
-            text("UPDATE inventory SET quantity_on_hand = :qty, updated_at = NOW() WHERE inventory_id = :inv_id"),
-            {"qty": new_source_qty, "inv_id": source_inv.inventory_id},
-        )
+    set_inventory_quantity(g.db, source_inv.inventory_id, new_source_qty)
 
     # Upsert destination (different warehouse, so use add_inventory directly)
     add_inventory(g.db, item_id, to_bin_id, to_warehouse_id, quantity)
+
+    # Sourcing a backordered item from one warehouse into another lands it in
+    # exactly the warehouse the backorder is waiting on, and used to leave it
+    # in WAITING_STOCK. Only the destination warehouse can gain stock here;
+    # the source side is a decrement and cannot satisfy anything.
+    _deferred_notifications = []
+    release_satisfiable_backorders(
+        g.db,
+        warehouse_id=to_warehouse_id,
+        item_id=item_id,
+        source_txn_id=g.source_txn_id,
+        deferred_notifications=_deferred_notifications,
+        source=RELEASE_SOURCE_TRANSFER,
+    )
 
     # Create bin_transfers record
     transfer = g.db.execute(
@@ -643,6 +665,13 @@ def create_inter_warehouse_transfer(validated):
     )
 
     g.db.commit()
+
+    # after the commit, so a Teams send cannot block the response.
+    for event_type, payload, wid in _deferred_notifications:
+        dispatch_backorder_notification(
+            event_type=event_type, payload=payload, warehouse_id=wid,
+        )
+
     return jsonify({
         "transfer_id": transfer.transfer_id,
         "item_id": item_id,

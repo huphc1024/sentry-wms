@@ -73,6 +73,21 @@ ORDER_TYPE_SO_SUFFIX = {
     ORDER_TYPE_REFUND:      "REFUND",
 }
 
+
+def order_type_allows_fulfillment_ops(order_type):
+    """Single source of truth for whether an SO's order_type may undergo
+    an outbound fulfillment operation -- admin pick, release picked qty,
+    or partial fulfill. Every order_type is eligible EXCEPT return: a
+    return SO (the <orig>-RMA goods-in) is inbound and runs a separate
+    status lifecycle (OPEN -> PARTIALLY_RECEIVED -> RECEIVED), so the
+    outbound OPEN/PICKED/PACKED/SHIPPED ladder these ops assume does not
+    apply to it.
+
+    Partial fulfill layers one extra exclusion on top of this (backorder,
+    to keep the no-chaining cap); see partial_fulfill_sales_order.
+    """
+    return order_type != ORDER_TYPE_RETURN
+
 # mig 067: sales_orders.cancellation_reason allowed values.
 # App-enforced enum (no DB CHECK). Set by /cancel-backorder
 # (operator-supplied) or by the parent-cancel cascade in
@@ -142,6 +157,10 @@ ACTION_RECEIVE_CANCEL = "RECEIVE_CANCEL"
 # distinct from ACTION_RECEIVE (PO receiving) so return receipts are auditable
 # apart from PO receipts.
 ACTION_RETURN_RECEIVE = "RETURN_RECEIVE"
+# Operator soft-deleted a mistakenly created return SO (RMA). entity_type='SO';
+# distinct from ACTION_CANCEL (which unwinds outbound allocation/picking) -- a
+# void stamps sales_orders.voided_at and touches no inventory (mig 076).
+ACTION_RETURN_VOID = "RETURN_VOID"
 ACTION_PUTAWAY = "PUTAWAY"
 ACTION_PICK = "PICK"
 ACTION_PACK = "PACK"

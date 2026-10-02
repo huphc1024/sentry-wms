@@ -213,6 +213,7 @@ export default function InboundActivity() {
       </div>
 
       <DataTable
+        rowKey="inbound_id"
         columns={columns}
         data={rows}
         emptyMessageKey={loading ? 'common.loading' : 'inboundActivity.empty'}

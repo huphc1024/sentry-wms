@@ -1,4 +1,4 @@
-"""Tests for migration 083 warehouse layout editor tables."""
+"""Tests for migration 089 warehouse layout editor tables."""
 
 import os
 
@@ -7,7 +7,7 @@ import pytest
 from db_test_context import get_raw_connection
 
 MIGRATION_PATH = os.path.join(
-    os.path.dirname(__file__), "..", "..", "db", "migrations", "083_warehouse_layout.sql",
+    os.path.dirname(__file__), "..", "..", "db", "migrations", "089_warehouse_layout.sql",
 )
 
 
@@ -17,7 +17,7 @@ def migration_sql():
         return f.read()
 
 
-def test_migration_083_creates_layout_tables(migration_sql):
+def test_migration_089_creates_layout_tables(migration_sql):
     assert "CREATE TABLE IF NOT EXISTS warehouse_layouts" in migration_sql
     assert "CREATE TABLE IF NOT EXISTS warehouse_rack_layouts" in migration_sql
     assert "CREATE TABLE IF NOT EXISTS warehouse_map_paths" in migration_sql

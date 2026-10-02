@@ -93,7 +93,7 @@ export default function Pallets() {
           setForm({ warehouse_id: warehouseId || '' });
         }}>{t('warehouseSimulation.createPallet')}</button>
       </PageHeader>
-      <DataTable columns={columns} data={pallets} pagination={pagination} onPageChange={setPage} />
+      <DataTable columns={columns} data={pallets} rowKey="pallet_id" pagination={pagination} onPageChange={setPage} />
 
       {showCreate && (
         <Modal title={t('pallets.newPallet')} onClose={() => setShowCreate(false)} footer={

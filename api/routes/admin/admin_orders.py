@@ -14,6 +14,7 @@ from constants import (
     SO_FRAUD_REVIEW, SO_WAITING_STOCK,
     TASK_PENDING, ADJ_PENDING, ADJ_APPROVED, ADJ_REASON_SHORT,
     ORDER_TYPE_BACKORDER,
+    order_type_allows_fulfillment_ops,
     CANCEL_REASONS, CANCEL_REASON_OTHER, CANCEL_REASON_REFUNDED,
     COMPANY_TIMEZONE,
     ACTION_PICK,
@@ -39,6 +40,7 @@ from middleware.auth_middleware import (
     has_override,
     require_admin_or_page_permission,
     require_auth,
+    require_role,
 )
 from middleware.db import with_db
 from routes.admin import admin_bp
@@ -74,6 +76,7 @@ from services.events_service import (
 from services.sales_order_service import (
     AdminPickError,
     CancelNotAllowed,
+    ReturnVoidNotAllowed,
     RevertNotAllowed,
     cancel_sales_order as _cancel_so,
     maybe_promote_so_to_picked,
@@ -81,13 +84,19 @@ from services.sales_order_service import (
     revert_sales_order_status as _revert_so_status,
     create_rma as _create_rma,
     receive_rma as _receive_rma,
+    void_return_order as _void_return,
 )
 from services.receiving_service import (
     UnreceiveError,
     record_unreceive,
     recompute_po_status,
 )
-from services.shipping_service import carrier_from_ship_method, record_ship
+from services.shipping_service import (
+    AdminShipError,
+    carrier_from_ship_method,
+    record_admin_ship,
+    record_ship,
+)
 from services.webhook_dispatcher.backorder_notifier import (
     dispatch_backorder_notification,
 )
@@ -188,7 +197,7 @@ def get_purchase_order(po_id):
 
     lines = g.db.execute(
         text("""
-            SELECT pol.po_line_id, pol.line_number, pol.item_id, i.sku, i.item_name, i.upc,
+            SELECT pol.po_line_id, pol.line_number, pol.item_id, i.sku, i.item_name, i.upc, i.mpn,
                    pol.quantity_ordered, pol.quantity_received, pol.unit_cost, pol.status
             FROM purchase_order_lines pol JOIN items i ON i.item_id = pol.item_id
             WHERE pol.po_id = :pid ORDER BY pol.line_number
@@ -206,7 +215,7 @@ def get_purchase_order(po_id):
         },
         "lines": [
             {"po_line_id": l.po_line_id, "line_number": l.line_number, "item_id": l.item_id,
-             "sku": l.sku, "item_name": l.item_name, "upc": l.upc,
+             "sku": l.sku, "item_name": l.item_name, "upc": l.upc, "mpn": l.mpn,
              "quantity_ordered": l.quantity_ordered, "quantity_received": l.quantity_received,
              "unit_cost": float(l.unit_cost) if l.unit_cost else None, "status": l.status}
             for l in lines
@@ -909,6 +918,10 @@ def list_sales_orders():
     per_page = min(request.args.get("per_page", 50, type=int), 1000)
 
     where_clauses, params = [], {}
+    # mig 076: voided returns (RMAs an operator soft-deleted) are hidden from
+    # every SO listing -- they are "deleted". Only return SOs ever carry
+    # voided_at, so this never affects normal sales orders (voided_at NULL).
+    where_clauses.append("so.voided_at IS NULL")
     status = request.args.get("status")
     warehouse_id = request.args.get("warehouse_id", type=int)
     # Opt-in order_type filter. The RMA admin page passes order_type=return to
@@ -935,6 +948,15 @@ def list_sales_orders():
     # by pick_sequence so a picker walks the warehouse in physical
     # order; the shipper unpacks the cart in the same order.
     include_primary_bin = request.args.get("include_primary_bin", "false").lower() == "true"
+    # Opt-in line-count for the Picking Tickets "Long Orders" filter. When
+    # set, each row carries line_count = the number of line items on the
+    # SO, computed live from sales_order_lines (ix_sales_order_lines_so).
+    # Derived on read rather than stored so it always reflects the SO's
+    # CURRENT lines even after an operator adds or removes one -- a stored
+    # creation-time flag would go stale against the line-edit endpoints.
+    # Pages that don't filter by size leave the param unset and skip the
+    # subquery.
+    include_line_count = request.args.get("include_line_count", "false").lower() == "true"
     # Opt-in filter for the Local Pickup dashboard: keep only orders whose
     # ship_method names a local pickup / will-call. These are free-text
     # values like "Local Pickup (Free)", so match either
@@ -993,6 +1015,16 @@ def list_sales_orders():
     # other pages avoid the per-row scalar subquery cost. Both columns
     # come from the same logical row, so the planner can fold them
     # into one index scan even though they read as two subqueries.
+    # Live line-item count for the "Long Orders" filter. Opt-in so pages
+    # that don't need it skip the per-row COUNT (backed by
+    # ix_sales_order_lines_so, so it is a cheap index-only count).
+    line_count_select = ""
+    if include_line_count:
+        line_count_select = """
+            , (SELECT COUNT(*)
+                 FROM sales_order_lines sol
+                WHERE sol.so_id = so.so_id) AS line_count
+        """
     primary_bin_select = ""
     if include_primary_bin:
         primary_bin_select = """
@@ -1028,6 +1060,7 @@ def list_sales_orders():
                    so.shipping_address_city, so.shipping_address_state,
                    so.shipping_address_postal_code
                    {primary_bin_select}
+                   {line_count_select}
             FROM sales_orders so {where_sql}
             ORDER BY so.so_id DESC LIMIT :limit OFFSET :offset
         """),
@@ -1067,6 +1100,8 @@ def list_sales_orders():
         if include_primary_bin:
             out["primary_bin_code"] = r.primary_bin_code
             out["primary_bin_pick_sequence"] = r.primary_bin_pick_sequence
+        if include_line_count:
+            out["line_count"] = r.line_count
         return out
 
     return jsonify({
@@ -1083,7 +1118,7 @@ def get_sales_order(so_id):
     so = g.db.execute(
         text("""
             SELECT so_id, so_number, so_barcode,
-                   customer_name, customer_phone, customer_address,
+                   customer_name, customer_phone, customer_email, customer_address,
                    status, priority,
                    warehouse_id, ship_method, ship_address,
                    order_date, ship_by_date, created_at, picked_at, packed_at,
@@ -1094,6 +1129,8 @@ def get_sales_order(so_id):
                    order_origin,
                    carrier, tracking_number,
                    order_type, parent_so_id,
+                   (SELECT p.so_number FROM sales_orders p
+                     WHERE p.so_id = sales_orders.parent_so_id) AS parent_so_number,
                    backorder_opened_at, backorder_fulfillable_at,
                    cancellation_reason,
                    billing_address_name, billing_address_line1, billing_address_line2,
@@ -1150,6 +1187,7 @@ def get_sales_order(so_id):
             # the save had failed. Both fields are returned now so
             # round-trip edits display the new value.
             "customer_phone": so.customer_phone,
+            "customer_email": so.customer_email,
             "customer_address": so.customer_address,
             "status": so.status, "priority": so.priority,
             "warehouse_id": so.warehouse_id, "ship_method": so.ship_method, "ship_address": so.ship_address,
@@ -1193,6 +1231,12 @@ def get_sales_order(so_id):
             # read-only context for the Backorders page detail view.
             "order_type":                so.order_type,
             "parent_so_id":              so.parent_so_id,
+            # The parent's readable number, resolved here so callers that
+            # only want to name the original ("Original order" on the
+            # Refunds modal) do not need a second round-trip. NULL on a
+            # root order. The Related Records tab uses the /related
+            # endpoint instead, which returns the whole family.
+            "parent_so_number":          so.parent_so_number,
             "backorder_opened_at":       so.backorder_opened_at.isoformat() if so.backorder_opened_at else None,
             "backorder_fulfillable_at":  so.backorder_fulfillable_at.isoformat() if so.backorder_fulfillable_at else None,
             "cancellation_reason":       so.cancellation_reason,
@@ -1241,6 +1285,158 @@ def _picking_ticket_branding(db):
     }
 
 
+# Depth cap for the family walk, applied in BOTH directions. sales_orders.
+# parent_so_id is a self-FK with no CHECK forbidding a self-reference or a
+# cycle, so an UPDATE that pointed an ancestor at one of its own descendants
+# would spin a recursive CTE forever and hang the request. Real families are
+# 3 nodes deep at the very most (a sale -> its backorder -> an RMA against
+# that backorder), so 32 is far beyond any legitimate shape while still
+# terminating a corrupt one.
+_RELATED_MAX_DEPTH = 32
+
+
+@admin_bp.route("/sales-orders/<int:so_id>/related", methods=["GET"])
+@require_auth
+@require_admin_or_page_permission("sales-orders")
+@with_db
+def get_sales_order_related(so_id):
+    """Every sales order in this SO's parent/child family.
+
+    Post-fulfillment records hang off their original via parent_so_id: a
+    backorder, an RMA (return), a refund credit memo, a replacement or an
+    exchange. One original can carry several at once, and a child can
+    itself have children -- partial-fulfill is gated on order_type rather
+    than parent_so_id, so a replacement can spawn a backorder, and Create
+    RMA runs against any shipped order including a child.
+
+    So the family is a tree, not a single hop. This walks UP parent_so_id
+    to the root, then back DOWN to every descendant, and returns the whole
+    thing flat with a `depth` on each row for the caller to indent by. The
+    same family comes back whichever member is asked for, so the operator
+    sees the complete picture from any record in it.
+
+    Deliberate inclusions, both of which other SO listings drop:
+
+    - Voided returns (voided_at set). The list endpoints hide them because
+      they are "deleted", but hiding them HERE is what makes an RMA appear
+      to vanish. They come back flagged so the UI can grey them out.
+    - Refund credit memos (order_type='refund'), which the Sales Orders
+      page filters out via exclude_post_fulfillment.
+
+    Relationships come only from parent_so_id. Never from so_number: the
+    readable "<orig>-RMA" convention is cosmetic and predates it, and real
+    children exist that do not follow it (legacy POS-REF-* refunds, and
+    hand-entered numbers). Never from the parent's refund_so_id either,
+    which is stamped only on a FULL refund and so misses partial ones.
+    """
+    exists = g.db.execute(
+        text("SELECT so_id FROM sales_orders WHERE so_id = :sid"),
+        {"sid": so_id},
+    ).fetchone()
+    if not exists:
+        return jsonify({"error": "Sales order not found"}), 404
+
+    rows = g.db.execute(
+        text("""
+            WITH RECURSIVE ancestors AS (
+                SELECT so_id, parent_so_id, 0 AS hops
+                  FROM sales_orders
+                 WHERE so_id = :sid
+                UNION ALL
+                SELECT p.so_id, p.parent_so_id, a.hops + 1
+                  FROM sales_orders p
+                  JOIN ancestors a ON p.so_id = a.parent_so_id
+                 WHERE a.hops < :max_depth
+            ),
+            root AS (
+                -- The topmost ancestor reached. Ordering by hops rather
+                -- than filtering on parent_so_id IS NULL means a family
+                -- whose walk hit the depth cap still returns the highest
+                -- record found instead of nothing at all.
+                SELECT so_id FROM ancestors ORDER BY hops DESC LIMIT 1
+            ),
+            family AS (
+                SELECT so_id, 0 AS depth FROM root
+                UNION ALL
+                SELECT c.so_id, f.depth + 1
+                  FROM sales_orders c
+                  JOIN family f ON c.parent_so_id = f.so_id
+                 WHERE f.depth < :max_depth
+            )
+            SELECT so.so_id, so.so_number, so.order_type, so.status,
+                   so.warehouse_id, so.customer_name, so.parent_so_id,
+                   so.created_at, so.voided_at, so.cancellation_reason,
+                   f.depth
+              FROM family f
+              JOIN sales_orders so ON so.so_id = f.so_id
+             ORDER BY f.depth, so.created_at, so.so_id
+        """),
+        {"sid": so_id, "max_depth": _RELATED_MAX_DEPTH},
+    ).fetchall()
+
+    # Line items for every member in one round-trip rather than one query
+    # per record. Families are small (the widest in production carries four
+    # children), so this stays a single indexed lookup on so_id.
+    family_ids = [r.so_id for r in rows]
+    lines_by_so = {}
+    if family_ids:
+        line_rows = g.db.execute(
+            text("""
+                SELECT sol.so_id, sol.so_line_id, sol.line_number,
+                       i.sku, i.item_name,
+                       sol.quantity_ordered, sol.quantity_shipped,
+                       sol.quantity_received
+                  FROM sales_order_lines sol
+                  JOIN items i ON i.item_id = sol.item_id
+                 WHERE sol.so_id = ANY(:ids)
+                 ORDER BY sol.so_id, sol.line_number
+            """),
+            {"ids": family_ids},
+        ).fetchall()
+        for lr in line_rows:
+            lines_by_so.setdefault(lr.so_id, []).append({
+                "so_line_id":        lr.so_line_id,
+                "line_number":       lr.line_number,
+                "sku":               lr.sku,
+                "item_name":         lr.item_name,
+                "quantity_ordered":  lr.quantity_ordered,
+                "quantity_shipped":  lr.quantity_shipped,
+                "quantity_received": lr.quantity_received,
+            })
+
+    return jsonify({
+        "so_id": so_id,
+        # The family always contains at least the record itself, so a
+        # count of 1 means "no relatives". The UI reads related_count for
+        # its tab badge so it does not have to special-case that.
+        "related_count": max(0, len(rows) - 1),
+        "records": [
+            {
+                "so_id":          r.so_id,
+                "so_number":      r.so_number,
+                "order_type":     r.order_type,
+                "status":         r.status,
+                "warehouse_id":   r.warehouse_id,
+                "customer_name":  r.customer_name,
+                "parent_so_id":   r.parent_so_id,
+                "depth":          r.depth,
+                # The record the operator is looking at. Flagged server-
+                # side so the UI marks "you are here" without comparing
+                # ids itself.
+                "is_current":     r.so_id == so_id,
+                # Soft-deleted return (mig 076). Rendered greyed rather
+                # than dropped -- see the docstring.
+                "is_voided":      r.voided_at is not None,
+                "voided_at":      r.voided_at.isoformat() if r.voided_at else None,
+                "cancellation_reason": r.cancellation_reason,
+                "created_at":     r.created_at.isoformat() if r.created_at else None,
+                "lines":          lines_by_so.get(r.so_id, []),
+            }
+            for r in rows
+        ],
+    })
+
+
 @admin_bp.route("/sales-orders/<int:so_id>/picking-ticket", methods=["GET"])
 @require_auth
 @require_admin_or_page_permission("picking-tickets")
@@ -1252,7 +1448,7 @@ def get_picking_ticket(so_id):
     so = g.db.execute(
         text("""
             SELECT so_id, so_number, customer_name, status,
-                   warehouse_id, ship_method,
+                   warehouse_id, ship_method, ship_address,
                    order_date, ship_by_date, created_at,
                    shipping_address_name, shipping_address_line1, shipping_address_line2,
                    shipping_address_city, shipping_address_state,
@@ -1296,6 +1492,11 @@ def get_picking_ticket(so_id):
             "so_id": so.so_id, "so_number": so.so_number,
             "customer_name": so.customer_name, "status": so.status,
             "warehouse_id": so.warehouse_id, "ship_method": so.ship_method,
+            # Legacy single-string address: pickingGroups.js falls back to
+            # it when the structured shipping_address_* are not yet
+            # backfilled, so the print page must see it too or those
+            # orders group on screen but lose their banner in print.
+            "ship_address": so.ship_address,
             "order_date": so.order_date.isoformat() if so.order_date else None,
             "ship_by_date": so.ship_by_date.isoformat() if so.ship_by_date else None,
             "created_at": so.created_at.isoformat() if so.created_at else None,
@@ -1372,13 +1573,14 @@ def create_sales_order(validated):
 
     result = g.db.execute(
         text("""
-            INSERT INTO sales_orders (so_number, so_barcode, customer_name, customer_phone, customer_address, warehouse_id, ship_method, ship_address, ship_by_date, memo, order_origin, order_date, created_by, status, external_id)
-            VALUES (:sn, :sb, :cust, :phone, :caddr, :wid, :ship, :addr, :ship_by, :memo, :origin, NOW(), :created_by, :status, :ext_id)
+            INSERT INTO sales_orders (so_number, so_barcode, customer_name, customer_phone, customer_email, customer_address, warehouse_id, ship_method, ship_address, ship_by_date, memo, order_origin, order_date, created_by, status, external_id)
+            VALUES (:sn, :sb, :cust, :phone, :cemail, :caddr, :wid, :ship, :addr, :ship_by, :memo, :origin, NOW(), :created_by, :status, :ext_id)
             RETURNING so_id
         """),
         {
             "sn": data["so_number"], "sb": data.get("so_barcode") or data["so_number"],
             "cust": data.get("customer_name"), "phone": data.get("customer_phone"),
+            "cemail": data.get("customer_email"),
             "caddr": data.get("customer_address"),
             "wid": data["warehouse_id"],
             "ship": data.get("ship_method"), "addr": data.get("ship_address"),
@@ -1498,7 +1700,7 @@ def update_sales_order(so_id, validated):
         text(
             "SELECT so_id, external_id, status, warehouse_id, source_system, order_origin, "
             "       so_number, so_barcode, "
-            "       customer_name, customer_phone, customer_address, "
+            "       customer_name, customer_phone, customer_email, customer_address, "
             "       ship_method, ship_address, ship_by_date, "
             "       priority, memo, "
             "       status AS cur_status, carrier, tracking_number, shipped_at "
@@ -1538,7 +1740,7 @@ def update_sales_order(so_id, validated):
 
     ALLOWED_FIELDS = {
         "so_number", "so_barcode",
-        "customer_name", "customer_phone", "customer_address",
+        "customer_name", "customer_phone", "customer_email", "customer_address",
         "ship_method", "ship_address", "ship_by_date",
         "priority", "memo", "source_system",
         # Shipment-state edits for backfill of orders shipped via
@@ -2273,6 +2475,39 @@ def admin_pick_sales_order(so_id, validated):
     })
 
 
+@admin_bp.route("/sales-orders/<int:so_id>/void-return", methods=["POST"])
+@require_auth
+@require_role(ROLE_ADMIN)
+@with_db
+def void_return_order(so_id):
+    """ADMIN-only soft-delete of a mistakenly created return SO (RMA).
+
+    Delegates to sales_order_service.void_return_order, which gates on
+    order_type='return' + status=OPEN + no received goods + no linked
+    refund, stamps voided_at/voided_by, and writes a RETURN_VOID audit
+    entry. The row persists for audit; list_sales_orders hides voided
+    returns so the RMA drops off the page. Strictly ADMIN (more
+    restrictive than the cancel route's page-permission gate) because it
+    is a destructive operator action."""
+    username = g.current_user["username"]
+    try:
+        result = _void_return(g.db, so_id=so_id, username=username)
+    except ReturnVoidNotAllowed as exc:
+        if exc.reason == "not_found":
+            return jsonify({"error": "Return order not found"}), 404
+        return jsonify({
+            "error": str(exc),
+            "reason": exc.reason,
+            "current_status": exc.current_status,
+        }), 409
+    g.db.commit()
+    return jsonify({
+        "message": "Return already voided" if result["already_voided"] else "Return voided",
+        "so_number": result["so_number"],
+        "audit_log_id": result["audit_log_id"],
+    })
+
+
 # ── Partial Fulfill / Backorders ─────────────────────────────────────────────
 #
 # Partial-fulfill shrinks one or more lines on an existing SO and
@@ -2401,15 +2636,21 @@ def partial_fulfill_sales_order(so_id, validated):
             "current_status": so.status,
         }), 400
 
-    # BO chaining cap: a backorder cannot itself spawn a backorder.
-    if so.parent_so_id is not None:
+    # A return SO (RMA goods-in) is inbound and runs a separate status
+    # lifecycle; it can never be partial-fulfilled. replacement/exchange
+    # children -- which also carry a parent_so_id -- ARE eligible, so the
+    # gate is keyed on order_type, not on parent_so_id.
+    if not order_type_allows_fulfillment_ops(so.order_type):
+        return jsonify({"error": "Cannot partial-fulfill a return SO."}), 400
+
+    # BO chaining cap: a backorder cannot itself spawn a backorder. Keyed
+    # on order_type (not parent_so_id) so replacement/exchange children
+    # stay eligible while a backorder still must be cancelled + recreated.
+    if so.order_type == ORDER_TYPE_BACKORDER:
         return jsonify({
             "error": "This SO is a backorder; cancel it and create a fresh standalone SO instead of chaining backorders.",
             "parent_so_id": so.parent_so_id,
         }), 400
-
-    if so.order_type == "refund":
-        return jsonify({"error": "Cannot partial-fulfill a refund SO."}), 400
 
     # PICKED requires ADMIN or so-full-edit override (mirrors
     # _so_line_edit_gate). OPEN is allowed for any sales-orders user.
@@ -2787,11 +3028,15 @@ def list_backorders():
         (status IN OPEN/PICKED/PACKED AND backorder_opened_at is set)
         Defaults to 'waiting'.
 
-    Response carries per-BO items[] + days_waiting; the
-    ready-to-ship tab also carries fulfillable_since
-    (backorder_fulfillable_at). Latest open-PO ETA per item is
-    omitted because purchase_order_lines does not carry an
-    expected_arrival_date column yet; revisit once that's wired."""
+    Response carries per-BO items[] (sku, item_name, qty, open_po)
+    + days_waiting; the ready-to-ship tab also carries
+    fulfillable_since (backorder_fulfillable_at).
+
+    open_po is the soonest-expected open PO line for the same item in
+    the backorder's warehouse, or null. This was previously omitted on
+    the grounds that purchase_order_lines has no expected-arrival
+    column, which is true of the line but not of the header:
+    purchase_orders.expected_date is what this reads."""
     tab = (request.args.get("tab") or "waiting").lower()
     warehouse_id = request.args.get("warehouse_id", type=int)
 
@@ -2825,19 +3070,27 @@ def list_backorders():
               FROM sales_orders bo
               LEFT JOIN sales_orders parent ON parent.so_id = bo.parent_so_id
              WHERE {status_clause}
-               AND bo.order_type = :backorder
              ORDER BY bo.backorder_opened_at ASC
             """
         ),
-        {**params, "backorder": ORDER_TYPE_BACKORDER},
+        # No order_type filter: a POS create-without-stock backorder keeps its
+        # natural order_type (sale / replacement / exchange) and is marked a
+        # backorder only by status=WAITING_STOCK + backorder_opened_at. The tabs
+        # already scope correctly on their own -- waiting on WAITING_STOCK (only
+        # backorders sit there) and ready-to-ship on backorder_opened_at IS NOT
+        # NULL (a normal order never has it) -- so both admin -BO backorders and
+        # POS backorders show without leaking normal orders.
+        params,
     ).fetchall()
 
     so_ids = [r.so_id for r in rows]
+    warehouse_by_so = {r.so_id: r.warehouse_id for r in rows}
     items_by_so = {}
     if so_ids:
         line_rows = g.db.execute(
             text(
-                "SELECT sol.so_id, i.sku, sol.quantity_ordered "
+                "SELECT sol.so_id, sol.item_id, i.sku, i.item_name, "
+                "       sol.quantity_ordered "
                 "  FROM sales_order_lines sol "
                 "  JOIN items i ON i.item_id = sol.item_id "
                 " WHERE sol.so_id = ANY(:so_ids) "
@@ -2845,10 +3098,68 @@ def list_backorders():
             ),
             {"so_ids": so_ids},
         ).fetchall()
+
+        # "so I know if it has been ordered". Nothing links a backorder
+        # to the PO that will satisfy it, so this is derived: the soonest-
+        # expected open PO line for the same item in the backorder's own
+        # warehouse. That cannot tell a PO placed for this backorder from
+        # general replenishment, which is why it reports the PO number rather
+        # than a checkbox -- the operator can see what is being claimed.
+        #
+        # Led by po_id, not item_id: there is no index on
+        # purchase_order_lines(item_id), but ix_purchase_order_lines_po_item
+        # (mig 077) is a composite led by po_id, so joining down from the open
+        # POs uses it. Open + partial POs are a small set.
+        open_po_by_item = {}
+        item_ids = sorted({lr.item_id for lr in line_rows})
+        if item_ids:
+            po_rows = g.db.execute(
+                text(
+                    """
+                    SELECT DISTINCT ON (pol.item_id, po.warehouse_id)
+                           pol.item_id, po.warehouse_id, po.po_number,
+                           po.expected_date,
+                           (pol.quantity_ordered - pol.quantity_received)
+                               AS quantity_remaining
+                      FROM purchase_orders po
+                      JOIN purchase_order_lines pol ON pol.po_id = po.po_id
+                     WHERE po.status IN (:po_open, :po_partial)
+                       AND po.warehouse_id = ANY(:wids)
+                       AND pol.item_id = ANY(:item_ids)
+                       AND pol.quantity_received < pol.quantity_ordered
+                     ORDER BY pol.item_id, po.warehouse_id,
+                              po.expected_date ASC NULLS LAST, po.po_id ASC
+                    """
+                ),
+                {
+                    "po_open": PO_OPEN,
+                    "po_partial": PO_PARTIAL,
+                    "wids": sorted(set(warehouse_by_so.values())),
+                    "item_ids": item_ids,
+                },
+            ).fetchall()
+            open_po_by_item = {
+                (pr.item_id, pr.warehouse_id): {
+                    "po_number": pr.po_number,
+                    "expected_date": (
+                        pr.expected_date.isoformat() if pr.expected_date else None
+                    ),
+                    "quantity_remaining": pr.quantity_remaining,
+                }
+                for pr in po_rows
+            }
+
         for lr in line_rows:
             items_by_so.setdefault(lr.so_id, []).append({
                 "sku": lr.sku,
+                "item_name": lr.item_name,
                 "qty": lr.quantity_ordered,
+                # null means "no open PO covers this item here", which the
+                # queue renders explicitly. Absence must not read the same as
+                # a field that failed to load.
+                "open_po": open_po_by_item.get(
+                    (lr.item_id, warehouse_by_so.get(lr.so_id))
+                ),
             })
 
     return jsonify({
@@ -2874,6 +3185,70 @@ def list_backorders():
             }
             for r in rows
         ],
+    })
+
+
+@admin_bp.route("/sales-orders/<int:so_id>/admin-ship", methods=["POST"])
+@require_auth
+@require_admin_or_page_permission("sales-orders")
+@with_db
+def admin_ship_sales_order(so_id):
+    """Hand-stamp shipped quantity on a picked-but-unshipped sales order.
+
+    Ships every shippable line (quantity_shipped = quantity_picked) with full
+    fulfillment + audit bookkeeping, so the Create RMA button renders. Emits
+    ship.confirmed only for a genuinely-unshipped order (a stranded-SHIPPED
+    repair emits nothing -- its revenue is already in the GL). Refuses (409)
+    when the SO already has a fulfillment, keeping a second ship.confirmed from
+    double-counting downstream.
+
+    Optional body: {"acknowledge_shortfall": true} to ship the picked floor of a
+    legacy partial whose under-pick has no SHORT marker (the UI sets this after
+    surfacing the blocking SKUs). Otherwise a silent shortfall is refused (422
+    silent_shortfall).
+
+    A dedicated route because a SHIPPED SO is hard-terminal for the normal line
+    editor. Auth: ADMIN role OR so-full-edit override, same as admin-pick.
+    """
+    role = g.current_user.get("role")
+    if role != ROLE_ADMIN and not has_override(OVERRIDE_SO_FULL_EDIT):
+        return jsonify({
+            "error": "admin-ship requires ADMIN or so-full-edit override",
+        }), 403
+
+    body = request.get_json(silent=True) or {}
+    acknowledge_shortfall = bool(body.get("acknowledge_shortfall"))
+
+    try:
+        result = record_admin_ship(
+            g.db,
+            so_id=so_id,
+            username=g.current_user["username"],
+            source_txn_id=g.source_txn_id,
+            acknowledge_shortfall=acknowledge_shortfall,
+        )
+    except AdminShipError as exc:
+        status_code = {
+            "already_fulfilled": 409,
+            "not_found": 404,
+        }.get(exc.kind, 422)
+        g.db.rollback()
+        return jsonify({
+            "error": str(exc),
+            "kind": exc.kind,
+            **exc.context,
+        }), status_code
+    except ValueError as exc:
+        # Defensive: any residual under-pick guard that raises ValueError.
+        g.db.rollback()
+        return jsonify({"error": str(exc)}), 422
+
+    g.db.commit()
+    return jsonify({
+        "message": "Admin ship applied",
+        "fulfillment_id": result["fulfillment_id"],
+        "lines_shipped": result["lines_shipped"],
+        "total_quantity": result["total_quantity"],
     })
 
 

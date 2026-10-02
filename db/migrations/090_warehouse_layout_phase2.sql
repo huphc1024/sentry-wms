@@ -1,5 +1,5 @@
 -- ============================================================
--- Migration 084: stable racks and unit-aware warehouse layouts
+-- Migration 090: stable racks and unit-aware warehouse layouts
 -- ============================================================
 -- Gradual migration: legacy rack_key URLs continue to work and bins.rack_id
 -- remains nullable for rows that cannot be linked safely.
@@ -13,7 +13,7 @@ ALTER TABLE warehouse_layouts
   ADD CONSTRAINT warehouse_layouts_coordinate_unit_check
   CHECK (coordinate_unit IN ('METER', 'LEGACY_CANVAS'));
 
--- Every row created by migration 083/service v1 stores meter coordinates.
+-- Every row created by migration 089/service v1 stores meter coordinates.
 UPDATE warehouse_layouts SET coordinate_unit = 'METER';
 
 DO $$

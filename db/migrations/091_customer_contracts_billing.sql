@@ -1,4 +1,4 @@
-﻿-- Migration 085: customer contracts and production billing lifecycle
+﻿-- Migration 091: customer contracts and production billing lifecycle
 BEGIN;
 
 ALTER TABLE customers ADD COLUMN IF NOT EXISTS customer_code VARCHAR(40);

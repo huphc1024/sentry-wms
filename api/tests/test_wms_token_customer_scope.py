@@ -1,6 +1,6 @@
-"""Customer-bound WMS tokens (mig 089 / phase 6).
+"""Customer-bound WMS tokens (mig 095 / phase 6).
 
-``wms_tokens.customer_id`` existed since migration 089 but nothing read
+``wms_tokens.customer_id`` existed since migration 095 but nothing read
 it: a token issued to customer A's ERP could POST an order naming
 customer B and could page the whole inventory snapshot. These tests
 cover the three places that changed:

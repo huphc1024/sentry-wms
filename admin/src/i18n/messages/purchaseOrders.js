@@ -21,6 +21,7 @@ export const en = {
   'purchaseOrders.number': 'PO Number',
   'purchaseOrders.searchPlaceholder': 'Search by PO number or vendor',
   'purchaseOrders.showArchived': 'Show Archived',
+  'purchaseOrders.mpn': 'MPN',
 };
 
 export const vi = {
@@ -42,4 +43,5 @@ export const vi = {
   'purchaseOrders.number': 'Số đơn mua',
   'purchaseOrders.searchPlaceholder': 'Tìm theo số đơn mua hoặc nhà cung cấp',
   'purchaseOrders.showArchived': 'Hiện đã lưu trữ',
+  'purchaseOrders.mpn': 'Mã MPN',
 };

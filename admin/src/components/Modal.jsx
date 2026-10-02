@@ -1,4 +1,5 @@
 import { Modal as AntModal } from 'antd';
+import { useLocale } from '../i18n/locale.jsx';
 
 /**
  * The app's modal, now an Ant Design dialog underneath.
@@ -28,11 +29,34 @@ import { Modal as AntModal } from 'antd';
 // default width; that is preserved rather than quietly widened.
 const WIDTH_BY_SIZE = { wide: 1280 };
 
-export default function Modal({ title, onClose, children, footer, size }) {
+// `onBack` is optional. When supplied, a back arrow renders at the start of
+// the header and the title sits beside it. The title is an <h2> either way:
+// it is the dialog's heading for assistive tech and for the tests that find it. Used by the SO modal's Related
+// Records tab, where clicking a related record swaps the modal's contents in
+// place and the operator needs a way back to where they started. Omitting it
+// renders exactly what every other caller renders.
+export default function Modal({ title, onClose, children, footer, size, onBack, backLabel }) {
+  const { t } = useLocale();
+  const backText = backLabel ? t('modal.backTo', { label: backLabel }) : t('modal.back');
+  const heading = onBack ? (
+    <span className="modal-title-with-back">
+      <button
+        type="button"
+        className="modal-back"
+        onClick={onBack}
+        aria-label={backText}
+        title={backText}
+        data-testid="modal-back"
+      >
+        &#8592;
+      </button>
+      <h2 className="modal-title-text">{title}</h2>
+    </span>
+  ) : <h2 className="modal-title-text">{title}</h2>;
   return (
     <AntModal
       open
-      title={title}
+      title={heading}
       onCancel={onClose}
       footer={footer || null}
       className={size ? `modal modal-${size}` : 'modal'}

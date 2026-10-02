@@ -1,4 +1,4 @@
--- Migration 090: sequence backing portal-submitted SO numbers (phase 3)
+-- Migration 096: sequence backing portal-submitted SO numbers (phase 3)
 --
 -- POST /api/portal/orders needs a unique sales_orders.so_number. The two
 -- obvious alternatives both break under concurrency: a timestamp collides

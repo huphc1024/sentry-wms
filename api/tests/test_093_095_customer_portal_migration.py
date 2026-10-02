@@ -1,4 +1,4 @@
-"""Tests for migrations 087-089: customer portal phase 1 (ownership + logins).
+"""Tests for migrations 093-095: customer portal phase 1 (ownership + logins).
 
 087 puts a customer owner on items / sales_orders / purchase_orders,
 088 adds the portal login tables, 089 scopes a WMS token to one customer.
@@ -22,38 +22,38 @@ def _read(name):
 
 @pytest.fixture(scope="module")
 def mig_087():
-    return _read("087_customer_ownership.sql")
+    return _read("093_customer_ownership.sql")
 
 
 @pytest.fixture(scope="module")
 def mig_088():
-    return _read("088_customer_users.sql")
+    return _read("094_customer_users.sql")
 
 
 @pytest.fixture(scope="module")
 def mig_089():
-    return _read("089_customer_token_scope.sql")
+    return _read("095_customer_token_scope.sql")
 
 
 # ------------------------------------------------------------------
 # 087: ownership columns
 # ------------------------------------------------------------------
 
-def test_migration_087_adds_owner_columns(mig_087):
+def test_migration_093_adds_owner_columns(mig_087):
     assert "ADD COLUMN IF NOT EXISTS owner_customer_id UUID" in mig_087
     assert "ALTER TABLE items" in mig_087
     assert "ALTER TABLE purchase_orders" in mig_087
     assert "ADD COLUMN IF NOT EXISTS customer_ref UUID" in mig_087
 
 
-def test_migration_087_keeps_legacy_sales_orders_customer_id(mig_087):
+def test_migration_093_keeps_legacy_sales_orders_customer_id(mig_087):
     """customer_id VARCHAR is written straight from the inbound mapping
     docs; dropping or retyping it would break every existing connector."""
     assert "DROP COLUMN customer_id" not in mig_087
     assert "ALTER COLUMN customer_id" not in mig_087
 
 
-def test_migration_087_backfill_does_not_match_on_customer_name(mig_087):
+def test_migration_093_backfill_does_not_match_on_customer_name(mig_087):
     """customer_name is operator-typed free text on both sides. Matching on
     it would attribute an order to the wrong customer, which on the portal
     means showing customer A's order to customer B."""
@@ -61,8 +61,8 @@ def test_migration_087_backfill_does_not_match_on_customer_name(mig_087):
     assert "customer_name" not in mig_087.split("UPDATE sales_orders")[1]
 
 
-def test_migration_087_backfill_guarded_on_customer_code(mig_087):
-    """mig 085 adds customers.customer_code, so the ordered sequence always
+def test_migration_093_backfill_guarded_on_customer_code(mig_087):
+    """mig 091 adds customers.customer_code, so the ordered sequence always
     has it -- but a database bootstrapped from a stale schema.sql can reach
     087 without it, and the migration must still apply."""
     assert "information_schema.columns" in mig_087
@@ -73,12 +73,12 @@ def test_migration_087_backfill_guarded_on_customer_code(mig_087):
 # 088: portal logins
 # ------------------------------------------------------------------
 
-def test_migration_088_creates_login_tables(mig_088):
+def test_migration_094_creates_login_tables(mig_088):
     assert "CREATE TABLE IF NOT EXISTS customer_users" in mig_088
     assert "CREATE TABLE IF NOT EXISTS customer_user_permissions" in mig_088
 
 
-def test_migration_088_does_not_touch_staff_users_table(mig_088):
+def test_migration_094_does_not_touch_staff_users_table(mig_088):
     """Customer logins live in their own table precisely so that no staff
     authorisation check in auth_middleware can mistake a customer row for a
     staff row. The migration must not widen `users`."""
@@ -86,7 +86,7 @@ def test_migration_088_does_not_touch_staff_users_table(mig_088):
     assert "'CUSTOMER'" not in mig_088
 
 
-def test_migration_088_forces_password_change_by_default(mig_088):
+def test_migration_094_forces_password_change_by_default(mig_088):
     assert "must_change_password BOOLEAN     NOT NULL DEFAULT TRUE" in mig_088
 
 
@@ -110,7 +110,7 @@ def test_customer_feature_keys_fit_the_column():
 # 089: token scope
 # ------------------------------------------------------------------
 
-def test_migration_089_adds_token_customer_scope(mig_089):
+def test_migration_095_adds_token_customer_scope(mig_089):
     assert "ALTER TABLE wms_tokens" in mig_089
     assert "ADD COLUMN IF NOT EXISTS customer_id UUID" in mig_089
 

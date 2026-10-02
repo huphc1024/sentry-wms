@@ -509,6 +509,7 @@ function AuditTable({
 }) {
   return (
     <DataTable
+      rowKey="log_id"
       columns={AUDIT_COLUMNS}
       data={logs}
       pagination={pagination}

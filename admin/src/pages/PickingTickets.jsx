@@ -5,7 +5,8 @@ import { useWarehouse } from '../warehouse.jsx';
 import DataTable from '../components/DataTable.jsx';
 import PageHeader from '../components/PageHeader.jsx';
 import StatusTag from '../components/StatusTag.jsx';
-import { PRINT_BATCH_LIMIT } from './pickingConstants.js';
+import { PRINT_BATCH_LIMIT, LONG_ORDER_MIN_LINES } from './pickingConstants.js';
+import { groupOrdersByAddress } from './pickingGroups.js';
 import { useLocale } from '../i18n/locale.jsx';
 
 // Statuses that still have something useful to put on a printed
@@ -47,6 +48,17 @@ export default function PickingTickets() {
   // already confirm-rendered. Operator opts back in to verify a
   // reprint or audit historical queue state.
   const [hidePrinted, setHidePrinted] = useState(true);
+  // Multi-Orders: when on, collapse the queue to only those orders that
+  // share a shipping address with another order in the queue, clustered
+  // by address, so the operator can print and box same-destination orders
+  // as one combined shipment and save on postage. Off by default -- the
+  // normal one-ticket-per-order view is what the warehouse pulls from.
+  const [multiOrders, setMultiOrders] = useState(false);
+  // Long Orders: when on, keep only orders with more than 4 line items
+  // (LONG_ORDER_MIN_LINES), the ones that take the most picking effort, so
+  // they can be batch-printed. Independent of Multi-Orders -- with both on
+  // the queue shows long orders that also ship to a shared address.
+  const [longOrders, setLongOrders] = useState(false);
 
   useEffect(() => {
     if (!warehouseId) return;
@@ -67,6 +79,10 @@ export default function PickingTickets() {
             // physical order. The flag opts into the per-row
             // primary-bin subquery.
             include_primary_bin: 'true',
+            // Per-row line-item count powers the Long Orders filter.
+            // Always requested here so the toggle is instant (no refetch);
+            // the subquery is cheap and this is the only queue that uses it.
+            include_line_count: 'true',
           });
           if (hidePrinted) qs.set('hide_printed', 'true');
           return api.get(`/admin/sales-orders?${qs}`);
@@ -121,14 +137,20 @@ export default function PickingTickets() {
   function printAll() {
     const qs = new URLSearchParams({ status });
     if (warehouseId) qs.set('warehouse_id', String(warehouseId));
+    // SHIP WITH banners are an explicit Multi-Orders feature: only a
+    // print run launched from that view may stamp them. A plain Print
+    // All must produce plain tickets, so the combine flag rides the URL
+    // rather than the print tab inferring groups on its own.
+    if (multiOrders) qs.set('combine', '1');
     // Hand the print tab the exact SOs the operator is looking at, in
     // the exact on-screen order. so_ids is the single source of truth
-    // for both the set (Hide Printed already applied) and the order
-    // (current column sort); the print tab renders precisely these and
-    // never re-derives the queue. Capped at one batch per tab - if the
-    // queue is larger, the operator prints the top batch, those SOs
-    // drop off via Hide Printed, then Print All again for the next.
-    const orderedIds = sortedOrders.slice(0, PRINT_BATCH_LIMIT).map((o) => o.so_id);
+    // for both the set (Hide Printed + any Multi-Orders filter already
+    // applied) and the order (current column sort, or the address
+    // clustering in Multi-Orders view); the print tab renders precisely
+    // these and never re-derives the queue. Capped at one batch per tab -
+    // if the queue is larger, the operator prints the top batch, those
+    // SOs drop off via Hide Printed, then Print All again for the next.
+    const orderedIds = displayOrders.slice(0, PRINT_BATCH_LIMIT).map((o) => o.so_id);
     if (orderedIds.length > 0) {
       qs.set('so_ids', orderedIds.join(','));
     }
@@ -176,6 +198,31 @@ export default function PickingTickets() {
     },
   ];
 
+  // In Long Orders view, surface the line-item count so the operator sees
+  // why each row qualifies as long. Unshifted before the Group column so,
+  // with both filters on, the lead reads: Group | Items | SO Number ...
+  if (longOrders) {
+    columns.unshift({
+      key: 'line_count',
+      labelKey: 'pickingTickets.items',
+      mono: true,
+      render: (r) => (r.line_count ?? '-'),
+    });
+  }
+
+  // In Multi-Orders view, lead with a Group column so the operator can
+  // see at a glance which rows box together (#1, #2, ...) and how many
+  // orders are in each cluster. Not sortable -- the clustering is the
+  // order, and manual sort is suspended in this view.
+  if (multiOrders) {
+    columns.unshift({
+      key: '_group',
+      labelKey: 'pickingTickets.group',
+      mono: true,
+      render: (r) => `#${r._groupIndex} (${r._groupSize})`,
+    });
+  }
+
   function handleSort(key) {
     if (sortKey === key) {
       setSortDir((d) => (d === 'asc' ? 'desc' : 'asc'));
@@ -210,6 +257,36 @@ export default function PickingTickets() {
       return String(av).localeCompare(String(bv), undefined, { numeric: true }) * dir;
     });
   }, [orders, sortKey, sortDir]);
+
+  // The rows the table + Print All actually use, after applying the
+  // Long Orders and Multi-Orders filters. The two compose independently:
+  //
+  //   - Long Orders keeps only orders with more than 4 line items.
+  //   - Multi-Orders keeps only orders that share a shipping address with
+  //     another *shown* order, clustered so members print adjacently.
+  //
+  // Long is applied FIRST, then Multi clusters the long-filtered subset.
+  // That ordering matters: it means every same-address group shown is
+  // complete within the long set, so the printed "SHIP WITH" banner (which
+  // the print tab recomputes from the handed-off orders) never names a
+  // sibling that isn't in the stack.
+  const displayOrders = useMemo(() => {
+    let base = sortedOrders;
+    if (longOrders) {
+      base = base.filter((o) => Number(o.line_count) >= LONG_ORDER_MIN_LINES);
+    }
+    if (!multiOrders) return base;
+    // Cluster the (possibly long-filtered) base by shipping address, most
+    // urgent group first, tagging each row with its 1-based group number
+    // and size so the Group column can label the cluster.
+    const out = [];
+    groupOrdersByAddress(base).forEach((group, gi) => {
+      group.orders.forEach((o) => {
+        out.push({ ...o, _groupIndex: gi + 1, _groupSize: group.orders.length });
+      });
+    });
+    return out;
+  }, [multiOrders, longOrders, sortedOrders]);
 
   return (
     <div>
@@ -269,44 +346,77 @@ export default function PickingTickets() {
               />
               {t('pickingTickets.hidePrinted')}
             </label>
+            <label style={{
+              display: 'flex', alignItems: 'center', gap: 6,
+              fontSize: 13, color: '#555', cursor: 'pointer',
+            }} title={t('pickingTickets.multiOrdersTooltip')}>
+              <input
+                type="checkbox"
+                checked={multiOrders}
+                onChange={(e) => setMultiOrders(e.target.checked)}
+              />
+              {t('pickingTickets.multiOrders')}
+            </label>
+            <label style={{
+              display: 'flex', alignItems: 'center', gap: 6,
+              fontSize: 13, color: '#555', cursor: 'pointer',
+            }} title={t('pickingTickets.longOrdersTooltip', { min: LONG_ORDER_MIN_LINES })}>
+              <input
+                type="checkbox"
+                checked={longOrders}
+                onChange={(e) => setLongOrders(e.target.checked)}
+              />
+              {t('pickingTickets.longOrders')}
+            </label>
             <button
               className="btn btn-secondary"
               onClick={() => setRefreshCounter((c) => c + 1)}
               disabled={refreshing}
-              title="Re-fetch the list from the server (e.g. to pick up just-pushed customer name + shipping address)"
+              title={t('pickingTickets.refreshTooltip')}
             >
               {t(refreshing ? 'pickingTicketPrint.refreshing' : 'common.refresh')}
             </button>
             <button
               className="btn btn-primary"
               onClick={printAll}
-              disabled={orders.length === 0}
+              disabled={displayOrders.length === 0}
               title={
-                orders.length > PRINT_BATCH_LIMIT
+                displayOrders.length > PRINT_BATCH_LIMIT
                   ? t('pickingTickets.batchTooltip', {
-                    queued: orders.length,
+                    queued: displayOrders.length,
                     limit: PRINT_BATCH_LIMIT,
                   })
                   : undefined
               }
             >
-              {orders.length > PRINT_BATCH_LIMIT
+              {displayOrders.length > PRINT_BATCH_LIMIT
                 ? t('pickingTickets.printFirst', {
                   limit: PRINT_BATCH_LIMIT,
-                  total: orders.length,
+                  total: displayOrders.length,
                 })
-                : t('pickingTickets.printAll', { total: orders.length })}
+                : t('pickingTickets.printAll', { total: displayOrders.length })}
             </button>
           </div>
         </div>
         <DataTable
+          rowKey="so_id"
           columns={columns}
-          data={sortedOrders}
-          emptyMessageKey="pickingTickets.empty"
+          data={displayOrders}
+          emptyMessageKey={
+            multiOrders && longOrders
+              ? 'pickingTickets.emptyLongMulti'
+              : multiOrders
+                ? 'pickingTickets.emptyMulti'
+                : longOrders
+                  ? 'pickingTickets.emptyLong'
+                  : 'pickingTickets.empty'
+          }
           onRowClick={(r) => openTicketInNewTab(r.so_id)}
-          sortKey={sortKey}
-          sortDir={sortDir}
-          onSort={handleSort}
+          // In Multi-Orders view the address clustering IS the order, so
+          // manual column sort is suspended (no onSort -> headers inert).
+          sortKey={multiOrders ? null : sortKey}
+          sortDir={multiOrders ? null : sortDir}
+          onSort={multiOrders ? undefined : handleSort}
         />
       </div>
     </div>

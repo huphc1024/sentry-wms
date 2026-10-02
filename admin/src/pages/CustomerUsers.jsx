@@ -192,7 +192,7 @@ export default function CustomerUsers() {
 
       {error && !form && !featureForm && <div className="alert alert-error">{error}</div>}
 
-      <DataTable columns={columns} data={rows} />
+      <DataTable columns={columns} data={rows} rowKey="customer_user_id" />
 
       {form && (
         <Modal

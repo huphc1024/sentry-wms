@@ -52,7 +52,8 @@ export const en = {
   'items.zone3pl': '3PL Zone',
   'items.defaultBin': 'Default Bin',
   'items.inventoryLocations': 'Inventory locations',
-  'items.searchPlaceholder': 'Search by SKU, name, or UPC…',
+  'items.searchPlaceholder': 'Search by SKU, name, UPC, or MPN…',
+  'items.mpn': 'MPN',
 };
 
 export const vi = {
@@ -105,5 +106,6 @@ export const vi = {
   'items.zone3pl': 'Khu 3PL',
   'items.defaultBin': 'Ô mặc định',
   'items.inventoryLocations': 'Vị trí tồn kho',
-  'items.searchPlaceholder': 'Tìm theo mã SKU, tên hoặc UPC…',
+  'items.searchPlaceholder': 'Tìm theo mã SKU, tên, UPC hoặc MPN…',
+  'items.mpn': 'Mã MPN',
 };

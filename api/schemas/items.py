@@ -54,12 +54,14 @@ class CreateItemRequest(_ItemOperationalFields):
     sku: str = Field(..., min_length=1, max_length=128)
     item_name: str = Field(..., min_length=1, max_length=256)
     upc: Optional[str] = Field(None, max_length=128)
+    mpn: Optional[str] = Field(None, max_length=64)
 
 
 class UpdateItemRequest(_ItemOperationalFields):
     sku: Optional[str] = Field(None, min_length=1, max_length=128)
     item_name: Optional[str] = Field(None, min_length=1, max_length=256)
     upc: Optional[str] = Field(None, max_length=128)
+    mpn: Optional[str] = Field(None, max_length=64)
     is_active: Optional[bool] = None
 
 

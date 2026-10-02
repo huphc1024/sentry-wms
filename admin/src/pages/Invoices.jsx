@@ -232,7 +232,7 @@ export default function Invoices() {
         <div className="alert alert-error" style={{ marginBottom: 12 }}>{error}</div>
       )}
 
-      <DataTable columns={columns} data={invoices} />
+      <DataTable columns={columns} data={invoices} rowKey="invoice_id" />
 
       {form && (
         <Modal

@@ -1,4 +1,4 @@
--- Migration 086: gate sessions on vehicle_movements (PO/SO-linked check-in).
+-- Migration 092: gate sessions on vehicle_movements (PO/SO-linked check-in).
 BEGIN;
 
 ALTER TABLE vehicle_movements

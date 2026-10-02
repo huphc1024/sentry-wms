@@ -1,6 +1,6 @@
 """Confine a customer-bound WMS token to its own tenant's data.
 
-Migration 089 added ``wms_tokens.customer_id`` and said enforcement
+Migration 095 added ``wms_tokens.customer_id`` and said enforcement
 lands in phase 6. This module is that enforcement for the inbound
 (Pipe B) surface; the read side lives in routes/snapshot.py and the
 surface gate in middleware/auth_middleware.py.
@@ -139,7 +139,7 @@ def enforce_inbound_scope(
 
     # sales_orders also carries the legacy free-text customer code
     # (sales_orders.customer_id VARCHAR, kept for inbound mapping
-    # compatibility -- mig 087 added customer_ref as the real FK). A code
+    # compatibility -- mig 093 added customer_ref as the real FK). A code
     # that resolves to another tenant's customers row is the same attempt
     # by another route, so it is refused too. A code that resolves to
     # nothing is just a label and cannot leak anything.

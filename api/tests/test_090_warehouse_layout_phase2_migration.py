@@ -1,4 +1,4 @@
-"""Contract tests for migration 084 stable warehouse rack identities."""
+"""Contract tests for migration 090 stable warehouse rack identities."""
 
 import os
 
@@ -9,11 +9,11 @@ MIGRATION_PATH = os.path.join(
     "..",
     "db",
     "migrations",
-    "084_warehouse_layout_phase2.sql",
+    "090_warehouse_layout_phase2.sql",
 )
 
 
-def test_migration_084_defines_stable_racks_and_units():
+def test_migration_090_defines_stable_racks_and_units():
     with open(MIGRATION_PATH, encoding="utf-8") as migration:
         sql = migration.read()
 
