@@ -1,0 +1,90 @@
+# Nginx server block for the Sentry WMS customer-portal SPA.
+#
+# Templated form: nginx 1.27 alpine's /docker-entrypoint.d/20-envsubst-on-templates.sh
+# substitutes ${API_UPSTREAM_URL} and ${API_UPSTREAM_HOST} (and any other ${VAR})
+# at container start, writing the resolved file to /etc/nginx/conf.d/default.conf.
+#
+# Plain $foo (without braces) is NOT substituted, so nginx variables like
+# $scheme, $host, $portal_hsts_header pass through untouched.
+#
+# Two env vars (with sane Dockerfile defaults for docker-compose):
+#   API_UPSTREAM_URL   -- full proxy_pass target including scheme
+#                        (e.g. http://api:5000 for compose; https://<fqdn> for ACA)
+#   API_UPSTREAM_HOST  -- value of the Host header sent to the upstream
+#                        (e.g. api:5000 for compose; <fqdn> for ACA -- Azure
+#                        Container Apps' edge gateway routes by Host header,
+#                        so this MUST match the target app's FQDN there)
+
+# V-111: HSTS. Emitted only when the connection was TLS-terminated --
+# either by nginx directly ($scheme = https) or by an upstream reverse
+# proxy that set X-Forwarded-Proto: https. Mirrors the API gate in
+# api/app.py. Must not emit on plain HTTP: V-048 accepted-risk LAN
+# deployments rely on cleartext and HSTS would lock browsers out.
+# nginx drops add_header entirely when the value string resolves empty.
+map $scheme $portal_scheme_hsts {
+    "https" "max-age=31536000; includeSubDomains";
+    default "";
+}
+map $http_x_forwarded_proto $portal_hsts_header {
+    "https" "max-age=31536000; includeSubDomains";
+    default $portal_scheme_hsts;
+}
+
+server {
+    listen 8080;
+    server_name _;
+
+    # Root for the built React bundle
+    root /usr/share/nginx/html;
+    index index.html;
+
+    add_header X-Content-Type-Options "nosniff" always;
+    add_header X-Frame-Options "DENY" always;
+    add_header Referrer-Policy "strict-origin-when-cross-origin" always;
+    add_header Permissions-Policy "camera=(), microphone=(), geolocation=()" always;
+    # V-110: fonts self-hosted; style-src and font-src drop their Google origins.
+    add_header Content-Security-Policy "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; font-src 'self'; img-src 'self' data:; connect-src 'self'; frame-ancestors 'none'; base-uri 'self'; form-action 'self'; object-src 'none'" always;
+    add_header Strict-Transport-Security $portal_hsts_header always;
+
+    # Block any attempt to reach Vite dev-server paths that legacy
+    # scanners may probe (defensive; nginx does not serve these at all).
+    location ~ ^/(@fs|@id|@vite|__vite_hmr|__vite_ping) {
+        return 404;
+    }
+
+    # Proxy API traffic to the Flask container. URL + Host filled at
+    # container start by envsubst (see comments at top).
+    location /api/ {
+        proxy_pass ${API_UPSTREAM_URL};
+        proxy_http_version 1.1;
+        proxy_set_header Host ${API_UPSTREAM_HOST};
+        proxy_set_header X-Forwarded-Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+        # Kept above the gunicorn --timeout (180s, see api/Dockerfile) so
+        # nginx never severs a backend still finishing a large write
+        # (e.g. a 300+ line cycle-count approval).
+        proxy_read_timeout 300s;
+        proxy_send_timeout 300s;
+
+        # When the upstream is HTTPS (e.g. ACA HTTPS-only ingress), nginx
+        # needs SNI to negotiate TLS against a virtual-host-routed gateway.
+        # These are no-ops for an http:// upstream.
+        proxy_ssl_server_name on;
+        proxy_ssl_name ${API_UPSTREAM_HOST};
+    }
+
+    # Hashed build assets can be cached aggressively.
+    location /assets/ {
+        expires 1y;
+        add_header Cache-Control "public, immutable" always;
+        try_files $uri =404;
+    }
+
+    # SPA fallback. Serves index.html for any non-file path so the React
+    # router can handle client-side routing.
+    location / {
+        try_files $uri $uri/ /index.html;
+    }
+}
