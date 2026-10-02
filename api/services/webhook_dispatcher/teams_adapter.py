@@ -148,7 +148,7 @@ def _build_opened_card(payload: Dict[str, Any], base_url: str) -> Dict[str, Any]
         title=title,
         text_body=body,
     )
-    card["potentialAction"] = [_open_action("Open in Sentry", link)]
+    card["potentialAction"] = [_open_action("Open in Sơn Lộc WMS", link)]
     return card
 
 
@@ -173,7 +173,7 @@ def _build_fulfillable_card(payload: Dict[str, Any], base_url: str) -> Dict[str,
         title=title,
         text_body=body,
     )
-    card["potentialAction"] = [_open_action("Open in Sentry", link)]
+    card["potentialAction"] = [_open_action("Open in Sơn Lộc WMS", link)]
     return card
 
 
@@ -194,7 +194,7 @@ def _build_cancelled_card(payload: Dict[str, Any], base_url: str) -> Dict[str, A
         title=title,
         text_body=body,
     )
-    card["potentialAction"] = [_open_action("Open in Sentry", link)]
+    card["potentialAction"] = [_open_action("Open in Sơn Lộc WMS", link)]
     return card
 
 

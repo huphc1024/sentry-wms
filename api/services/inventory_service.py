@@ -13,7 +13,10 @@ sufficient-stock check.
 from sqlalchemy import text
 
 
-def add_inventory(db, item_id, bin_id, warehouse_id, quantity, lot_number=None):
+def add_inventory(
+    db, item_id, bin_id, warehouse_id, quantity, lot_number=None,
+    pallet_id=None, expiry_date=None,
+):
     """Increment existing inventory or create a new record.
 
     V-030 race safety: Postgres's default UNIQUE(item_id, bin_id, lot_number)
@@ -34,14 +37,18 @@ def add_inventory(db, item_id, bin_id, warehouse_id, quantity, lot_number=None):
     existing = db.execute(
         text(
             """
-            SELECT inventory_id, quantity_on_hand
+            SELECT inventory_id, quantity_on_hand, expiry_date
             FROM inventory
             WHERE item_id = :item_id AND bin_id = :bin_id
               AND lot_number IS NOT DISTINCT FROM :lot_number
+              AND pallet_id IS NOT DISTINCT FROM :pallet_id
             FOR UPDATE
             """
         ),
-        {"item_id": item_id, "bin_id": bin_id, "lot_number": lot_number},
+        {
+            "item_id": item_id, "bin_id": bin_id,
+            "lot_number": lot_number, "pallet_id": pallet_id,
+        },
     ).fetchone()
 
     if existing:
@@ -50,19 +57,27 @@ def add_inventory(db, item_id, bin_id, warehouse_id, quantity, lot_number=None):
             text(
                 """
                 UPDATE inventory
-                SET quantity_on_hand = quantity_on_hand + :qty, updated_at = NOW()
+                SET quantity_on_hand = quantity_on_hand + :qty,
+                    expiry_date = COALESCE(:expiry_date, expiry_date),
+                    updated_at = NOW()
                 WHERE inventory_id = :inv_id
                 """
             ),
-            {"qty": quantity, "inv_id": existing.inventory_id},
+            {"qty": quantity, "expiry_date": expiry_date, "inv_id": existing.inventory_id},
         )
         return new_qty
     else:
         db.execute(
             text(
                 """
-                INSERT INTO inventory (item_id, bin_id, warehouse_id, quantity_on_hand, lot_number)
-                VALUES (:item_id, :bin_id, :warehouse_id, :qty, :lot_number)
+                INSERT INTO inventory (
+                    item_id, bin_id, warehouse_id, quantity_on_hand,
+                    lot_number, pallet_id, expiry_date
+                )
+                VALUES (
+                    :item_id, :bin_id, :warehouse_id, :qty,
+                    :lot_number, :pallet_id, :expiry_date
+                )
                 """
             ),
             {
@@ -71,12 +86,17 @@ def add_inventory(db, item_id, bin_id, warehouse_id, quantity, lot_number=None):
                 "warehouse_id": warehouse_id,
                 "qty": quantity,
                 "lot_number": lot_number,
+                "pallet_id": pallet_id,
+                "expiry_date": expiry_date,
             },
         )
         return quantity
 
 
-def move_inventory(db, item_id, from_bin_id, to_bin_id, warehouse_id, quantity, lot_number=None):
+def move_inventory(
+    db, item_id, from_bin_id, to_bin_id, warehouse_id, quantity,
+    lot_number=None, pallet_id=None,
+):
     """Atomic bin-to-bin inventory transfer.
 
     Locks the source row with SELECT ... FOR UPDATE so a concurrent
@@ -92,19 +112,27 @@ def move_inventory(db, item_id, from_bin_id, to_bin_id, warehouse_id, quantity, 
     source_inv = db.execute(
         text(
             """
-            SELECT inventory_id, quantity_on_hand
+            SELECT inventory_id, quantity_on_hand, expiry_date
             FROM inventory
             WHERE item_id = :item_id AND bin_id = :bin_id
               AND lot_number IS NOT DISTINCT FROM :lot_number
+              AND pallet_id IS NOT DISTINCT FROM :pallet_id
             FOR UPDATE
             """
         ),
-        {"item_id": item_id, "bin_id": from_bin_id, "lot_number": lot_number},
+        {
+            "item_id": item_id, "bin_id": from_bin_id,
+            "lot_number": lot_number, "pallet_id": pallet_id,
+        },
     ).fetchone()
 
     if not source_inv or source_inv.quantity_on_hand < quantity:
         available = source_inv.quantity_on_hand if source_inv else 0
         raise ValueError(f"Insufficient inventory in source bin. Available: {available}")
+    if pallet_id and source_inv.quantity_on_hand != quantity:
+        raise ValueError(
+            "A pallet must be moved as a whole; quantity must equal pallet stock"
+        )
 
     # Decrement source
     new_source_qty = source_inv.quantity_on_hand - quantity
@@ -122,6 +150,9 @@ def move_inventory(db, item_id, from_bin_id, to_bin_id, warehouse_id, quantity, 
         )
 
     # Upsert destination (atomic via ON CONFLICT).
-    new_dest_qty = add_inventory(db, item_id, to_bin_id, warehouse_id, quantity, lot_number)
+    new_dest_qty = add_inventory(
+        db, item_id, to_bin_id, warehouse_id, quantity, lot_number,
+        pallet_id=pallet_id, expiry_date=source_inv.expiry_date,
+    )
 
     return new_source_qty, new_dest_qty

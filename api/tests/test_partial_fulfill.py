@@ -256,7 +256,7 @@ class TestBoSoShape:
         assert row[2] == "WAITING_STOCK"
         assert row[3] is None  # order_total NULL on BO
         assert row[4] is None  # customer_shipping_paid NULL on BO
-        assert row[5] == "Test Customer 1"  # customer copied
+        assert row[5] == "Khách hàng thử 1"  # customer copied
         assert row[6] == "GROUND"  # ship_method copied
 
     def test_bo_memo_prepended(self, client, auth_headers):

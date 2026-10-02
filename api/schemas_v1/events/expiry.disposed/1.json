@@ -1,0 +1,23 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://sentry-wms.example/events/expiry.disposed/1.json",
+  "title": "expiry.disposed v1",
+  "description": "An inventory/pallet was disposed after quarantine/expiry processing.",
+  "type": "object",
+  "required": [
+    "pallet_id",
+    "item_id",
+    "quantity_disposed",
+    "disposed_at"
+  ],
+  "additionalProperties": false,
+  "properties": {
+    "pallet_id": { "type": ["integer", "null"], "minimum": 1 },
+    "item_id": { "type": "integer", "minimum": 1 },
+    "quantity_disposed": { "type": "number", "minimum": 0 },
+    "lot_number": { "type": ["string", "null"] },
+    "disposed_at": { "type": "string", "format": "date-time" },
+    "warehouse_id": { "type": "integer", "minimum": 1 }
+  }
+}
+

@@ -1,6 +1,6 @@
 #!/bin/bash
 # ============================================================
-# SENTRY WMS - Database Seed Wrapper
+# SƠN LỘC WMS - Database Seed Wrapper
 # ============================================================
 # When SKIP_SEED=true: only creates admin user + default warehouse + bin types
 # When SKIP_SEED is unset/false: runs full demo seed (items, POs, SOs, etc.)
@@ -29,23 +29,23 @@ CREATE EXTENSION IF NOT EXISTS pgcrypto;
 
 -- Default warehouse
 INSERT INTO warehouses (warehouse_code, warehouse_name, address) VALUES
-('WH-01', 'My Warehouse', '');
+('WH-01', 'Kho của tôi', '');
 
 -- Default zones (bin type placeholders)
 INSERT INTO zones (warehouse_id, zone_code, zone_name, zone_type) VALUES
-(1, 'RCV',   'Receiving',    'RECEIVING'),
-(1, 'PICK',  'Picking',      'PICKING'),
+(1, 'RCV',   'Nhận hàng',    'RECEIVING'),
+(1, 'PICK',  'Soạn hàng',    'PICKING'),
 (1, 'STAGE', 'Staging',      'STAGING');
 
 -- Default bins (one per type)
 INSERT INTO bins (zone_id, warehouse_id, bin_code, bin_barcode, bin_type, pick_sequence, putaway_sequence, description, external_id) VALUES
-(1, 1, 'RECV-01', 'RECV-01', 'Staging',  0, 0, 'Default receiving bin', gen_random_uuid()),
-(2, 1, 'PICK-01', 'PICK-01', 'Pickable', 100, 100, 'Default pick bin', gen_random_uuid()),
-(3, 1, 'BULK-01', 'BULK-01', 'Pickable', 0, 0, 'Default bulk bin', gen_random_uuid());
+(1, 1, 'RECV-01', 'RECV-01', 'Staging',  0, 0, 'Vị trí nhận hàng mặc định', gen_random_uuid()),
+(2, 1, 'PICK-01', 'PICK-01', 'Pickable', 100, 100, 'Vị trí soạn hàng mặc định', gen_random_uuid()),
+(3, 1, 'BULK-01', 'BULK-01', 'Pickable', 0, 0, 'Vị trí lưu trữ mặc định', gen_random_uuid());
 
 -- Admin user
 INSERT INTO users (username, password_hash, full_name, role, warehouse_id, allowed_functions, must_change_password, external_id)
-VALUES ('admin', crypt(:'admin_pw', gen_salt('bf')), 'Admin User', 'ADMIN', 1, '{}', :'must_change'::boolean, gen_random_uuid());
+VALUES ('admin', crypt(:'admin_pw', gen_salt('bf')), 'Quản trị viên', 'ADMIN', 1, '{}', :'must_change'::boolean, gen_random_uuid());
 
 -- Default settings
 INSERT INTO app_settings (key, value) VALUES ('session_timeout_hours', '8');
@@ -70,13 +70,13 @@ fi
 echo ""
 if [ "$MUST_CHANGE" = "true" ]; then
   echo "================================================="
-  echo "  SENTRY WMS INITIAL SETUP COMPLETE"
+  echo "  SƠN LỘC WMS INITIAL SETUP COMPLETE"
   echo "  Fresh install: admin credentials are admin/admin."
   echo "  Forced password change required on first login."
   echo "================================================="
 else
   echo "================================================="
-  echo "  SENTRY WMS INITIAL SETUP COMPLETE"
+  echo "  SƠN LỘC WMS INITIAL SETUP COMPLETE"
   echo "  Admin username: admin"
   echo "  Admin password: $ADMIN_PW"
   echo "  >>> CHANGE THIS PASSWORD AFTER FIRST LOGIN <<<"

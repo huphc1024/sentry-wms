@@ -18,6 +18,7 @@ import pytest
 
 from jobs import celery_app
 from jobs.sync_tasks import sync_orders, sync_items, sync_inventory, push_fulfillment
+from jobs.billing_tasks import daily_storage_billing
 
 
 @pytest.fixture(autouse=True)
@@ -68,6 +69,14 @@ class TestTaskDiscovery:
 
     def test_push_fulfillment_registered(self):
         assert "jobs.sync_tasks.push_fulfillment" in celery_app.tasks
+
+    def test_daily_storage_billing_registered(self):
+        assert "jobs.billing_tasks.daily_storage_billing" in celery_app.tasks
+
+    def test_billing_beat_schedule_present(self):
+        assert "billing-storage-daily" in celery_app.conf.beat_schedule
+        entry = celery_app.conf.beat_schedule["billing-storage-daily"]
+        assert entry["task"] == "jobs.billing_tasks.daily_storage_billing"
 
 
 # ---------------------------------------------------------------------------

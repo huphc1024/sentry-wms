@@ -1,0 +1,18 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://sentry-wms.example/events/outbound.shipped/1.json",
+  "title": "outbound.shipped v1",
+  "description": "A sales order has shipped through the gate/warehouse. Partner-facing companion to ship.confirmed.",
+  "type": "object",
+  "required": ["so_id", "so_number", "warehouse_id", "completed_at"],
+  "additionalProperties": false,
+  "properties": {
+    "so_id": { "type": "integer", "minimum": 1 },
+    "so_number": { "type": "string" },
+    "warehouse_id": { "type": "integer", "minimum": 1 },
+    "vehicle_plate": { "type": ["string", "null"] },
+    "carrier": { "type": ["string", "null"] },
+    "tracking_number": { "type": ["string", "null"] },
+    "completed_at": { "type": "string", "format": "date-time" }
+  }
+}

@@ -6,11 +6,13 @@ from typing import Any, Dict, List, Optional
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
 from middleware.auth_middleware import (
+    CUSTOMER_SCOPED_OUTBOUND_SLUGS,
     V150_ENDPOINT_SLUGS,
     V170_INBOUND_RESOURCE_BY_ENDPOINT,
     V190_DOCKD_SLUG,
     V1100_POS_SLUG,
 )
+from services.customer_token_scope import FORBIDDEN_RESOURCES
 
 
 _INBOUND_RESOURCE_KEYS = frozenset(V170_INBOUND_RESOURCE_BY_ENDPOINT.values())
@@ -55,6 +57,10 @@ class CreateTokenRequest(BaseModel):
     # information_schema.columns lookup) -- this schema only enforces
     # shape + size + the capability-flag pairing rule.
     mapping_overrides: Dict[str, Any] = Field(default_factory=dict)
+    # Phase 6 (mig 089): bind the token to one customer. None = an
+    # operator-owned token, unscoped -- the default and the shape of
+    # every token issued before this field existed.
+    customer_id: Optional[str] = Field(None, max_length=36)
 
     @field_validator("endpoints")
     @classmethod
@@ -114,6 +120,29 @@ class CreateTokenRequest(BaseModel):
                 "inbound handler ignores the JSONB unless the capability "
                 "flag is set."
             )
+        # Phase 6: refuse a customer binding the enforcement layer
+        # cannot honour, rather than issuing a token that 403s at first
+        # use. The runtime gate in @require_wms_token stays as the
+        # backstop for rows written by hand.
+        if self.customer_id:
+            unscopable = sorted(
+                set(self.endpoints) - CUSTOMER_SCOPED_OUTBOUND_SLUGS
+            )
+            if unscopable:
+                raise ValueError(
+                    f"a customer-bound token cannot carry the endpoint "
+                    f"slugs {unscopable}: those surfaces have no owning-"
+                    f"customer dimension to filter on. Valid slugs for a "
+                    f"customer-bound token: "
+                    f"{sorted(CUSTOMER_SCOPED_OUTBOUND_SLUGS)}."
+                )
+            forbidden = sorted(set(self.inbound_resources) & FORBIDDEN_RESOURCES)
+            if forbidden:
+                raise ValueError(
+                    f"a customer-bound token cannot carry the inbound "
+                    f"resources {forbidden}: those are shared operator "
+                    f"master data with no owning-customer column."
+                )
         # Reject keys that are obviously not canonical field names.
         # The deeper "must be a column on a token-resource canonical
         # table" check lives at the admin route (needs DB access).

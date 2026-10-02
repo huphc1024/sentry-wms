@@ -27,7 +27,10 @@ pytestmark = pytest.mark.skipif(
 
 
 def _read(path: str) -> str:
-    return (REPO_ROOT / path).read_text()
+    # encoding is explicit: read_text() falls back to the locale codec,
+    # which on Windows is cp1252 and cannot decode the Vietnamese strings
+    # in db/seed.sql. Same reason conftest.py pins it on SEED_PATH.
+    return (REPO_ROOT / path).read_text(encoding="utf-8")
 
 
 # ---------------------------------------------------------------------------
@@ -312,7 +315,7 @@ class TestV069_NoSeedAdminHash:
     def test_seed_sql_has_no_bcrypt_hash(self):
         # The specific published hash must be gone from every SQL file.
         for sql_path in (REPO_ROOT / "db").glob("*.sql"):
-            body = sql_path.read_text()
+            body = sql_path.read_text(encoding="utf-8")
             assert "$2b$12$zDGRKFLmc6v/A4mVhxOzb.7uoW1ulnXn0AisK5uJ5iWk33vC2EpSK" not in body, (
                 f"{sql_path.name} still contains the known bcrypt hash of 'admin'"
             )

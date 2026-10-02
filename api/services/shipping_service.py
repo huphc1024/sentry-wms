@@ -6,6 +6,7 @@ route and the bearer-token /api/v1/dockd/* surface share one transaction body
 (fulfillment insert + line writes + SO update + audit + outbox emit).
 """
 
+import logging
 import uuid
 from datetime import timezone
 
@@ -21,6 +22,8 @@ from constants import (
     TASK_PICKED,
     TASK_SHORT,
 )
+
+logger = logging.getLogger(__name__)
 
 
 def require_packing_before_shipping(db) -> bool:
@@ -378,6 +381,23 @@ def record_ship(
             "completed_at": shipped_at.astimezone(timezone.utc).isoformat().replace("+00:00", "Z"),
         },
     )
+
+    try:
+        from services.vehicle_service import emit_outbound_shipped
+        emit_outbound_shipped(
+            db,
+            so_id=so_id,
+            warehouse_id=warehouse_id,
+            source_txn_id=source_txn_id,
+            username=username,
+            carrier=carrier,
+            tracking_number=tracking_number,
+        )
+    except Exception:
+        logger.exception(
+            "emit_outbound_shipped failed for so_id=%s; ship kept",
+            so_id,
+        )
 
     return {
         "fulfillment_id": fulfillment_id,

@@ -35,8 +35,41 @@ CREATE TABLE zones (
     zone_name VARCHAR(100) NOT NULL,
     zone_type VARCHAR(50) NOT NULL,  -- 'RECEIVING', 'STORAGE', 'PICKING', 'STAGING', 'SHIPPING'
     is_active BOOLEAN DEFAULT TRUE,
-    UNIQUE(warehouse_id, zone_code)
+    color_hex VARCHAR(7),
+    map_x DECIMAL(8,2),
+    map_y DECIMAL(8,2),
+    map_w DECIMAL(8,2),
+    map_h DECIMAL(8,2),
+    UNIQUE(warehouse_id, zone_code),
+    UNIQUE(zone_id, warehouse_id)
 );
+
+CREATE TABLE racks (
+    rack_id BIGSERIAL PRIMARY KEY,
+    external_id UUID NOT NULL UNIQUE DEFAULT gen_random_uuid(),
+    warehouse_id INT NOT NULL REFERENCES warehouses(warehouse_id) ON DELETE CASCADE,
+    zone_id INT NOT NULL,
+    rack_code VARCHAR(64) NOT NULL,
+    rack_name VARCHAR(128),
+    aisle VARCHAR(32),
+    bay VARCHAR(32),
+    legacy_rack_key VARCHAR(120) NOT NULL,
+    map_x DECIMAL(10,2) NOT NULL,
+    map_y DECIMAL(10,2) NOT NULL,
+    map_w DECIMAL(10,2) NOT NULL CHECK (map_w > 0),
+    map_h DECIMAL(10,2) NOT NULL CHECK (map_h > 0),
+    rotation_deg DECIMAL(6,2) NOT NULL DEFAULT 0
+      CHECK (rotation_deg >= 0 AND rotation_deg < 360),
+    is_active BOOLEAN NOT NULL DEFAULT TRUE,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    FOREIGN KEY (zone_id, warehouse_id) REFERENCES zones(zone_id, warehouse_id),
+    UNIQUE (warehouse_id, rack_code),
+    UNIQUE (warehouse_id, legacy_rack_key)
+);
+
+CREATE INDEX ix_racks_wh_zone ON racks(warehouse_id, zone_id) WHERE is_active;
+CREATE INDEX ix_racks_legacy_key ON racks(warehouse_id, legacy_rack_key);
 
 CREATE TABLE bins (
     bin_id SERIAL PRIMARY KEY,
@@ -55,12 +88,79 @@ CREATE TABLE bins (
     max_volume_cuft DECIMAL(10,2),
     description VARCHAR(200),
     is_active BOOLEAN DEFAULT TRUE,
+    map_x DECIMAL(8,2),
+    map_y DECIMAL(8,2),
+    map_w DECIMAL(8,2) DEFAULT 24,
+    map_h DECIMAL(8,2) DEFAULT 20,
+    rack_id BIGINT REFERENCES racks(rack_id) ON DELETE SET NULL,
     external_id UUID UNIQUE NOT NULL,
     UNIQUE(warehouse_id, bin_code)
 );
 
 CREATE INDEX ix_bins_pick_sequence ON bins(warehouse_id, pick_sequence);
 CREATE INDEX ix_bins_barcode ON bins(bin_barcode);
+CREATE INDEX ix_bins_rack_id ON bins(rack_id) WHERE rack_id IS NOT NULL;
+CREATE UNIQUE INDEX ux_bins_rack_slot
+    ON bins(rack_id, level_num, position_num)
+    WHERE rack_id IS NOT NULL AND is_active = TRUE
+      AND NULLIF(TRIM(level_num), '') IS NOT NULL
+      AND NULLIF(TRIM(position_num), '') IS NOT NULL;
+
+CREATE TABLE warehouse_layouts (
+    warehouse_id INT PRIMARY KEY REFERENCES warehouses(warehouse_id) ON DELETE CASCADE,
+    world_width_m DECIMAL(8, 2) NOT NULL DEFAULT 50,
+    world_height_m DECIMAL(8, 2) NOT NULL DEFAULT 40,
+    warehouse_x_m DECIMAL(8, 2) NOT NULL DEFAULT 2,
+    warehouse_y_m DECIMAL(8, 2) NOT NULL DEFAULT 2,
+    warehouse_w_m DECIMAL(8, 2) NOT NULL DEFAULT 46,
+    warehouse_h_m DECIMAL(8, 2) NOT NULL DEFAULT 30,
+    grid_step_m DECIMAL(8, 4) NOT NULL DEFAULT 0.25,
+    coordinate_unit VARCHAR(20) NOT NULL DEFAULT 'METER'
+      CHECK (coordinate_unit IN ('METER', 'LEGACY_CANVAS')),
+    version INT NOT NULL DEFAULT 1,
+    updated_at TIMESTAMPTZ DEFAULT NOW(),
+    updated_by INT
+);
+
+CREATE TABLE warehouse_rack_layouts (
+    layout_rack_id SERIAL PRIMARY KEY,
+    warehouse_id INT NOT NULL REFERENCES warehouses(warehouse_id) ON DELETE CASCADE,
+    rack_key VARCHAR(120) NOT NULL,
+    zone_id INT REFERENCES zones(zone_id) ON DELETE SET NULL,
+    label VARCHAR(80),
+    x_m DECIMAL(8, 2) NOT NULL,
+    y_m DECIMAL(8, 2) NOT NULL,
+    w_m DECIMAL(8, 2) NOT NULL,
+    h_m DECIMAL(8, 2) NOT NULL,
+    rotation_deg DECIMAL(6, 2) NOT NULL DEFAULT 0,
+    rack_id BIGINT REFERENCES racks(rack_id) ON DELETE CASCADE,
+    UNIQUE (warehouse_id, rack_key)
+);
+
+CREATE INDEX ix_warehouse_rack_layouts_wh ON warehouse_rack_layouts (warehouse_id);
+CREATE UNIQUE INDEX ux_warehouse_rack_layouts_rack_id
+    ON warehouse_rack_layouts(rack_id) WHERE rack_id IS NOT NULL;
+
+CREATE TABLE warehouse_map_paths (
+    path_id SERIAL PRIMARY KEY,
+    warehouse_id INT NOT NULL REFERENCES warehouses(warehouse_id) ON DELETE CASCADE,
+    path_type VARCHAR(20) NOT NULL CHECK (path_type IN ('FORKLIFT', 'PEDESTRIAN')),
+    label VARCHAR(100),
+    points JSONB NOT NULL CHECK (
+      jsonb_typeof(points) = 'array' AND jsonb_array_length(points) >= 2
+    ),
+    width_m DECIMAL(6, 3) NOT NULL DEFAULT 2.5 CHECK (width_m > 0),
+    one_way BOOLEAN NOT NULL DEFAULT FALSE,
+    direction VARCHAR(10) NOT NULL DEFAULT 'both',
+    sort_order INT NOT NULL DEFAULT 0,
+    CONSTRAINT warehouse_map_paths_direction_check CHECK (direction IN ('both', 'forward', 'reverse')),
+    CONSTRAINT warehouse_map_paths_one_way_direction CHECK (
+      (one_way = FALSE AND direction = 'both')
+      OR (one_way = TRUE AND direction IN ('forward', 'reverse'))
+    )
+);
+
+CREATE INDEX ix_warehouse_map_paths_wh ON warehouse_map_paths (warehouse_id, path_type);
 
 -- ============================================================
 -- ITEMS (SKU MASTER)
@@ -74,6 +174,10 @@ CREATE TABLE items (
     upc VARCHAR(50),                       -- primary barcode
     barcode_aliases JSONB,                 -- array of alternate barcodes
     category VARCHAR(100),
+    storage_profile VARCHAR(20) CHECK (
+        storage_profile IS NULL
+        OR storage_profile IN ('HEAVY', 'FMCG', 'FULFILLMENT', 'PROJECT')
+    ),
     weight_lbs DECIMAL(10,4),
     length_in DECIMAL(10,2),
     width_in DECIMAL(10,2),
@@ -94,10 +198,59 @@ CREATE TABLE items (
 
 CREATE INDEX ix_items_upc ON items(upc);
 CREATE INDEX ix_items_sku ON items(sku);
+CREATE INDEX ix_items_storage_profile ON items(storage_profile);
 
 -- ============================================================
 -- INVENTORY (Current stock by bin)
 -- ============================================================
+
+CREATE TABLE pallets (
+    pallet_id BIGSERIAL PRIMARY KEY,
+    pallet_code VARCHAR(100) NOT NULL UNIQUE,
+    pallet_barcode VARCHAR(200),
+    item_id INT REFERENCES items(item_id),
+    warehouse_id INT NOT NULL REFERENCES warehouses(warehouse_id),
+    bin_id INT REFERENCES bins(bin_id),
+    quantity INT NOT NULL DEFAULT 0,
+    weight_kg DECIMAL(10,3),
+    lot_code VARCHAR(100),
+    expiry_date DATE,
+    status VARCHAR(32) NOT NULL DEFAULT 'STORED',
+    created_by VARCHAR(100),
+    created_at TIMESTAMPTZ DEFAULT NOW(),
+    updated_at TIMESTAMPTZ DEFAULT NOW(),
+    external_id UUID UNIQUE NOT NULL
+);
+
+CREATE INDEX ix_pallets_item ON pallets(item_id);
+CREATE INDEX ix_pallets_bin ON pallets(bin_id);
+CREATE UNIQUE INDEX ux_pallets_barcode ON pallets(pallet_barcode)
+    WHERE pallet_barcode IS NOT NULL;
+CREATE INDEX ix_pallets_expiry ON pallets(expiry_date)
+    WHERE status = 'STORED';
+
+-- Gate / yard sessions (mig 080 + 086). Linked to PO inbound or SO outbound.
+CREATE TABLE vehicle_movements (
+    movement_id BIGSERIAL PRIMARY KEY,
+    movement_type VARCHAR(20) NOT NULL,
+    vehicle_plate VARCHAR(64) NOT NULL,
+    driver_name VARCHAR(200),
+    reference_type VARCHAR(64),
+    reference_id BIGINT,
+    related_pallet_id BIGINT REFERENCES pallets(pallet_id),
+    recorded_by VARCHAR(100),
+    recorded_at TIMESTAMPTZ DEFAULT NOW(),
+    notes TEXT,
+    warehouse_id INT REFERENCES warehouses(warehouse_id) ON DELETE RESTRICT,
+    status VARCHAR(20) NOT NULL DEFAULT 'CHECKED_IN'
+      CHECK (status IN ('CHECKED_IN', 'IN_PROGRESS', 'COMPLETED', 'CANCELLED')),
+    completed_at TIMESTAMPTZ,
+    completed_by VARCHAR(100)
+);
+CREATE INDEX ix_vehicle_movements_plate ON vehicle_movements(vehicle_plate);
+CREATE INDEX ix_vehicle_movements_ref ON vehicle_movements(reference_type, reference_id);
+CREATE INDEX ix_vehicle_movements_warehouse_status ON vehicle_movements(warehouse_id, status);
+CREATE INDEX ix_vehicle_movements_plate_status ON vehicle_movements(vehicle_plate, status);
 
 CREATE TABLE inventory (
     inventory_id SERIAL PRIMARY KEY,
@@ -111,12 +264,16 @@ CREATE TABLE inventory (
     expiry_date DATE,
     last_counted_at TIMESTAMPTZ,
     updated_at TIMESTAMPTZ DEFAULT NOW(),
-    UNIQUE(item_id, bin_id, lot_number)
+    pallet_id BIGINT REFERENCES pallets(pallet_id)
 );
 
 CREATE INDEX ix_inventory_item ON inventory(item_id);
 CREATE INDEX ix_inventory_bin ON inventory(bin_id);
 CREATE INDEX ix_inventory_warehouse ON inventory(warehouse_id);
+CREATE INDEX ix_inventory_expiry ON inventory(expiry_date)
+    WHERE quantity_on_hand > 0;
+CREATE UNIQUE INDEX ux_inventory_item_bin_lot_pallet
+    ON inventory (item_id, bin_id, COALESCE(lot_number, ''), COALESCE(pallet_id, 0));
 
 -- ============================================================
 -- PURCHASE ORDERS (Inbound / Receiving)
@@ -172,6 +329,8 @@ CREATE TABLE item_receipts (
     bin_id INT NOT NULL REFERENCES bins(bin_id),  -- staging bin on receipt
     warehouse_id INT NOT NULL REFERENCES warehouses(warehouse_id),
     lot_number VARCHAR(50),
+    expiry_date DATE,
+    pallet_id BIGINT REFERENCES pallets(pallet_id),
     serial_number VARCHAR(100),
     received_by VARCHAR(100) NOT NULL,
     received_at TIMESTAMPTZ DEFAULT NOW(),
@@ -376,6 +535,7 @@ CREATE TABLE pick_tasks (
     so_line_id INT REFERENCES sales_order_lines(so_line_id) ON DELETE SET NULL,
     item_id INT NOT NULL REFERENCES items(item_id),
     bin_id INT NOT NULL REFERENCES bins(bin_id),
+    pallet_id BIGINT REFERENCES pallets(pallet_id),
     quantity_to_pick INT NOT NULL,
     quantity_picked INT NOT NULL DEFAULT 0,
     pick_sequence INT NOT NULL,            -- ORDER BY this for optimized walk path
@@ -387,6 +547,7 @@ CREATE TABLE pick_tasks (
 );
 
 CREATE INDEX ix_pick_tasks_batch_sequence ON pick_tasks(batch_id, pick_sequence);
+CREATE INDEX ix_pick_tasks_pallet ON pick_tasks(pallet_id);
 
 -- Wave picking: links SOs to wave batches
 CREATE TABLE wave_pick_orders (
@@ -1272,16 +1433,115 @@ CREATE INDEX inbound_items_canonical
 CREATE TABLE customers (
     canonical_id      UUID         PRIMARY KEY DEFAULT gen_random_uuid(),
     external_id       UUID         UNIQUE NOT NULL DEFAULT gen_random_uuid(),
+    customer_code     VARCHAR(40)  UNIQUE,
     customer_name     VARCHAR(200),
+    contact_person    VARCHAR(120),
     email             VARCHAR(255),
     phone             VARCHAR(50),
     billing_address   TEXT,
     shipping_address  TEXT,
     tax_id            VARCHAR(64),
+    payment_terms_days INT         NOT NULL DEFAULT 30 CHECK (payment_terms_days BETWEEN 0 AND 365),
+    default_currency  VARCHAR(8)   NOT NULL DEFAULT 'VND',
+    notes             TEXT,
     is_active         BOOLEAN,
     created_at        TIMESTAMPTZ  NOT NULL DEFAULT NOW(),
     updated_at        TIMESTAMPTZ  NOT NULL DEFAULT NOW(),
     latest_inbound_id BIGINT       NOT NULL DEFAULT 0
+);
+
+ALTER TABLE pallets
+    ADD COLUMN customer_id UUID REFERENCES customers(canonical_id);
+CREATE INDEX ix_pallets_customer ON pallets(customer_id);
+
+CREATE TABLE customer_contracts (
+    contract_id BIGSERIAL PRIMARY KEY,
+    contract_number VARCHAR(64) NOT NULL UNIQUE,
+    customer_id UUID NOT NULL REFERENCES customers(canonical_id) ON DELETE RESTRICT,
+    warehouse_id INT REFERENCES warehouses(warehouse_id) ON DELETE RESTRICT,
+    contract_name VARCHAR(200) NOT NULL,
+    start_date DATE NOT NULL,
+    end_date DATE,
+    status VARCHAR(20) NOT NULL DEFAULT 'DRAFT'
+      CHECK (status IN ('DRAFT','ACTIVE','SUSPENDED','EXPIRED','TERMINATED')),
+    billing_cycle VARCHAR(20) NOT NULL DEFAULT 'MONTHLY'
+      CHECK (billing_cycle IN ('MONTHLY','WEEKLY','PER_EVENT')),
+    payment_terms_days INT NOT NULL DEFAULT 30 CHECK (payment_terms_days BETWEEN 0 AND 365),
+    currency VARCHAR(8) NOT NULL DEFAULT 'VND',
+    notes TEXT,
+    created_by VARCHAR(100),
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    external_id UUID NOT NULL UNIQUE DEFAULT gen_random_uuid(),
+    CHECK (end_date IS NULL OR end_date >= start_date)
+);
+CREATE INDEX ix_customer_contracts_customer ON customer_contracts(customer_id, status);
+
+CREATE TABLE billing_rate_cards (
+    rate_card_id SERIAL PRIMARY KEY,
+    customer_id UUID REFERENCES customers(canonical_id),
+    contract_id BIGINT REFERENCES customer_contracts(contract_id) ON DELETE CASCADE,
+    warehouse_id INT REFERENCES warehouses(warehouse_id) ON DELETE RESTRICT,
+    rate_name VARCHAR(120),
+    service_type VARCHAR(50) NOT NULL,
+    unit VARCHAR(30) NOT NULL,
+    unit_price DECIMAL(14,2) NOT NULL,
+    currency VARCHAR(8) NOT NULL DEFAULT 'VND',
+    effective_from DATE,
+    effective_to DATE,
+    created_at TIMESTAMPTZ DEFAULT NOW(),
+    external_id UUID UNIQUE NOT NULL
+);
+CREATE INDEX ix_billing_rate_cards_contract ON billing_rate_cards(contract_id, service_type);
+
+CREATE TABLE billing_invoices (
+    invoice_id BIGSERIAL PRIMARY KEY,
+    invoice_number VARCHAR(64) UNIQUE,
+    customer_id UUID REFERENCES customers(canonical_id),
+    contract_id BIGINT REFERENCES customer_contracts(contract_id) ON DELETE SET NULL,
+    period_start DATE,
+    period_end DATE,
+    due_date DATE,
+    total_amount DECIMAL(14,2) NOT NULL DEFAULT 0,
+    currency VARCHAR(8) NOT NULL DEFAULT 'VND',
+    status VARCHAR(20) NOT NULL DEFAULT 'DRAFT',
+    notes TEXT,
+    issued_at TIMESTAMPTZ,
+    created_at TIMESTAMPTZ DEFAULT NOW(),
+    external_id UUID UNIQUE NOT NULL
+);
+CREATE INDEX ix_billing_invoices_customer ON billing_invoices(customer_id);
+
+CREATE TABLE billing_events (
+    event_id BIGSERIAL PRIMARY KEY,
+    customer_id UUID REFERENCES customers(canonical_id),
+    warehouse_id INT REFERENCES warehouses(warehouse_id),
+    event_type VARCHAR(50) NOT NULL,
+    reference_table VARCHAR(64),
+    reference_id BIGINT,
+    service_date DATE NOT NULL DEFAULT CURRENT_DATE,
+    quantity DECIMAL(14,4) NOT NULL DEFAULT 0,
+    unit_price DECIMAL(14,2),
+    amount DECIMAL(14,2) NOT NULL DEFAULT 0,
+    rate_card_id INT REFERENCES billing_rate_cards(rate_card_id) ON DELETE SET NULL,
+    invoice_id BIGINT REFERENCES billing_invoices(invoice_id) ON DELETE SET NULL,
+    billed BOOLEAN DEFAULT FALSE,
+    created_at TIMESTAMPTZ DEFAULT NOW()
+);
+CREATE INDEX ix_billing_events_customer ON billing_events(customer_id);
+CREATE INDEX ix_billing_events_unbilled ON billing_events(customer_id, service_date) WHERE billed = FALSE;
+CREATE UNIQUE INDEX ux_billing_events_source
+    ON billing_events(event_type, reference_table, reference_id, service_date)
+    WHERE reference_table IS NOT NULL AND reference_id IS NOT NULL;
+
+CREATE TABLE billing_invoice_lines (
+    line_id BIGSERIAL PRIMARY KEY,
+    invoice_id BIGINT NOT NULL REFERENCES billing_invoices(invoice_id) ON DELETE CASCADE,
+    event_id BIGINT REFERENCES billing_events(event_id),
+    description TEXT,
+    quantity DECIMAL(14,4) NOT NULL DEFAULT 0,
+    unit_price DECIMAL(14,2) NOT NULL DEFAULT 0,
+    amount DECIMAL(14,2) NOT NULL DEFAULT 0
 );
 
 CREATE TABLE inbound_customers (
@@ -2184,3 +2444,96 @@ CREATE TABLE IF NOT EXISTS channel_recompute_state (
 INSERT INTO channel_recompute_state (only_row, last_cursor)
 VALUES (TRUE, 0)
 ON CONFLICT (only_row) DO NOTHING;
+
+-- ============================================================
+-- CUSTOMER PORTAL (phase 1)
+-- ============================================================
+-- Placed at the end of the file rather than inline on each CREATE TABLE
+-- because every column here references customers(canonical_id), and
+-- `customers` is declared well after items / sales_orders /
+-- purchase_orders. Same reason pallets.customer_id (mig 081) sits under
+-- the customers block instead of in the pallets DDL.
+--
+-- Existing deploys pick these up via:
+--   db/migrations/087_customer_ownership.sql
+--   db/migrations/088_customer_users.sql
+--   db/migrations/089_customer_token_scope.sql
+-- Those files carry the full rationale (ownership model, why customer
+-- logins are a separate table, backfill posture). No backfill is repeated
+-- here: schema.sql only ever runs against an empty database.
+
+-- mig 087: stock ownership. Owner lives on `items`, so no inventory write
+-- path changes. NULL = owned by the warehouse operator itself; the portal
+-- must read NULL as "not visible to any customer", never "visible to all".
+ALTER TABLE items
+    ADD COLUMN owner_customer_id UUID
+        REFERENCES customers(canonical_id) ON DELETE RESTRICT;
+CREATE INDEX ix_items_owner_customer
+    ON items(owner_customer_id) WHERE owner_customer_id IS NOT NULL;
+
+-- sales_orders.customer_id (VARCHAR, written straight from the inbound
+-- mapping docs) is kept as-is; customer_ref is the resolved FK that
+-- customer-scoped queries filter on.
+ALTER TABLE sales_orders
+    ADD COLUMN customer_ref UUID
+        REFERENCES customers(canonical_id) ON DELETE RESTRICT;
+CREATE INDEX ix_sales_orders_customer_ref
+    ON sales_orders(customer_ref, status) WHERE customer_ref IS NOT NULL;
+
+ALTER TABLE purchase_orders
+    ADD COLUMN owner_customer_id UUID
+        REFERENCES customers(canonical_id) ON DELETE RESTRICT;
+CREATE INDEX ix_purchase_orders_owner_customer
+    ON purchase_orders(owner_customer_id, status)
+    WHERE owner_customer_id IS NOT NULL;
+
+-- mig 088: portal logins. Separate table from `users` on purpose -- see
+-- the migration header. Login rate limiting reuses `login_attempts` with
+-- a 'customer:<username>' key.
+CREATE TABLE customer_users (
+    customer_user_id    SERIAL       PRIMARY KEY,
+    customer_id         UUID         NOT NULL
+                            REFERENCES customers(canonical_id) ON DELETE RESTRICT,
+    username            VARCHAR(50)  NOT NULL UNIQUE,
+    password_hash       VARCHAR(255) NOT NULL,
+    full_name           VARCHAR(100) NOT NULL,
+    email               VARCHAR(255),
+    is_active           BOOLEAN      NOT NULL DEFAULT TRUE,
+    must_change_password BOOLEAN     NOT NULL DEFAULT TRUE,
+    password_changed_at TIMESTAMPTZ,
+    last_login          TIMESTAMPTZ,
+    created_at          TIMESTAMPTZ  NOT NULL DEFAULT NOW(),
+    created_by          INT          REFERENCES users(user_id) ON DELETE SET NULL,
+    external_id         UUID         NOT NULL UNIQUE DEFAULT gen_random_uuid()
+);
+CREATE INDEX ix_customer_users_customer
+    ON customer_users(customer_id) WHERE is_active = TRUE;
+
+-- Same shape as user_page_permissions, minus any ADMIN-style bypass: a
+-- portal feature needs an explicit row, so a new account with no grants
+-- can log in, change its password, and see nothing else. Valid keys:
+-- api/constants.py -> ALL_CUSTOMER_FEATURE_KEYS.
+CREATE TABLE customer_user_permissions (
+    customer_user_id INT          NOT NULL
+                         REFERENCES customer_users(customer_user_id) ON DELETE CASCADE,
+    feature_key      VARCHAR(64)  NOT NULL,
+    granted_at       TIMESTAMPTZ  NOT NULL DEFAULT NOW(),
+    granted_by       INT          REFERENCES users(user_id) ON DELETE SET NULL,
+    PRIMARY KEY (customer_user_id, feature_key)
+);
+CREATE INDEX ix_customer_user_permissions_user
+    ON customer_user_permissions(customer_user_id);
+
+-- mig 089: per-customer token scope. NULL = operator-owned, unscoped
+-- (existing behaviour). Enforcement in the inbound/snapshot handlers
+-- lands in phase 6; the column exists now so tokens can be provisioned.
+ALTER TABLE wms_tokens
+    ADD COLUMN customer_id UUID
+        REFERENCES customers(canonical_id) ON DELETE RESTRICT;
+CREATE INDEX ix_wms_tokens_customer
+    ON wms_tokens(customer_id) WHERE customer_id IS NOT NULL;
+
+-- mig 090: unique so_number for portal-submitted orders. A sequence
+-- rather than a timestamp or MAX(...)+1, both of which collide under
+-- concurrent submissions. See the migration for the full reasoning.
+CREATE SEQUENCE portal_order_seq AS BIGINT START WITH 1;

@@ -1,6 +1,6 @@
 """Celery application for background job processing.
 
-Sentry WMS uses Celery to run connector sync operations asynchronously.
+Sơn Lộc WMS uses Celery to run connector sync operations asynchronously.
 The Flask API thread never blocks on external ERP calls -- warehouse
 scanners stay responsive while syncs run in the background.
 
@@ -61,11 +61,22 @@ celery_app.conf.beat_schedule = {
         "task": "jobs.cleanup_tasks.cleanup_dockd_idempotency",
         "schedule": 24 * 3600.0,
     },
+    "billing-storage-daily": {
+        "task": "jobs.billing_tasks.daily_storage_billing",
+        "schedule": 24 * 3600.0,
+    },
+    "expiry-daily": {
+        "task": "jobs.expiry_tasks.daily_expiry_scan",
+        "schedule": 24 * 3600.0,
+    },
 }
 
 # Auto-discover task modules in the jobs package
 celery_app.autodiscover_tasks(["jobs"], related_name="sync_tasks")
 celery_app.autodiscover_tasks(["jobs"], related_name="cleanup_tasks")
+celery_app.autodiscover_tasks(["jobs"], related_name="billing_tasks")
 
 # Import connector modules so they auto-register in worker processes
 import connectors.example  # noqa: E402, F401
+import jobs.billing_tasks  # noqa: E402, F401
+import jobs.expiry_tasks  # noqa: E402, F401

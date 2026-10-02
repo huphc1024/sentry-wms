@@ -1,3 +1,3 @@
-"""Sentry WMS version."""
+"""Sơn Lộc WMS version."""
 
 __version__ = "1.30.0"

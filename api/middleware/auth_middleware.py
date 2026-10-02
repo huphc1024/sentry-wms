@@ -12,10 +12,16 @@ from typing import Optional
 from flask import g, jsonify, request
 from sqlalchemy import text
 
-from services.auth_service import decode_token
+from services.auth_service import (
+    SUBJECT_CUSTOMER,
+    SUBJECT_STAFF,
+    decode_token,
+)
 from services.cookie_auth import (
     AUTH_COOKIE_NAME,
     CSRF_PROTECTED_METHODS,
+    PORTAL_AUTH_COOKIE_NAME,
+    PORTAL_CSRF_COOKIE_NAME,
     csrf_token_matches,
 )
 from services import token_cache
@@ -38,13 +44,23 @@ FORCED_CHANGE_ALLOWED_ENDPOINTS = frozenset({
     "auth.me",
 })
 
+# Portal equivalent of the above (phase 2). Same tight-list rule applies:
+# a fourth entry widens the forced-change escape hatch for customer
+# logins, which are provisioned with must_change_password=TRUE by default
+# (mig 088), and warrants review.
+PORTAL_FORCED_CHANGE_ALLOWED_ENDPOINTS = frozenset({
+    "portal_auth.change_password",
+    "portal_auth.logout",
+    "portal_auth.me",
+})
 
-def _extract_token():
+
+def _extract_token(auth_cookie_name=AUTH_COOKIE_NAME):
     """Return (token, source) where source is 'header' or 'cookie', or (None, None)."""
     auth_header = request.headers.get("Authorization")
     if auth_header and auth_header.startswith("Bearer "):
         return auth_header.split(" ", 1)[1], "header"
-    cookie_token = request.cookies.get(AUTH_COOKIE_NAME)
+    cookie_token = request.cookies.get(auth_cookie_name)
     if cookie_token:
         return cookie_token, "cookie"
     return None, None
@@ -67,6 +83,19 @@ def require_auth(f):
         payload = decode_token(token)
         if payload is None:
             return jsonify({"error": "Token expired"}), 401
+
+        # Audience check (phase 2). Portal and staff JWTs are signed with
+        # the same secret, so a valid signature alone does not mean the
+        # bearer belongs on a staff route. Rejected here -- before the
+        # users lookup below -- rather than per-route, so every existing
+        # @require_auth endpoint is covered without being touched.
+        #
+        # A customer token carries no `user_id` claim at all, so the
+        # KeyError on payload["user_id"] would already stop it; this
+        # returns an honest 403 instead of a 500. Tokens minted before
+        # subject_type existed have no claim and are staff.
+        if payload.get("subject_type", SUBJECT_STAFF) != SUBJECT_STAFF:
+            return jsonify({"error": "Forbidden"}), 403
 
         # Verify the user is still active and refresh role/warehouse_ids from DB.
         # This ensures that deactivated accounts and role/warehouse changes take
@@ -102,10 +131,21 @@ def require_auth(f):
         if not row or not row.is_active:
             return jsonify({"error": "Unauthorized"}), 401
 
-        # Reject tokens issued before the last password change
+        # Reject tokens issued before the last password change.
+        #
+        # `<=`, not `<`: iat is whole seconds (int(now.timestamp())) while
+        # password_changed_at carries microseconds, so a token minted in
+        # the same second as the change compares equal and would survive
+        # it. That one-second window is exactly the wrong second to leave
+        # open -- an operator resetting a compromised password expects the
+        # attacker's session to die immediately. The cost of `<=` is that
+        # a login landing in the very same second as its own password
+        # change has to authenticate again, which is both harmless and
+        # the safe direction. No token is minted by the change-password
+        # flow itself, so nothing legitimate is invalidated here.
         if row.password_changed_at and payload.get("iat"):
             changed_ts = int(row.password_changed_at.timestamp())
-            if payload["iat"] < changed_ts:
+            if payload["iat"] <= changed_ts:
                 return jsonify({"error": "Token invalidated by password change"}), 401
 
         # Overwrite JWT claims with live DB values so downstream role/warehouse
@@ -221,6 +261,171 @@ def warehouse_scope_clause(column: str = "warehouse_id") -> tuple[str, dict]:
     return f"AND {column} = ANY(:_wscope)", {"_wscope": allowed}
 
 
+def require_customer_auth(f):
+    """Customer portal route protection (phase 2).
+
+    The mirror image of @require_auth, and deliberately a separate
+    decorator rather than a mode of it: a staff token is rejected here and
+    a customer token is rejected there, so neither audience can reach the
+    other's routes even if a route is annotated wrongly. There is no
+    shared allow-list to keep in sync.
+
+    On success sets g.current_customer -- NOT g.current_user. Staff
+    handlers read g.current_user and would raise AttributeError on a
+    portal request rather than treating a customer as a logged-in
+    operator.
+    """
+    @wraps(f)
+    def decorated(*args, **kwargs):
+        token, source = _extract_token(PORTAL_AUTH_COOKIE_NAME)
+        if not token:
+            return jsonify({"error": "Unauthorized"}), 401
+
+        # V-045 double-submit, against the portal's own CSRF cookie.
+        if source == "cookie" and request.method in CSRF_PROTECTED_METHODS:
+            if not csrf_token_matches(PORTAL_CSRF_COOKIE_NAME):
+                return jsonify({"error": "CSRF token missing or invalid"}), 403
+
+        payload = decode_token(token)
+        if payload is None:
+            return jsonify({"error": "Token expired"}), 401
+
+        # Audience check. Note this one is not defaulted: a token with no
+        # subject_type claim predates the portal and is therefore staff,
+        # so it must NOT be accepted here.
+        if payload.get("subject_type") != SUBJECT_CUSTOMER:
+            return jsonify({"error": "Forbidden"}), 403
+
+        # Re-read identity from the DB on every request so a deactivated
+        # login, a revoked feature grant or a reassigned customer takes
+        # effect immediately instead of at token expiry -- same posture as
+        # @require_auth.
+        import models.database as _db
+        db = _db.SessionLocal()
+        try:
+            row = db.execute(
+                text(
+                    "SELECT customer_id, is_active, password_changed_at, "
+                    "must_change_password "
+                    "FROM customer_users WHERE customer_user_id = :cuid"
+                ),
+                {"cuid": payload["customer_user_id"]},
+            ).fetchone()
+            features = []
+            if row and row.is_active:
+                feature_rows = db.execute(
+                    text(
+                        "SELECT feature_key FROM customer_user_permissions "
+                        "WHERE customer_user_id = :cuid"
+                    ),
+                    {"cuid": payload["customer_user_id"]},
+                ).fetchall()
+                features = [r.feature_key for r in feature_rows]
+        finally:
+            db.close()
+
+        if not row or not row.is_active:
+            return jsonify({"error": "Unauthorized"}), 401
+
+        # Same `<=` reasoning as the staff path above: whole-second iat vs
+        # microsecond password_changed_at, so `<` leaves the token minted
+        # in the change's own second alive. Reached here via an operator
+        # reset in /admin/customer-users, which is usually a response to a
+        # compromise.
+        if row.password_changed_at and payload.get("iat"):
+            changed_ts = int(row.password_changed_at.timestamp())
+            if payload["iat"] <= changed_ts:
+                return jsonify({"error": "Token invalidated by password change"}), 401
+
+        # customer_id comes from the DB row, never from the JWT claim: the
+        # claim is what the customer was assigned to when the token was
+        # minted, and an operator may have corrected it since. This is the
+        # value every scoped query filters on, so a stale one would serve
+        # the wrong customer's data.
+        payload["subject_type"] = SUBJECT_CUSTOMER
+        payload["customer_id"] = str(row.customer_id)
+        payload["features"] = features
+        g.current_customer = payload
+
+        if row.must_change_password and (
+            request.endpoint not in PORTAL_FORCED_CHANGE_ALLOWED_ENDPOINTS
+        ):
+            return jsonify({
+                "error": "password_change_required",
+                "message": "Password must be changed before accessing other resources",
+            }), 403
+
+        return f(*args, **kwargs)
+
+    return decorated
+
+
+def require_customer_feature(*feature_keys):
+    """Portal feature gate -- the customer-side analogue of
+    @require_admin_or_page_permission.
+
+    The one structural difference: there is no ADMIN-style bypass. A
+    customer_user reaches a feature only by holding an explicit
+    customer_user_permissions row, so a freshly provisioned account with
+    no grants can log in, change its password, and see nothing else.
+
+    Valid keys: constants.ALL_CUSTOMER_FEATURE_KEYS.
+    """
+    def decorator(f):
+        @wraps(f)
+        def decorated(*args, **kwargs):
+            held = g.current_customer.get("features") or []
+            if any(k in held for k in feature_keys):
+                return f(*args, **kwargs)
+            return jsonify({
+                "error": "Permission denied",
+                "feature_key": feature_keys[0],
+            }), 403
+
+        return decorated
+
+    return decorator
+
+
+def customer_scope_clause(column: str) -> tuple[str, dict]:
+    """Return (SQL fragment, params) confining a SELECT to one customer.
+
+    The customer-side counterpart of warehouse_scope_clause, with one
+    critical difference: it never returns an empty fragment. There is no
+    "sees everything" customer, so an empty fragment could only ever mean
+    an unscoped query on a portal route -- i.e. serving every customer's
+    rows to whoever asked. Rather than encode that as a reachable state,
+    this raises when the request has no customer subject.
+
+    Filtering in SQL (rather than checking ownership after the fetch) is
+    the same V-026 reasoning as warehouse_scope_clause: "does not exist"
+    and "belongs to another customer" must produce the same empty result
+    and therefore the same 404, or the endpoint becomes an existence
+    oracle over other customers' order numbers and SKUs.
+
+    Args:
+        column: SQL expression for the owning-customer column, with any
+                table alias, e.g. ``"i.owner_customer_id"``.
+
+    Returns:
+        ("AND <column> = :_cscope", {"_cscope": <customer_id>})
+    """
+    subject = getattr(g, "current_customer", None)
+    if not subject or subject.get("subject_type") != SUBJECT_CUSTOMER:
+        raise RuntimeError(
+            "customer_scope_clause() requires a customer-authenticated "
+            "request (@require_customer_auth). Refusing to build an "
+            "unscoped query."
+        )
+    customer_id = subject.get("customer_id")
+    if not customer_id:
+        raise RuntimeError(
+            "customer subject has no customer_id; refusing to build an "
+            "unscoped query."
+        )
+    return f"AND {column} = :_cscope", {"_cscope": customer_id}
+
+
 def require_role(*roles):
     def decorator(f):
         @wraps(f)
@@ -257,11 +462,11 @@ def has_override(override_key: str) -> bool:
     return override_key in allowed
 
 
-def require_admin_or_page_permission(page_key):
+def require_admin_or_page_permission(*page_keys):
     """Web-admin permission gate (mig 061).
 
     ADMIN bypasses the check (g.current_user["allowed_pages"] is None).
-    Any other role must carry the page_key in their allowed_pages
+    Any other role must carry at least one page_key in their allowed_pages
     list (populated at auth time from user_page_permissions),
     otherwise the request is rejected with 403 + {error:
     "Permission denied", page_key: "..."} so the frontend can
@@ -270,6 +475,9 @@ def require_admin_or_page_permission(page_key):
     Drop-in replacement for @require_role("ADMIN") - applied in the
     same decorator slot (after @require_auth, before @validate_body
     / @with_db).
+
+    Accepts one or more page keys, e.g.
+    @require_admin_or_page_permission("bins", "warehouse-simulation")
     """
     def decorator(f):
         @wraps(f)
@@ -277,12 +485,12 @@ def require_admin_or_page_permission(page_key):
             user = g.current_user
             allowed = user.get("allowed_pages")
             # ADMIN: allowed is None (sentinel) -> pass.
-            # USER:  allowed is a list; page_key must be in it.
-            if allowed is None or page_key in allowed:
+            # USER:  allowed is a list; any page_key must be in it.
+            if allowed is None or any(k in allowed for k in page_keys):
                 return f(*args, **kwargs)
             return jsonify({
                 "error": "Permission denied",
-                "page_key": page_key,
+                "page_key": page_keys[0],
             }), 403
 
         return decorated
@@ -433,6 +641,29 @@ _V1100_POS_FLASK_ENDPOINTS = frozenset({
 })
 
 
+# Phase 6 (mig 089): outbound slugs a customer-bound token may reach.
+#
+# A token with wms_tokens.customer_id set represents one tenant, so it
+# may only reach surfaces whose handlers can confine themselves to that
+# tenant's rows. snapshot.inventory can (routes/snapshot.py filters on
+# items.owner_customer_id); the two catalog slugs carry no customer data
+# at all. events.poll / events.ack cannot: integration_events has no
+# owning-customer column, so a page of events for a warehouse is a page
+# of every tenant's activity in it. Denying beats leaking, and beats
+# shipping a filter that silently returns nothing.
+#
+# The dockd and POS surfaces are operator-floor tools (dispatch, counter
+# sales) with no tenant dimension, so a customer binding is refused
+# there outright.
+CUSTOMER_SCOPED_OUTBOUND_SLUGS = frozenset({
+    "snapshot.inventory",
+    "events.types",
+    "events.schema",
+})
+
+_V150_SLUG_BY_FLASK_ENDPOINT = {v: k for k, v in V150_ENDPOINT_SLUGS.items()}
+
+
 def _is_inbound_request(flask_endpoint: Optional[str], path: str) -> bool:
     if flask_endpoint and flask_endpoint in V170_INBOUND_RESOURCE_BY_ENDPOINT:
         return True
@@ -510,6 +741,11 @@ def require_wms_token(f):
     - 403 ``inbound_resource_scope_violation`` (v1.7.0) when an
       inbound token's inbound_resources array does not list the
       target resource for an /api/v1/inbound/<resource> route.
+    - 403 ``customer_scope_unsupported_surface`` (phase 6) when a
+      token bound to a customer (wms_tokens.customer_id, mig 089)
+      reaches a surface that cannot confine itself to one tenant:
+      the event feed, dockd, or POS. See
+      CUSTOMER_SCOPED_OUTBOUND_SLUGS above.
     """
     @wraps(f)
     def wrapper(*args, **kwargs):
@@ -635,6 +871,22 @@ def require_wms_token(f):
             # one of the surface prefixes is a wiring bug. This mirrors
             # the V-200 fail-closed posture for unmapped endpoint slugs.
             return jsonify({"error": "endpoint_scope_violation"}), 403
+
+        # Phase 6 (mig 089): a customer-bound token is confined to the
+        # surfaces that can scope themselves to one tenant. Inbound
+        # writes are scoped per resource inside
+        # services/customer_token_scope.py; snapshot filters its rows.
+        # Everything else is refused here rather than served unscoped.
+        if row.get("customer_id"):
+            scopable = is_inbound or (
+                is_outbound
+                and _V150_SLUG_BY_FLASK_ENDPOINT.get(request.endpoint)
+                in CUSTOMER_SCOPED_OUTBOUND_SLUGS
+            )
+            if not scopable:
+                return jsonify({
+                    "error": "customer_scope_unsupported_surface",
+                }), 403
 
         g.current_token = row
         g.current_user = {"token_id": row["token_id"], "kind": "wms_token"}

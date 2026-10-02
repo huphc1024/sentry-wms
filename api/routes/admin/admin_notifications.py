@@ -220,7 +220,7 @@ _SAMPLE_OPENED_PAYLOAD = {
     "parent_so_external_id": "00000000-0000-0000-0000-000000000000",
     "parent_so_number": "SO-TEST",
     "warehouse_id": 0,
-    "customer_name": "Test Customer",
+    "customer_name": "Khách hàng thử",
     "items": [
         {
             "item_external_id": "00000000-0000-0000-0000-000000000000",

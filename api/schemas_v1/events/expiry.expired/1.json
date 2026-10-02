@@ -1,0 +1,28 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://sentry-wms.example/events/expiry.expired/1.json",
+  "title": "expiry.expired v1",
+  "description": "An inventory row was moved to quarantine because its expiry date passed.",
+  "type": "object",
+  "required": [
+    "inventory_id",
+    "item_id",
+    "quantity_moved",
+    "from_bin_id",
+    "to_bin_id",
+    "detected_at"
+  ],
+  "additionalProperties": false,
+  "properties": {
+    "inventory_id": { "type": "integer", "minimum": 1 },
+    "item_id": { "type": "integer", "minimum": 1 },
+    "quantity_moved": { "type": "number", "minimum": 0 },
+    "from_bin_id": { "type": "integer", "minimum": 1 },
+    "to_bin_id": { "type": "integer", "minimum": 1 },
+    "lot_number": { "type": ["string", "null"] },
+    "pallet_id": { "type": ["integer", "null"] },
+    "expiry_date": { "type": ["string", "null"], "format": "date" },
+    "detected_at": { "type": "string", "format": "date-time" }
+  }
+}
+

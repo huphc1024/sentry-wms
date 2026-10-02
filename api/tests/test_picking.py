@@ -500,7 +500,7 @@ def test_next_pick_with_zone_and_aisle(client, auth_headers):
 
 def test_next_pick_with_zone_no_aisle(client, auth_headers):
     """Bin with zone but no aisle returns zone and aisle=null."""
-    # The staging bin (RCV-01) has zone (Receiving Area) but no aisle
+    # The staging bin (RCV-01) has zone (Khu nhận hàng) but no aisle
     # Create an SO that needs an item in a staging-like location
     conn = get_raw_connection()
     cur = conn.cursor()
@@ -538,7 +538,7 @@ def test_next_pick_with_zone_no_aisle(client, auth_headers):
     resp = client.get(f"/api/picking/batch/{batch['batch_id']}/next", headers=auth_headers)
     data = resp.get_json()
     assert data["bin_code"] == "RECV-01"
-    assert data["zone"] == "Receiving Area"
+    assert data["zone"] == "Khu nhận hàng"
     assert data["aisle"] is None
 
 

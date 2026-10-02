@@ -1,6 +1,6 @@
 """Base connector interface and result types for ERP/commerce integrations.
 
-This module defines the contract that all Sentry WMS connectors must implement.
+This module defines the contract that all Sơn Lộc WMS connectors must implement.
 Connectors bridge external systems (NetSuite, BigCommerce, Shopify, etc.) with
 the WMS by providing a standard interface for syncing orders, items, inventory,
 and pushing fulfillment data back to the source system.
@@ -313,7 +313,7 @@ class BaseConnector(ABC):
     def push_fulfillment(self, order_id: str, tracking: str, carrier: str) -> PushResult:
         """Push shipment confirmation back to the external system.
 
-        Called after Sentry WMS ships an order. The connector should
+        Called after Sơn Lộc WMS ships an order. The connector should
         create a fulfillment record in the ERP with the tracking info.
 
         Args:

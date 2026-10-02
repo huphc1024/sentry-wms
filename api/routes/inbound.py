@@ -43,6 +43,7 @@ from services.inbound_service import (
     get_max_body_kb,
     handle_inbound,
 )
+from services.customer_token_scope import token_customer_id
 from services.inventory_service import add_inventory
 from services.mapping_loader import MappingDocument
 from services.rate_limit import limiter
@@ -316,7 +317,7 @@ def _inventory_update_post():
 
     item_row = g.db.execute(
         text("""
-            SELECT i.item_id, i.sku, i.external_id
+            SELECT i.item_id, i.sku, i.external_id, i.owner_customer_id
             FROM cross_system_mappings csm
             JOIN items i ON i.external_id = csm.canonical_id
             WHERE csm.source_system = :ss
@@ -325,6 +326,19 @@ def _inventory_update_post():
         """),
         {"ss": source_system, "sid": item_external_id},
     ).fetchone()
+    # Phase 6 (mig 089): a customer-bound token may only move its own
+    # stock. An item owned by another customer is reported exactly like
+    # an item that does not exist -- "not yours" and "not there" must
+    # stay indistinguishable, or the endpoint becomes an existence
+    # oracle over other tenants' SKUs (same V-026 reasoning as the
+    # portal's 404-not-403 rule).
+    scope_customer_id = token_customer_id(g.current_token)
+    if (
+        item_row
+        and scope_customer_id
+        and str(item_row.owner_customer_id or "") != scope_customer_id
+    ):
+        item_row = None
     if not item_row:
         response = make_response(
             jsonify({

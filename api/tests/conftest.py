@@ -159,7 +159,10 @@ def _seed_database():
         "                                updated_at = NOW() "
         " WHERE singleton = TRUE"
     )
-    with open(SEED_PATH) as f:
+    # encoding is explicit: the seed SQL carries Vietnamese item/warehouse
+    # names, and on Windows open() defaults to cp1252, which cannot decode
+    # them -- every test in the suite errored during collection.
+    with open(SEED_PATH, encoding="utf-8") as f:
         cur.execute(f.read())
     # The seed SQL inserts the admin user with a placeholder password_hash
     # (see V-069). In production, seed.sh overwrites it with a random

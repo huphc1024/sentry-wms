@@ -59,19 +59,33 @@ class ItemImportRow(_BaseImportRow):
     description: Optional[str] = Field(None, max_length=1000)
     upc: Optional[str] = Field(None, max_length=128)
     category: Optional[str] = Field(None, max_length=128)
+    storage_profile: Optional[str] = Field(None, max_length=20)
     weight_lbs: Optional[Decimal] = Field(None, ge=0, le=99999)
     weight: Optional[Decimal] = Field(None, ge=0, le=99999)  # synonym accepted
+    length_in: Optional[Decimal] = Field(None, ge=0, le=99999)
+    width_in: Optional[Decimal] = Field(None, ge=0, le=99999)
+    height_in: Optional[Decimal] = Field(None, ge=0, le=99999)
+    is_lot_tracked: Optional[bool] = False
+    is_serial_tracked: Optional[bool] = False
     default_bin: Optional[str] = Field(None, max_length=64)
     quantity: Optional[int] = Field(None, ge=0, le=1000000)
     qty: Optional[int] = Field(None, ge=0, le=1000000)  # synonym accepted
 
     @field_validator(
-        "sku", "item_name", "name", "description", "upc", "category", "default_bin",
+        "sku", "item_name", "name", "description", "upc", "category",
+        "storage_profile", "default_bin",
         mode="before",
     )
     @classmethod
     def _no_formula(cls, v):
         return _reject_formula_prefix(v)
+
+    @field_validator("storage_profile")
+    @classmethod
+    def _storage_profile(cls, v):
+        if v is not None and v not in ("HEAVY", "FMCG", "FULFILLMENT", "PROJECT"):
+            raise ValueError("must be HEAVY, FMCG, FULFILLMENT, or PROJECT")
+        return v
 
     def resolved_name(self) -> Optional[str]:
         return self.item_name or self.name
@@ -98,8 +112,11 @@ class BinImportRow(_BaseImportRow):
     aisle: Optional[str] = Field(None, max_length=32)
     row_num: Optional[int] = Field(None, ge=0)
     level_num: Optional[int] = Field(None, ge=0)
+    position_num: Optional[int] = Field(None, ge=0)
     pick_sequence: Optional[int] = Field(None, ge=0)
     putaway_sequence: Optional[int] = Field(None, ge=0)
+    max_weight_lbs: Optional[Decimal] = Field(None, ge=0, le=999999)
+    max_volume_cuft: Optional[Decimal] = Field(None, ge=0, le=999999)
     description: Optional[str] = Field(None, max_length=200)
 
     @field_validator(

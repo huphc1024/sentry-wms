@@ -68,7 +68,8 @@ def _plan_coverage(db, so_lines_by_item, warehouse_id):
                 """
                 SELECT inv.inventory_id, inv.bin_id, inv.quantity_on_hand, inv.quantity_allocated,
                        (inv.quantity_on_hand - inv.quantity_allocated) AS available,
-                       b.pick_sequence, b.bin_type, inv.lot_number, inv.updated_at
+                       b.pick_sequence, b.bin_type, inv.lot_number, inv.expiry_date,
+                       inv.pallet_id, inv.updated_at
                 FROM inventory inv
                 JOIN bins b ON b.bin_id = inv.bin_id
                 WHERE inv.item_id = :item_id
@@ -76,6 +77,7 @@ def _plan_coverage(db, so_lines_by_item, warehouse_id):
                   AND (inv.quantity_on_hand - inv.quantity_allocated) > 0
                   AND b.bin_type IN (:bin_pickable, :bin_pickable_staging)
                 ORDER BY
+                  inv.expiry_date ASC NULLS LAST,
                   b.pick_sequence ASC,
                   inv.updated_at ASC
                 FOR UPDATE OF inv
@@ -386,7 +388,8 @@ def create_pick_batch(db, so_identifiers, warehouse_id, username, exclude_so_ids
                     """
                     SELECT inv.inventory_id, inv.bin_id, inv.quantity_on_hand, inv.quantity_allocated,
                            (inv.quantity_on_hand - inv.quantity_allocated) AS available,
-                           b.pick_sequence, b.bin_type, inv.lot_number
+                           b.pick_sequence, b.bin_type, inv.lot_number,
+                           inv.expiry_date, inv.pallet_id
                     FROM inventory inv
                     JOIN bins b ON b.bin_id = inv.bin_id
                     WHERE inv.item_id = :item_id
@@ -394,6 +397,7 @@ def create_pick_batch(db, so_identifiers, warehouse_id, username, exclude_so_ids
                       AND (inv.quantity_on_hand - inv.quantity_allocated) > 0
                       AND b.bin_type IN (:bin_pickable, :bin_pickable_staging)
                     ORDER BY
+                      inv.expiry_date ASC NULLS LAST,
                       b.pick_sequence ASC,
                       inv.updated_at ASC
                     FOR UPDATE OF inv
@@ -430,9 +434,10 @@ def create_pick_batch(db, so_identifiers, warehouse_id, username, exclude_so_ids
                     text(
                         """
                         INSERT INTO pick_tasks (batch_id, so_id, so_line_id, item_id, bin_id,
-                                                quantity_to_pick, pick_sequence, tote_number, status)
+                                                pallet_id, quantity_to_pick, pick_sequence,
+                                                tote_number, status)
                         VALUES (:batch_id, :so_id, :so_line_id, :item_id, :bin_id,
-                                :qty, :pick_seq, :tote, :task_status)
+                                :pallet_id, :qty, :pick_seq, :tote, :task_status)
                         """
                     ),
                     {
@@ -441,6 +446,7 @@ def create_pick_batch(db, so_identifiers, warehouse_id, username, exclude_so_ids
                         "so_line_id": line.so_line_id,
                         "item_id": line.item_id,
                         "bin_id": inv.bin_id,
+                        "pallet_id": inv.pallet_id,
                         "qty": take,
                         "pick_seq": inv.pick_sequence,
                         "tote": tote_number,
@@ -550,16 +556,19 @@ def get_next_task(db, batch_id):
             SELECT pt.pick_task_id, pt.pick_sequence, pt.quantity_to_pick, pt.quantity_picked,
                    pt.tote_number, pt.status,
                    b.bin_code, b.bin_barcode, b.aisle, b.row_num, b.level_num,
+                   b.position_num,
                    i.sku, i.item_name, i.upc,
                    so.so_number,
                    tro.to_number,
-                   z.zone_name
+                   z.zone_name, pt.pallet_id, p.pallet_code, p.pallet_barcode,
+                   p.lot_code, p.expiry_date AS pallet_expiry_date
             FROM pick_tasks pt
             JOIN bins b ON b.bin_id = pt.bin_id
             LEFT JOIN zones z ON z.zone_id = b.zone_id
             JOIN items i ON i.item_id = pt.item_id
             LEFT JOIN sales_orders so ON so.so_id = pt.so_id
             LEFT JOIN transfer_orders tro ON tro.to_id = pt.to_id
+            LEFT JOIN pallets p ON p.pallet_id = pt.pallet_id
             WHERE pt.batch_id = :bid AND pt.status = :task_pending
             ORDER BY pt.pick_sequence ASC
             LIMIT 1
@@ -603,7 +612,7 @@ def confirm_pick(db, pick_task_id, scanned_barcode, quantity_picked, username):
             """
             SELECT pt.pick_task_id, pt.batch_id, pt.so_id, pt.so_line_id,
                    pt.to_id, pt.to_line_id,
-                   pt.item_id, pt.bin_id, pt.quantity_to_pick, pt.status,
+                   pt.item_id, pt.bin_id, pt.pallet_id, pt.quantity_to_pick, pt.status,
                    pt.tote_number
             FROM pick_tasks pt
             WHERE pt.pick_task_id = :tid
@@ -629,7 +638,21 @@ def confirm_pick(db, pick_task_id, scanned_barcode, quantity_picked, username):
         {"iid": task.item_id},
     ).fetchone()
 
-    if not _barcode_matches(scanned_barcode, item.upc, item.barcode_aliases):
+    pallet = None
+    if task.pallet_id:
+        pallet = db.execute(
+            text("""
+                SELECT pallet_code, pallet_barcode, customer_id, warehouse_id
+                FROM pallets WHERE pallet_id = :pallet_id
+            """),
+            {"pallet_id": task.pallet_id},
+        ).fetchone()
+    pallet_matches = pallet and scanned_barcode in {
+        pallet.pallet_code, pallet.pallet_barcode
+    }
+    if task.pallet_id and not pallet_matches:
+        raise BarcodeError(f"Wrong pallet scanned. Expected: {pallet.pallet_code}")
+    if not task.pallet_id and not _barcode_matches(scanned_barcode, item.upc, item.barcode_aliases):
         raise BarcodeError(f"Wrong item scanned. Expected SKU: {item.sku}")
 
     # 3. Update pick task
@@ -714,10 +737,25 @@ def confirm_pick(db, pick_task_id, scanned_barcode, quantity_picked, username):
                     quantity_allocated = GREATEST(0, quantity_allocated - :allocated),
                     updated_at = NOW()
                 WHERE item_id = :iid AND bin_id = :bid
+                  AND pallet_id IS NOT DISTINCT FROM :pallet_id
                 """
             ),
-            {"picked": quantity_picked, "allocated": task.quantity_to_pick, "iid": task.item_id, "bid": task.bin_id},
+            {
+                "picked": quantity_picked, "allocated": task.quantity_to_pick,
+                "iid": task.item_id, "bid": task.bin_id,
+                "pallet_id": task.pallet_id,
+            },
         )
+        if task.pallet_id:
+            db.execute(
+                text("""
+                    UPDATE pallets
+                    SET quantity = GREATEST(0, quantity - :picked),
+                        updated_at = NOW()
+                    WHERE pallet_id = :pallet_id
+                """),
+                {"picked": quantity_picked, "pallet_id": task.pallet_id},
+            )
 
     # 6. Get remaining count
     remaining = db.execute(
@@ -772,6 +810,18 @@ def confirm_pick(db, pick_task_id, scanned_barcode, quantity_picked, username):
                 "batch_id": task.batch_id,
             },
         )
+        # 3PL pick charge: one PICK event per pick_task when pallet has a customer.
+        if task.pallet_id and pallet and pallet.customer_id:
+            from services.billing_service import create_billing_event
+            create_billing_event(
+                db,
+                pallet.customer_id,
+                pallet.warehouse_id or batch.warehouse_id,
+                "PICK",
+                "PICK_TASK",
+                pick_task_id,
+                quantity_picked,
+            )
 
     db.commit()
 
@@ -1516,7 +1566,7 @@ def wave_create(db, so_ids, warehouse_id, username, exclude_so_ids=None):
                 """
                 SELECT inv.inventory_id, inv.bin_id, inv.quantity_on_hand, inv.quantity_allocated,
                        (inv.quantity_on_hand - inv.quantity_allocated) AS available,
-                       b.pick_sequence, b.bin_type
+                       b.pick_sequence, b.bin_type, inv.expiry_date, inv.pallet_id
                 FROM inventory inv
                 JOIN bins b ON b.bin_id = inv.bin_id
                 WHERE inv.item_id = :item_id
@@ -1524,6 +1574,7 @@ def wave_create(db, so_ids, warehouse_id, username, exclude_so_ids=None):
                   AND (inv.quantity_on_hand - inv.quantity_allocated) > 0
                   AND b.bin_type IN (:bin_pickable, :bin_pickable_staging)
                 ORDER BY
+                  inv.expiry_date ASC NULLS LAST,
                   b.pick_sequence ASC,
                   inv.updated_at ASC
                 FOR UPDATE OF inv
@@ -1564,9 +1615,10 @@ def wave_create(db, so_ids, warehouse_id, username, exclude_so_ids=None):
                 text(
                     """
                     INSERT INTO pick_tasks (batch_id, so_id, so_line_id, item_id, bin_id,
-                                            quantity_to_pick, pick_sequence, tote_number, status)
+                                            pallet_id, quantity_to_pick, pick_sequence,
+                                            tote_number, status)
                     VALUES (:bid, :so_id, :so_line_id, :item_id, :bin_id,
-                            :qty, :pick_seq, 'WAVE', :task_status)
+                            :pallet_id, :qty, :pick_seq, 'WAVE', :task_status)
                     RETURNING pick_task_id
                     """
                 ),
@@ -1576,6 +1628,7 @@ def wave_create(db, so_ids, warehouse_id, username, exclude_so_ids=None):
                     "so_line_id": first_contrib["so_line_id"],
                     "item_id": item_id,
                     "bin_id": inv.bin_id,
+                    "pallet_id": inv.pallet_id,
                     "qty": take,
                     "pick_seq": inv.pick_sequence,
                     "task_status": TASK_PENDING,
@@ -1883,16 +1936,19 @@ def _get_tasks_for_batch(db, batch_id):
             SELECT pt.pick_task_id, pt.pick_sequence, pt.quantity_to_pick, pt.quantity_picked,
                    pt.tote_number, pt.status,
                    b.bin_code, b.bin_barcode, b.aisle, b.row_num, b.level_num,
+                   b.position_num,
                    i.sku, i.item_name, i.upc,
                    so.so_number,
                    tro.to_number,
-                   z.zone_name
+                   z.zone_name, pt.pallet_id, p.pallet_code, p.pallet_barcode,
+                   p.lot_code, p.expiry_date AS pallet_expiry_date
             FROM pick_tasks pt
             JOIN bins b ON b.bin_id = pt.bin_id
             LEFT JOIN zones z ON z.zone_id = b.zone_id
             JOIN items i ON i.item_id = pt.item_id
             LEFT JOIN sales_orders so ON so.so_id = pt.so_id
             LEFT JOIN transfer_orders tro ON tro.to_id = pt.to_id
+            LEFT JOIN pallets p ON p.pallet_id = pt.pallet_id
             WHERE pt.batch_id = :bid
             ORDER BY pt.pick_sequence ASC, b.bin_code ASC
             """
@@ -1910,12 +1966,29 @@ def _task_row_to_dict(row):
         "bin_code": row.bin_code,
         "bin_barcode": row.bin_barcode,
         "zone": row.zone_name or None,
+        "zone_name": row.zone_name or None,
         "aisle": row.aisle or None,
         "row_num": row.row_num,
         "level_num": row.level_num,
+        "position_num": getattr(row, "position_num", None),
+        "rack_label": (
+            f"{row.aisle}-{str(row.row_num).zfill(3)}"
+            if row.aisle and row.row_num else row.bin_code
+        ),
+        "slot_label": (
+            f"L{row.level_num or 1}-P{getattr(row, 'position_num', None) or 1}"
+        ),
         "sku": row.sku,
         "item_name": row.item_name,
         "upc": row.upc,
+        "pallet_id": getattr(row, "pallet_id", None),
+        "pallet_code": getattr(row, "pallet_code", None),
+        "pallet_barcode": getattr(row, "pallet_barcode", None),
+        "lot_code": getattr(row, "lot_code", None),
+        "expiry_date": (
+            row.pallet_expiry_date.isoformat()
+            if getattr(row, "pallet_expiry_date", None) else None
+        ),
         "quantity_to_pick": row.quantity_to_pick,
         "tote_number": row.tote_number,
         "so_number": row.so_number,

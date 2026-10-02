@@ -48,7 +48,7 @@ class TestListBackorders:
         assert target["status"] == "WAITING_STOCK"
         assert target["parent_so_number"] == "SO-2026-001"
         assert target["so_number"] == "SO-2026-001-BO"
-        assert target["customer_name"] == "Test Customer 1"
+        assert target["customer_name"] == "Khách hàng thử 1"
         assert len(target["items"]) == 1
         assert target["items"][0]["sku"] == "TST-001"
         assert target["items"][0]["qty"] == 1

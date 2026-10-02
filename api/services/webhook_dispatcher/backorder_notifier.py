@@ -58,7 +58,7 @@ _SENTRY_BASE_URL_ENV = "SENTRY_ADMIN_BASE_URL"
 
 
 def _resolve_base_url() -> str:
-    """Optional. The MessageCard "Open in Sentry" link falls back to
+    """Optional. The MessageCard "Open in Sơn Lộc WMS" link falls back to
     a relative URL when this is unset; relative still resolves
     inside Teams desktop / web clients."""
     return os.environ.get(_SENTRY_BASE_URL_ENV, "")

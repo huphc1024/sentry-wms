@@ -205,7 +205,7 @@ def list_zones():
 
 @admin_bp.route("/zones", methods=["POST"])
 @require_auth
-@require_admin_or_page_permission("zones")
+@require_admin_or_page_permission("zones", "warehouse-simulation")
 @validate_body(CreateZoneRequest)
 @with_db
 def create_zone(validated):
@@ -329,7 +329,9 @@ def list_bins():
     rows = g.db.execute(
         text(f"""
             SELECT b.bin_id, b.zone_id, COALESCE(z.zone_name, '') AS zone_name, b.warehouse_id, b.bin_code, b.bin_barcode, b.bin_type,
-                   b.aisle, b.row_num, b.level_num, b.position_num, b.pick_sequence, b.putaway_sequence, b.is_active
+                   b.aisle, b.row_num, b.level_num, b.position_num,
+                   b.pick_sequence, b.putaway_sequence, b.max_weight_lbs,
+                   b.max_volume_cuft, b.description, b.is_active
             FROM bins b
             LEFT JOIN zones z ON z.zone_id = b.zone_id
             {where_sql}
@@ -343,7 +345,10 @@ def list_bins():
             {"bin_id": r.bin_id, "zone_id": r.zone_id, "zone_name": r.zone_name, "warehouse_id": r.warehouse_id,
              "bin_code": r.bin_code, "bin_barcode": r.bin_barcode, "bin_type": r.bin_type,
              "aisle": r.aisle, "row_num": r.row_num, "level_num": r.level_num, "position_num": r.position_num,
-             "pick_sequence": r.pick_sequence, "putaway_sequence": r.putaway_sequence, "is_active": r.is_active}
+             "pick_sequence": r.pick_sequence, "putaway_sequence": r.putaway_sequence,
+             "max_weight_lbs": float(r.max_weight_lbs) if r.max_weight_lbs is not None else None,
+             "max_volume_cuft": float(r.max_volume_cuft) if r.max_volume_cuft is not None else None,
+             "description": r.description, "is_active": r.is_active}
             for r in rows
         ],
         "total": total, "page": page, "per_page": per_page, "pages": pages,
@@ -358,7 +363,9 @@ def get_bin(bin_id):
     b = g.db.execute(
         text("""
             SELECT b.bin_id, b.zone_id, z.zone_name, b.warehouse_id, b.bin_code, b.bin_barcode, b.bin_type,
-                   b.aisle, b.row_num, b.level_num, b.position_num, b.pick_sequence, b.putaway_sequence, b.is_active
+                   b.aisle, b.row_num, b.level_num, b.position_num,
+                   b.pick_sequence, b.putaway_sequence, b.max_weight_lbs,
+                   b.max_volume_cuft, b.description, b.is_active
             FROM bins b JOIN zones z ON z.zone_id = b.zone_id
             WHERE b.bin_id = :bid
         """),
@@ -380,7 +387,10 @@ def get_bin(bin_id):
         "bin": {"bin_id": b.bin_id, "zone_id": b.zone_id, "zone_name": b.zone_name, "warehouse_id": b.warehouse_id,
                 "bin_code": b.bin_code, "bin_barcode": b.bin_barcode, "bin_type": b.bin_type,
                 "aisle": b.aisle, "row_num": b.row_num, "level_num": b.level_num, "position_num": b.position_num,
-                "pick_sequence": b.pick_sequence, "putaway_sequence": b.putaway_sequence, "is_active": b.is_active},
+                "pick_sequence": b.pick_sequence, "putaway_sequence": b.putaway_sequence,
+                "max_weight_lbs": float(b.max_weight_lbs) if b.max_weight_lbs is not None else None,
+                "max_volume_cuft": float(b.max_volume_cuft) if b.max_volume_cuft is not None else None,
+                "description": b.description, "is_active": b.is_active},
         "inventory": [{"item_id": r.item_id, "sku": r.sku, "item_name": r.item_name,
                        "quantity_on_hand": r.quantity_on_hand, "quantity_allocated": r.quantity_allocated} for r in inv_rows],
     })
@@ -388,7 +398,7 @@ def get_bin(bin_id):
 
 @admin_bp.route("/bins", methods=["POST"])
 @require_auth
-@require_admin_or_page_permission("bins")
+@require_admin_or_page_permission("bins", "warehouse-simulation")
 @validate_body(CreateBinRequest)
 @with_db
 def create_bin(validated):
@@ -403,15 +413,30 @@ def create_bin(validated):
 
     result = g.db.execute(
         text("""
-            INSERT INTO bins (zone_id, warehouse_id, bin_code, bin_barcode, bin_type, aisle, row_num, level_num, position_num, pick_sequence, putaway_sequence, external_id)
-            VALUES (:zone_id, :wid, :code, :barcode, :type, :aisle, :row, :level, :pos, :pick_seq, :put_seq, :ext_id)
-            RETURNING bin_id, zone_id, warehouse_id, bin_code, bin_barcode, bin_type, aisle, row_num, level_num, position_num, pick_sequence, putaway_sequence, is_active
+            INSERT INTO bins (
+                zone_id, warehouse_id, bin_code, bin_barcode, bin_type,
+                aisle, row_num, level_num, position_num, pick_sequence,
+                putaway_sequence, max_weight_lbs, max_volume_cuft,
+                description, external_id
+            )
+            VALUES (
+                :zone_id, :wid, :code, :barcode, :type, :aisle, :row,
+                :level, :pos, :pick_seq, :put_seq, :max_weight,
+                :max_volume, :description, :ext_id
+            )
+            RETURNING bin_id, zone_id, warehouse_id, bin_code, bin_barcode,
+                      bin_type, aisle, row_num, level_num, position_num,
+                      pick_sequence, putaway_sequence, max_weight_lbs,
+                      max_volume_cuft, description, is_active
         """),
         {
             "zone_id": data["zone_id"], "wid": data["warehouse_id"], "code": data["bin_code"],
             "barcode": data["bin_barcode"], "type": data["bin_type"],
             "aisle": data.get("aisle"), "row": data.get("row_num"), "level": data.get("level_num"),
             "pos": data.get("position_num"), "pick_seq": data.get("pick_sequence", 0), "put_seq": data.get("putaway_sequence", 0),
+            "max_weight": data.get("max_weight_lbs"),
+            "max_volume": data.get("max_volume_cuft"),
+            "description": data.get("description"),
             "ext_id": str(uuid.uuid4()),
         },
     )
@@ -422,7 +447,10 @@ def create_bin(validated):
         "bin_code": row.bin_code, "bin_barcode": row.bin_barcode, "bin_type": row.bin_type,
         "aisle": row.aisle, "row_num": row.row_num, "level_num": row.level_num,
         "position_num": row.position_num, "pick_sequence": row.pick_sequence,
-        "putaway_sequence": row.putaway_sequence, "is_active": row.is_active,
+        "putaway_sequence": row.putaway_sequence,
+        "max_weight_lbs": float(row.max_weight_lbs) if row.max_weight_lbs is not None else None,
+        "max_volume_cuft": float(row.max_volume_cuft) if row.max_volume_cuft is not None else None,
+        "description": row.description, "is_active": row.is_active,
     }), 201
 
 
@@ -438,7 +466,12 @@ def update_bin(bin_id, validated):
     if not existing:
         return jsonify({"error": "Bin not found"}), 404
 
-    ALLOWED_FIELDS = {"bin_code", "bin_barcode", "bin_type", "aisle", "row_num", "level_num", "position_num", "pick_sequence", "putaway_sequence", "is_active", "zone_id"}
+    ALLOWED_FIELDS = {
+        "bin_code", "bin_barcode", "bin_type", "aisle", "row_num",
+        "level_num", "position_num", "pick_sequence", "putaway_sequence",
+        "max_weight_lbs", "max_volume_cuft", "description", "is_active",
+        "zone_id",
+    }
     fields, params = [], {"bid": bin_id}
     for col in ALLOWED_FIELDS:
         if col in data:
@@ -454,7 +487,9 @@ def update_bin(bin_id, validated):
     row = g.db.execute(
         text("""
             SELECT b.bin_id, b.zone_id, z.zone_name, b.warehouse_id, b.bin_code, b.bin_barcode, b.bin_type,
-                   b.aisle, b.row_num, b.level_num, b.position_num, b.pick_sequence, b.putaway_sequence, b.is_active
+                   b.aisle, b.row_num, b.level_num, b.position_num,
+                   b.pick_sequence, b.putaway_sequence, b.max_weight_lbs,
+                   b.max_volume_cuft, b.description, b.is_active
             FROM bins b JOIN zones z ON z.zone_id = b.zone_id WHERE b.bin_id = :bid
         """),
         {"bid": bin_id},
@@ -464,7 +499,10 @@ def update_bin(bin_id, validated):
         "bin_code": row.bin_code, "bin_barcode": row.bin_barcode, "bin_type": row.bin_type,
         "aisle": row.aisle, "row_num": row.row_num, "level_num": row.level_num,
         "position_num": row.position_num, "pick_sequence": row.pick_sequence,
-        "putaway_sequence": row.putaway_sequence, "is_active": row.is_active,
+        "putaway_sequence": row.putaway_sequence,
+        "max_weight_lbs": float(row.max_weight_lbs) if row.max_weight_lbs is not None else None,
+        "max_volume_cuft": float(row.max_volume_cuft) if row.max_volume_cuft is not None else None,
+        "description": row.description, "is_active": row.is_active,
     })
 
 

@@ -45,6 +45,7 @@ from sqlalchemy import text
 from middleware.auth_middleware import require_wms_token
 from middleware.db import with_db
 from schemas.polling import SnapshotQuery
+from services.customer_token_scope import token_customer_id
 from services.rate_limit import limiter
 
 
@@ -205,6 +206,10 @@ def snapshot_inventory():
         last_i=last_i,
         last_b=last_b,
         limit=query.limit,
+        # Phase 6 (mig 089): a customer-bound token sees only its own
+        # stock. None for an operator token -- the query is then byte
+        # for byte the pre-phase-6 one.
+        owner_customer_id=token_customer_id(token),
     )
 
     # Touch last_accessed_at so the keeper's idle-timeout clock is
@@ -302,11 +307,19 @@ def _run_keyset_query(
     last_i: int,
     last_b: int,
     limit: int,
+    owner_customer_id: Optional[str] = None,
 ):
     """Open a fresh connection, import the keeper's snapshot, and
     run the keyset-paginated inventory query. Returns a list of
     dicts (each carrying ``_item_id`` / ``_bin_id`` for cursor use,
-    stripped before the response is serialised)."""
+    stripped before the response is serialised).
+
+    ``owner_customer_id`` confines the page to items that customer owns
+    (items.owner_customer_id, mig 087). Filtering inside the keyset
+    query -- rather than dropping rows afterwards -- keeps the page-size
+    contract intact: a page trimmed after the LIMIT would come back
+    short, and a short page is this endpoint's "scan complete" signal,
+    so a customer's scan would end early and silently."""
     import os as _os
 
     database_url = _os.environ["DATABASE_URL"]
@@ -332,10 +345,15 @@ def _run_keyset_query(
               JOIN bins b  ON b.bin_id  = inv.bin_id
              WHERE inv.warehouse_id = %s
                AND (inv.warehouse_id, inv.item_id, inv.bin_id) > (%s, %s, %s)
+               AND (%s::uuid IS NULL OR i.owner_customer_id = %s::uuid)
              ORDER BY inv.warehouse_id, inv.item_id, inv.bin_id
              LIMIT %s
             """,
-            (warehouse_id, last_w, last_i, last_b, limit),
+            (
+                warehouse_id, last_w, last_i, last_b,
+                owner_customer_id, owner_customer_id,
+                limit,
+            ),
         )
         cols = [c.name for c in cur.description]
         rows = [dict(zip(cols, r)) for r in cur.fetchall()]

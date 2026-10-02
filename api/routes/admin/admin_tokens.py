@@ -16,6 +16,7 @@ threshold logic.
 import hashlib
 import os
 import secrets
+import uuid
 from datetime import datetime, timezone
 from typing import Optional
 
@@ -153,6 +154,14 @@ def _row_to_listing(row) -> dict:
         "mapping_overrides_keys": sorted(
             (getattr(row, "mapping_overrides", None) or {}).keys()
         ),
+        # Phase 6 (mig 089): tenant binding. None on every operator
+        # token. customer_code rides along so the listing can name the
+        # tenant without the UI joining anything.
+        "customer_id": (
+            str(row.customer_id) if getattr(row, "customer_id", None) else None
+        ),
+        "customer_code": getattr(row, "customer_code", None),
+        "customer_name": getattr(row, "customer_name", None),
     }
 
 
@@ -201,12 +210,14 @@ def scope_catalog():
     """
     from flask import current_app
     from middleware.auth_middleware import (
+        CUSTOMER_SCOPED_OUTBOUND_SLUGS,
         V170_INBOUND_RESOURCE_BY_ENDPOINT,
         V190_DOCKD_SLUG,
         _V190_DOCKD_FLASK_ENDPOINTS,
         V1100_POS_SLUG,
         _V1100_POS_FLASK_ENDPOINTS,
     )
+    from services.customer_token_scope import FORBIDDEN_RESOURCES
 
     event_types = sorted({entry[0] for entry in V150_CATALOG})
     registered = set(current_app.view_functions.keys())
@@ -239,11 +250,37 @@ def scope_catalog():
         {"source_system": r.source_system, "kind": r.kind}
         for r in source_rows
     ]
+    # Phase 6 (mig 089): customers a token may be bound to. Served from
+    # here rather than the UI calling GET /api/admin/customers, which
+    # sits behind the separate `customers` page grant -- an operator who
+    # may issue tokens would otherwise get a 403 on modal open.
+    customer_rows = g.db.execute(
+        text(
+            "SELECT canonical_id, customer_code, customer_name "
+            "  FROM customers "
+            " WHERE is_active IS NOT FALSE "
+            " ORDER BY customer_code"
+        )
+    ).fetchall()
+    customers = [
+        {
+            "customer_id": str(r.canonical_id),
+            "customer_code": r.customer_code,
+            "customer_name": r.customer_name,
+        }
+        for r in customer_rows
+    ]
     return jsonify({
         "event_types": event_types,
         "endpoints": endpoints,
         "inbound_resources": inbound_resources,
         "source_systems": source_systems,
+        "customers": customers,
+        # The slugs a customer-bound token may carry, so the modal can
+        # grey out the rest instead of letting the operator discover the
+        # rule from a 422.
+        "customer_scoped_endpoints": sorted(CUSTOMER_SCOPED_OUTBOUND_SLUGS),
+        "customer_forbidden_inbound_resources": sorted(FORBIDDEN_RESOURCES),
     })
 
 
@@ -341,6 +378,38 @@ def create_token(validated):
             422,
         )
 
+    # Phase 6 (mig 089): the customer must exist. The FK would catch it
+    # on INSERT, but a malformed UUID raises a DataError instead, and
+    # both come back to the UI as a 500 rather than a named 400. Same
+    # pre-INSERT existence-check posture as V-210 above.
+    if validated.customer_id:
+        try:
+            customer_uuid = str(uuid.UUID(validated.customer_id))
+        except (ValueError, AttributeError, TypeError):
+            return (
+                jsonify({
+                    "error": "unknown_customer_id",
+                    "customer_id": validated.customer_id,
+                }),
+                400,
+            )
+        row = g.db.execute(
+            text(
+                "SELECT 1 FROM customers WHERE canonical_id = :cid"
+            ),
+            {"cid": customer_uuid},
+        ).fetchone()
+        if row is None:
+            return (
+                jsonify({
+                    "error": "unknown_customer_id",
+                    "customer_id": validated.customer_id,
+                }),
+                400,
+            )
+    else:
+        customer_uuid = None
+
     plaintext = secrets.token_urlsafe(32)
     token_hash = _hash_for_storage(plaintext)
 
@@ -348,13 +417,13 @@ def create_token(validated):
         "token_name, token_hash, "
         "warehouse_ids, event_types, endpoints, connector_id, "
         "source_system, inbound_resources, mapping_override, "
-        "mapping_overrides"
+        "mapping_overrides, customer_id"
     )
     base_vals = (
         ":name, :hash, "
         ":wh_ids, :ev_types, :endpoints, :connector_id, "
         ":source_system, :inbound_resources, :mapping_override, "
-        ":mapping_overrides"
+        ":mapping_overrides, :customer_id"
     )
     base_params = {
         "name": validated.token_name,
@@ -367,6 +436,7 @@ def create_token(validated):
         "inbound_resources": validated.inbound_resources,
         "mapping_override": validated.mapping_override,
         "mapping_overrides": Json(validated.mapping_overrides),
+        "customer_id": customer_uuid,
     }
     if validated.expires_at is not None:
         result = g.db.execute(
@@ -414,6 +484,11 @@ def create_token(validated):
             # field (empty list when no overrides) so audit shape is
             # uniform across history going forward.
             "mapping_overrides_keys": override_keys,
+            # Phase 6: which tenant this token speaks for (None =
+            # operator-owned). Part of the scope snapshot for the same
+            # reason warehouse_ids is: a later re-bind or delete must
+            # not erase what the token could reach when it was issued.
+            "customer_id": customer_uuid,
             "expires_at": row.expires_at.isoformat() if row.expires_at else None,
         },
     )
@@ -443,13 +518,15 @@ def list_tokens():
     rows = g.db.execute(
         text(
             """
-            SELECT token_id, token_name, warehouse_ids, event_types, endpoints,
-                   connector_id, status, created_at, rotated_at, expires_at,
-                   revoked_at, last_used_at,
-                   source_system, inbound_resources, mapping_override,
-                   mapping_overrides
-              FROM wms_tokens
-             ORDER BY created_at DESC
+            SELECT t.token_id, t.token_name, t.warehouse_ids, t.event_types,
+                   t.endpoints, t.connector_id, t.status, t.created_at,
+                   t.rotated_at, t.expires_at, t.revoked_at, t.last_used_at,
+                   t.source_system, t.inbound_resources, t.mapping_override,
+                   t.mapping_overrides, t.customer_id,
+                   c.customer_code, c.customer_name
+              FROM wms_tokens t
+              LEFT JOIN customers c ON c.canonical_id = t.customer_id
+             ORDER BY t.created_at DESC
             """
         )
     ).fetchall()

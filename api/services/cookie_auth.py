@@ -17,6 +17,14 @@ AUTH_COOKIE_NAME = "sentry_auth"
 CSRF_COOKIE_NAME = "sentry_csrf"
 CSRF_HEADER_NAME = "X-CSRF-Token"
 
+# Customer portal session cookies (phase 2). Distinct names so a staff
+# session and a portal session can coexist in one browser without either
+# overwriting the other -- an operator checking what a customer sees would
+# otherwise silently log themselves out of the admin panel, or worse, send
+# a staff cookie to a portal route.
+PORTAL_AUTH_COOKIE_NAME = "sentry_portal_auth"
+PORTAL_CSRF_COOKIE_NAME = "sentry_portal_csrf"
+
 CSRF_PROTECTED_METHODS = frozenset({"POST", "PUT", "PATCH", "DELETE"})
 
 
@@ -35,7 +43,13 @@ def _cookie_secure() -> bool:
     return bool(request.is_secure) or request.headers.get("X-Forwarded-Proto") == "https"
 
 
-def set_auth_cookies(response, token: str, csrf_token: str) -> None:
+def set_auth_cookies(
+    response,
+    token: str,
+    csrf_token: str,
+    auth_cookie_name: str = AUTH_COOKIE_NAME,
+    csrf_cookie_name: str = CSRF_COOKIE_NAME,
+) -> None:
     # NOTE (V-112): SameSite=Strict is correct for the current LAN
     # deployment model. Revisit if SSO / external-link integration is
     # scoped (clicks from external providers would be cross-site nav
@@ -43,7 +57,7 @@ def set_auth_cookies(response, token: str, csrf_token: str) -> None:
     secure = _cookie_secure()
     max_age = TOKEN_EXPIRY_HOURS * 3600
     response.set_cookie(
-        AUTH_COOKIE_NAME,
+        auth_cookie_name,
         token,
         max_age=max_age,
         httponly=True,
@@ -52,7 +66,7 @@ def set_auth_cookies(response, token: str, csrf_token: str) -> None:
         path="/",
     )
     response.set_cookie(
-        CSRF_COOKIE_NAME,
+        csrf_cookie_name,
         csrf_token,
         max_age=max_age,
         httponly=False,
@@ -62,10 +76,14 @@ def set_auth_cookies(response, token: str, csrf_token: str) -> None:
     )
 
 
-def clear_auth_cookies(response) -> None:
+def clear_auth_cookies(
+    response,
+    auth_cookie_name: str = AUTH_COOKIE_NAME,
+    csrf_cookie_name: str = CSRF_COOKIE_NAME,
+) -> None:
     secure = _cookie_secure()
     response.set_cookie(
-        AUTH_COOKIE_NAME,
+        auth_cookie_name,
         "",
         expires=0,
         max_age=0,
@@ -75,7 +93,7 @@ def clear_auth_cookies(response) -> None:
         path="/",
     )
     response.set_cookie(
-        CSRF_COOKIE_NAME,
+        csrf_cookie_name,
         "",
         expires=0,
         max_age=0,
@@ -86,9 +104,9 @@ def clear_auth_cookies(response) -> None:
     )
 
 
-def csrf_token_matches() -> bool:
+def csrf_token_matches(csrf_cookie_name: str = CSRF_COOKIE_NAME) -> bool:
     header = request.headers.get(CSRF_HEADER_NAME)
-    cookie = request.cookies.get(CSRF_COOKIE_NAME)
+    cookie = request.cookies.get(csrf_cookie_name)
     if not header or not cookie:
         return False
     return secrets.compare_digest(header, cookie)

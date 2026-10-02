@@ -247,7 +247,7 @@ class TestHappyPathSeededData:
         assert len(body["availability"]) == 1
         wh = body["availability"][0]
         assert wh["warehouse_id"] == "APT-LAB"
-        assert wh["warehouse_name"] == "Apartment Test Lab"
+        assert wh["warehouse_name"] == "Phòng Thử Nghiệm"
         assert wh["qty_available"] == 50
         assert len(wh["bins"]) == 1
         assert wh["bins"][0]["qty"] == 50

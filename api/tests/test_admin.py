@@ -208,6 +208,185 @@ class TestBins:
         assert resp.get_json()["pick_sequence"] == 999
 
 
+# ── Warehouse map (simulation) ────────────────────────────────────────────────
+
+class TestWarehouseMap:
+    def test_get_warehouse_map(self, client, auth_headers):
+        resp = client.get("/api/admin/warehouse-map?warehouse_id=1", headers=auth_headers)
+        assert resp.status_code == 200
+        data = resp.get_json()
+        assert data["warehouse_code"] == "APT-LAB"
+        assert len(data["zones"]) == 6
+        assert len(data["bins"]) == 16
+        assert "canvas" in data
+        assert data["bins"][0]["map"]["x"] is not None
+        assert "categories" in data
+        assert "racks" in data
+        assert "layout" in data
+        assert "config" in data["layout"]
+
+    def test_warehouse_map_no_synthetic_pallets(self, client, auth_headers):
+        resp = client.get("/api/admin/warehouse-map?warehouse_id=1", headers=auth_headers)
+        assert resp.status_code == 200
+        data = resp.get_json()
+        for bin_row in data["bins"]:
+            for pallet in bin_row.get("pallets") or []:
+                assert pallet.get("is_synthetic") is not True
+                assert isinstance(pallet.get("pallet_id"), int)
+            if bin_row.get("total_qty", 0) > 0:
+                assert isinstance(bin_row.get("contents"), list)
+
+    def test_save_warehouse_layout(self, client, auth_headers):
+        get_resp = client.get("/api/admin/warehouse-map?warehouse_id=1", headers=auth_headers)
+        assert get_resp.status_code == 200
+        layout = get_resp.get_json()["layout"]
+        racks = get_resp.get_json()["racks"][:2]
+        payload = {
+            "base_version": layout["config"].get("version", 0) if layout.get("has_saved_layout") else 0,
+            "layout": {
+                "world_width_m": 50,
+                "world_height_m": 40,
+                "warehouse_x_m": 2,
+                "warehouse_y_m": 2,
+                "warehouse_w_m": 46,
+                "warehouse_h_m": 30,
+                "grid_step_m": 0.25,
+            },
+            "zones": [],
+            "racks": [
+                {
+                    "rack_key": racks[0]["rack_key"],
+                    "zone_id": racks[0]["zone_id"],
+                    "label": racks[0]["rack_label"],
+                    "x_m": 10,
+                    "y_m": 4,
+                    "w_m": 2.5,
+                    "h_m": 3,
+                    "rotation_deg": 0,
+                }
+            ] if racks else [],
+            "paths": [
+                {
+                    "path_type": "FORKLIFT",
+                    "label": "Test lane",
+                    "points": [{"x": 3, "y": 3}, {"x": 40, "y": 3}],
+                    "width_m": 3,
+                    "one_way": False,
+                    "direction": "both",
+                    "sort_order": 0,
+                },
+                {
+                    "path_type": "PEDESTRIAN",
+                    "label": "Walk lane",
+                    "points": [{"x": 3, "y": 31}, {"x": 40, "y": 31}],
+                    "width_m": 1.5,
+                    "one_way": False,
+                    "direction": "both",
+                    "sort_order": 1,
+                },
+            ],
+        }
+        save_resp = client.put(
+            "/api/admin/warehouse-map/layout?warehouse_id=1",
+            json=payload,
+            headers=auth_headers,
+        )
+        assert save_resp.status_code == 200, save_resp.get_json()
+        saved = save_resp.get_json()
+        assert saved["version"] >= 1
+        assert saved["layout"]["config"]["coordinate_unit"] == "METER"
+        assert len(saved.get("layout", {}).get("paths", [])) == 2
+
+    def test_mobile_warehouse_map(self, client, auth_headers):
+        resp = client.get("/api/warehouse-map?warehouse_id=1", headers=auth_headers)
+        assert resp.status_code == 200
+        data = resp.get_json()
+        assert len(data["racks"]) >= 1
+        rack_key = data["racks"][0]["rack_key"]
+        detail = client.get(
+            f"/api/warehouse-map/rack/{rack_key}?warehouse_id=1",
+            headers=auth_headers,
+        )
+        assert detail.status_code == 200
+        assert detail.get_json()["rack"]["levels"]
+        rack_id = data["racks"][0].get("rack_id")
+        if rack_id:
+            by_id = client.get(
+                f"/api/warehouse-map/rack/by-id/{rack_id}?warehouse_id=1",
+                headers=auth_headers,
+            )
+            assert by_id.status_code == 200
+            assert by_id.get_json()["rack"]["rack_id"] == rack_id
+
+    def test_get_warehouse_map_requires_warehouse_id(self, client, auth_headers):
+        resp = client.get("/api/admin/warehouse-map", headers=auth_headers)
+        assert resp.status_code == 400
+
+    def test_get_warehouse_map_not_found(self, client, auth_headers):
+        resp = client.get("/api/admin/warehouse-map?warehouse_id=9999", headers=auth_headers)
+        assert resp.status_code == 404
+
+    def test_warehouse_map_page_permission(self, client):
+        _, headers = _web_user_with_pages(client, ["inventory"], username="nowarehousemap")
+        resp = client.get("/api/admin/warehouse-map?warehouse_id=1", headers=headers)
+        assert resp.status_code == 403
+
+    def test_warehouse_map_granted_user(self, client):
+        _, headers = _web_user_with_pages(client, ["warehouse-simulation"], username="warehousemapuser")
+        resp = client.get("/api/admin/warehouse-map?warehouse_id=1", headers=headers)
+        assert resp.status_code == 200
+
+    def test_warehouse_map_viewer_cannot_save_layout(self, client):
+        _, headers = _web_user_with_pages(
+            client, ["warehouse-simulation"], username="warehousemapviewer"
+        )
+        resp = client.put(
+            "/api/admin/warehouse-map/layout?warehouse_id=1",
+            json={},
+            headers=headers,
+        )
+        assert resp.status_code == 403
+
+
+# ── Pallet page permissions ───────────────────────────────────────────────────
+
+class TestPalletPagePermission:
+    def test_pallets_denied_without_grant(self, client):
+        _, headers = _web_user_with_pages(client, ["inventory"], username="nopallets")
+        resp = client.get("/api/admin/pallets", headers=headers)
+        assert resp.status_code == 403
+
+    def test_pallets_granted_user(self, client):
+        _, headers = _web_user_with_pages(client, ["pallets"], username="palletsuser")
+        resp = client.get("/api/admin/pallets", headers=headers)
+        assert resp.status_code == 200
+
+
+# ── Vehicle movement page permissions ─────────────────────────────────────────
+
+class TestVehicleMovementPagePermission:
+    def test_vehicle_movements_denied_without_grant(self, client):
+        _, headers = _web_user_with_pages(client, ["inventory"], username="novehicle")
+        resp = client.post(
+            "/api/admin/vehicle-movements",
+            json={"movement_type": "INBOUND", "vehicle_plate": "51A-12345", "warehouse_id": 1},
+            headers=headers,
+        )
+        assert resp.status_code == 403
+
+    def test_vehicle_movements_granted_user(self, client):
+        _, headers = _web_user_with_pages(
+            client, ["vehicle-movements"], username="vehicleuser",
+        )
+        resp = client.post(
+            "/api/admin/vehicle-movements",
+            json={"movement_type": "INBOUND", "vehicle_plate": "51A-99999", "warehouse_id": 1},
+            headers=headers,
+        )
+        assert resp.status_code == 201
+        assert resp.get_json().get("message") == "recorded"
+
+
 # ── Items ─────────────────────────────────────────────────────────────────────
 
 class TestItems:
@@ -221,10 +400,15 @@ class TestItems:
         assert data["page"] == 1
 
     def test_list_items_filter_category(self, client, auth_headers):
-        resp = client.get("/api/admin/items?category=Flies", headers=auth_headers)
+        # The lab seed ships Vietnamese catalogue data; "Ruồi giả" is the
+        # category of the nine fly items (TST-001..004 and friends).
+        category = "Ruồi giả"
+        resp = client.get(
+            "/api/admin/items", query_string={"category": category}, headers=auth_headers,
+        )
         data = resp.get_json()
         assert data["total"] == 9
-        assert all(i["category"] == "Flies" for i in data["items"])
+        assert all(i["category"] == category for i in data["items"])
 
     def test_get_item_with_inventory(self, client, auth_headers):
         resp = client.get("/api/admin/items/1", headers=auth_headers)
@@ -316,6 +500,22 @@ class TestPurchaseOrders:
         data = resp.get_json()
         assert data["purchase_order"]["po_number"] == "PO-2026-006"
         assert len(data["lines"]) == 2
+
+    def test_create_purchase_order_defaults_barcode_to_number(self, client, auth_headers):
+        """A PO created without po_barcode must still be scannable.
+
+        The handler intends the number as the fallback, but Pydantic's
+        model_dump() always includes the key -- with None -- so the old
+        dict.get(key, default) never reached its default and every PO
+        created without an explicit barcode landed with NULL. The admin
+        Create PO modal sends no barcode, so this is its normal path.
+        """
+        resp = client.post("/api/admin/purchase-orders", json={
+            "po_number": "PO-2026-007", "warehouse_id": 1,
+            "lines": [{"item_id": 1, "quantity_ordered": 5}],
+        }, headers=auth_headers)
+        assert resp.status_code == 200, resp.get_json()
+        assert resp.get_json()["purchase_order"]["po_barcode"] == "PO-2026-007"
 
     def test_create_purchase_order_duplicate(self, client, auth_headers):
         resp = client.post("/api/admin/purchase-orders", json={
@@ -854,6 +1054,17 @@ class TestSalesOrdersPrimaryBin:
         assert resp.status_code == 200
         data = resp.get_json()
         assert data["sales_order"]["so_number"] == "SO-2026-021"
+
+    def test_create_sales_order_defaults_barcode_to_number(self, client, auth_headers):
+        """Same defaulting bug as the PO side: the picking ticket prints
+        so_barcode, so an SO created from the admin modal (which sends
+        none) would have printed a blank barcode."""
+        resp = client.post("/api/admin/sales-orders", json={
+            "so_number": "SO-2026-022", "warehouse_id": 1,
+            "lines": [{"item_id": 1, "quantity_ordered": 1}],
+        }, headers=auth_headers)
+        assert resp.status_code == 200, resp.get_json()
+        assert resp.get_json()["sales_order"]["so_barcode"] == "SO-2026-022"
 
     def test_create_sales_order_reserves_inventory_at_insert(self, client, auth_headers):
         # Closes the structural oversell hole: prior to this change the SO
@@ -2146,11 +2357,17 @@ class TestInventorySearchQ:
         assert all(r["sku"] == "TST-005" for r in data["inventory"])
 
     def test_q_matches_item_name_case_insensitive(self, client, auth_headers):
-        resp = client.get("/api/admin/inventory?warehouse_id=1&q=fly%20line", headers=auth_headers)
+        # Seed names are Vietnamese ("Dây câu WF 5wt"); the lowercase "d"
+        # against the seed's capital "D" is what exercises case-insensitivity.
+        resp = client.get(
+            "/api/admin/inventory",
+            query_string={"warehouse_id": 1, "q": "dây câu"},
+            headers=auth_headers,
+        )
         assert resp.status_code == 200
         data = resp.get_json()
         assert data["total"] >= 1
-        assert all("fly line" in r["item_name"].lower() for r in data["inventory"])
+        assert all("dây câu" in r["item_name"].lower() for r in data["inventory"])
 
     def test_q_with_no_matches_returns_empty(self, client, auth_headers):
         resp = client.get("/api/admin/inventory?warehouse_id=1&q=no-such-item-zzz", headers=auth_headers)

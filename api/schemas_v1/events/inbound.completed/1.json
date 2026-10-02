@@ -1,0 +1,16 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://sentry-wms.example/events/inbound.completed/1.json",
+  "title": "inbound.completed v1",
+  "description": "A purchase order has been fully received at the gate/warehouse. Partner-facing companion to per-line receipt.completed.",
+  "type": "object",
+  "required": ["po_id", "po_number", "warehouse_id", "completed_at"],
+  "additionalProperties": false,
+  "properties": {
+    "po_id": { "type": "integer", "minimum": 1 },
+    "po_number": { "type": "string" },
+    "warehouse_id": { "type": "integer", "minimum": 1 },
+    "vehicle_plate": { "type": ["string", "null"] },
+    "completed_at": { "type": "string", "format": "date-time" }
+  }
+}

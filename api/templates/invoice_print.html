@@ -1,0 +1,63 @@
+﻿<!doctype html>
+<html lang="vi">
+<head>
+  <meta charset="utf-8" />
+  <title>{{ invoice.invoice_number or ('Invoice ' ~ invoice.invoice_id) }}</title>
+  <style>
+    @page { size: A4; margin: 18mm; }
+    body { font-family: Arial, sans-serif; color: #0f172a; font-size: 12px; }
+    /* xhtml2pdf ignores display:flex/grid, so the two-column blocks are tables. */
+    table.layout { width:100%; border-collapse:collapse; margin-top:0; }
+    table.layout td { border:0; padding:0; vertical-align:top; }
+    table.header { border-bottom:2px solid #8e2716; }
+    table.header td { padding-bottom:14px; }
+    h1 { margin:0 0 5px; font-size:22px; color:#8e2716; }
+    h2 { font-size:14px; margin:22px 0 8px; }
+    .muted { color:#64748b; }
+    table.meta { margin-top:16px; }
+    table.meta td { width:50%; padding:3px 24px 3px 0; }
+    table { width:100%; border-collapse:collapse; margin-top:16px; }
+    th, td { border-bottom:1px solid #cbd5e1; padding:9px 7px; }
+    th { background:#f1f5f9; text-align:left; color:#334155; }
+    .right { text-align:right; }
+    .total { margin-top:18px; text-align:right; font-size:17px; font-weight:700; }
+    footer { margin-top:40px; padding-top:10px; border-top:1px solid #cbd5e1; color:#64748b; }
+  </style>
+</head>
+<body>
+  <table class="layout header">
+    <tr>
+      <td width="60%"><h1>SƠN LỘC WMS</h1><div>Dịch vụ kho vận & hoàn tất đơn hàng</div></td>
+      <td width="40%" class="right"><strong>{{ invoice.invoice_number or invoice.invoice_id }}</strong><div>Trạng thái: {{ invoice.status }}</div></td>
+    </tr>
+  </table>
+
+  <h2>THÔNG TIN KHÁCH HÀNG</h2>
+  <div><strong>{{ invoice.customer_name }}</strong> ({{ invoice.customer_code }})</div>
+  <div>{{ invoice.billing_address or '' }}</div>
+  <div>MST: {{ invoice.tax_id or '-' }} · {{ invoice.phone or '' }} · {{ invoice.email or '' }}</div>
+
+  <table class="layout meta">
+    <tr>
+      <td>Kỳ dịch vụ: <strong>{{ invoice.period_start }} — {{ invoice.period_end }}</strong></td>
+      <td>Hạn thanh toán: <strong>{{ invoice.due_date or '-' }}</strong></td>
+    </tr>
+    <tr>
+      <td>Hợp đồng: <strong>{{ invoice.contract_number or '-' }}</strong></td>
+      <td>Tiền tệ: <strong>{{ invoice.currency }}</strong></td>
+    </tr>
+  </table>
+
+  <table>
+    <thead><tr><th>Dịch vụ</th><th class="right">Số lượng</th><th class="right">Đơn giá</th><th class="right">Thành tiền</th></tr></thead>
+    <tbody>
+      {% for line in lines %}
+      <tr><td>{{ line.description }}</td><td class="right">{{ '%.2f'|format(line.quantity) }}</td><td class="right">{{ '{:,.2f}'.format(line.unit_price) }}</td><td class="right">{{ '{:,.2f}'.format(line.amount) }}</td></tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  <div class="total">TỔNG CỘNG: {{ '{:,.2f}'.format(invoice.total_amount) }} {{ invoice.currency }}</div>
+  {% if invoice.notes %}<p>Ghi chú: {{ invoice.notes }}</p>{% endif %}
+  <footer>Hóa đơn được tạo từ các nghiệp vụ kho đã ghi nhận trong hệ thống Sơn Lộc WMS.</footer>
+</body>
+</html>

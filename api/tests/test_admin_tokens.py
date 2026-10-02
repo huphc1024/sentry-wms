@@ -408,14 +408,21 @@ class TestScopeCatalog:
         assert resp.status_code == 200
         body = resp.get_json()
         # v1.7.0: inbound_resources + source_systems added.
+        # Phase 6 (mig 089): the customer pick-list plus the two rule
+        # lists the create modal greys options out with.
         assert set(body.keys()) == {
             "event_types", "endpoints",
             "inbound_resources", "source_systems",
+            "customers", "customer_scoped_endpoints",
+            "customer_forbidden_inbound_resources",
         }
         assert isinstance(body["event_types"], list)
         assert isinstance(body["endpoints"], list)
         assert isinstance(body["inbound_resources"], list)
         assert isinstance(body["source_systems"], list)
+        assert isinstance(body["customers"], list)
+        assert isinstance(body["customer_scoped_endpoints"], list)
+        assert isinstance(body["customer_forbidden_inbound_resources"], list)
 
     def test_event_types_match_v150_catalog(self, client, auth_headers):
         """event_types must be the distinct set in V150_CATALOG; a

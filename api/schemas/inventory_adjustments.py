@@ -28,6 +28,8 @@ class DirectAdjustmentRequest(BaseModel):
     adjustment_type: str = Field(..., min_length=1, max_length=10)
     quantity: int = Field(..., gt=0, le=1000000)
     reason: str = Field(..., min_length=1, max_length=500)
+    pallet_id: Optional[int] = Field(None, gt=0)
+    lot_number: Optional[str] = Field(None, max_length=100)
 
     @field_validator("adjustment_type")
     @classmethod
