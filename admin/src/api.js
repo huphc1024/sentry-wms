@@ -39,7 +39,7 @@ async function apiFetch(path, options = {}) {
     try {
       const peek = await res.clone().json();
       if (peek?.error === 'Permission denied' && peek?.page_key) {
-        window.dispatchEvent(new CustomEvent('sentry:permission-denied', {
+        window.dispatchEvent(new CustomEvent('sonloc:permission-denied', {
           detail: { page_key: peek.page_key, path },
         }));
       }

@@ -1,5 +1,6 @@
 import React from 'react';
 import { logBoundaryError } from '../utils/safeLogging';
+import { t } from '../i18n/translate.js';
 
 class ErrorBoundary extends React.Component {
   constructor(props) {
@@ -12,8 +13,6 @@ class ErrorBoundary extends React.Component {
   }
 
   componentDidCatch(error, errorInfo) {
-    // V-020: scrub Bearer tokens, JWTs, and URL userinfo before logging.
-    // In production only a minimal error name + message is written.
     logBoundaryError(error, errorInfo);
   }
 
@@ -27,19 +26,21 @@ class ErrorBoundary extends React.Component {
         <div style={{
           padding: '2rem',
           textAlign: 'center',
-          background: '#f7f3ec',
-          border: '1px solid #e0d9cc',
+          background: 'var(--surface)',
+          border: '1px solid var(--border)',
           borderRadius: '8px',
           margin: '1rem'
         }}>
-          <h2 style={{ color: '#8e2716' }}>Something went wrong</h2>
-          <p style={{ color: '#666' }}>
-            {this.props.fallbackMessage || 'This section encountered an error. Try refreshing.'}
+          <h2 style={{ color: 'var(--danger)' }}>
+            {t('errors.somethingWrong')}
+          </h2>
+          <p style={{ color: 'var(--text-secondary)' }}>
+            {this.props.fallbackMessage || t('errors.sectionError')}
           </p>
           <button
             onClick={this.reset}
             style={{
-              background: '#8e2716',
+              background: 'var(--danger)',
               color: 'white',
               border: 'none',
               padding: '0.5rem 1rem',
@@ -47,7 +48,7 @@ class ErrorBoundary extends React.Component {
               cursor: 'pointer'
             }}
           >
-            Retry
+            {t('common.retry')}
           </button>
         </div>
       );

@@ -4,14 +4,17 @@ import { useWarehouse } from '../warehouse.jsx';
 import DataTable from '../components/DataTable.jsx';
 import PageHeader from '../components/PageHeader.jsx';
 import Modal from '../components/Modal.jsx';
+import SkuBarcodeAutocomplete from '../components/SkuBarcodeAutocomplete.jsx';
+import { useLocale } from '../i18n/locale.jsx';
 
 export default function PreferredBins() {
+  const { t } = useLocale();
   const { warehouseId } = useWarehouse();
   const [rows, setRows] = useState([]);
   const [search, setSearch] = useState('');
   const [showAdd, setShowAdd] = useState(false);
   const [addForm, setAddForm] = useState({ item_id: '', bin_id: '', priority: '1' });
-  const [items, setItems] = useState([]);
+  const [itemSearch, setItemSearch] = useState('');
   const [bins, setBins] = useState([]);
   const [editingId, setEditingId] = useState(null);
   const [editPriority, setEditPriority] = useState('');
@@ -31,13 +34,10 @@ export default function PreferredBins() {
   }
 
   async function openAdd() {
-    const [itemRes, binRes] = await Promise.all([
-      api.get('/admin/items?per_page=200', { silentPermissionDenied: true }),
-      api.get(`/admin/bins?warehouse_id=${warehouseId}`),
-    ]);
-    if (itemRes?.ok) setItems((await itemRes.json()).items || []);
+    const binRes = await api.get(`/admin/bins?warehouse_id=${warehouseId}`);
     if (binRes?.ok) setBins((await binRes.json()).bins || []);
     setAddForm({ item_id: '', bin_id: '', priority: '1' });
+    setItemSearch('');
     setShowAdd(true);
   }
 
@@ -51,7 +51,7 @@ export default function PreferredBins() {
     if (res?.ok) {
       setShowAdd(false);
       setMessageIsError(false);
-      setMessage('Preferred bin added');
+      setMessage(t('preferredBins.added'));
       load();
     } else {
       const data = await res?.json();
@@ -78,7 +78,7 @@ export default function PreferredBins() {
   }
 
   async function deletePB(pbId) {
-    if (!confirm('Delete this preferred bin?')) return;
+    if (!confirm(t('preferredBins.deleteConfirm'))) return;
     const res = await api.delete(`/admin/preferred-bins/${pbId}`);
     if (res?.ok) load();
   }
@@ -105,11 +105,11 @@ export default function PreferredBins() {
   }
 
   const columns = [
-    { key: 'sku', label: 'SKU', mono: true },
-    { key: 'item_name', label: 'Item Name' },
-    { key: 'bin_code', label: 'Preferred Bin', mono: true },
-    { key: 'zone_name', label: 'Zone', render: (r) => r.zone_name || '-' },
-    { key: 'priority', label: 'Priority', render: (r) => {
+    { key: 'sku', labelKey: 'common.sku', mono: true },
+    { key: 'item_name', labelKey: 'common.itemName' },
+    { key: 'bin_code', labelKey: 'preferredBins.bin', mono: true },
+    { key: 'zone_name', labelKey: 'common.zone', render: (r) => r.zone_name || '-' },
+    { key: 'priority', labelKey: 'items.priority', render: (r) => {
       if (editingId === r.preferred_bin_id) {
         return (
           <span style={{ display: 'flex', gap: 4 }}>
@@ -122,7 +122,7 @@ export default function PreferredBins() {
               style={{ width: 50, padding: '2px 6px', fontSize: 13 }}
               onKeyDown={(e) => e.key === 'Enter' && savePriority(r.preferred_bin_id)}
             />
-            <button className="btn btn-sm" onClick={() => savePriority(r.preferred_bin_id)}>OK</button>
+            <button className="btn btn-sm" onClick={() => savePriority(r.preferred_bin_id)}>{t('common.ok')}</button>
           </span>
         );
       }
@@ -135,17 +135,17 @@ export default function PreferredBins() {
         </span>
       );
     }},
-    { key: 'updated_at', label: 'Updated', mono: true, render: (r) => r.updated_at ? new Date(r.updated_at).toLocaleDateString() : '-' },
+    { key: 'updated_at', labelKey: 'preferredBins.updated', mono: true, render: (r) => r.updated_at ? new Date(r.updated_at).toLocaleDateString() : '-' },
     { key: 'actions', label: '', render: (r) => (
-      <button className="btn btn-sm btn-danger" onClick={(e) => { e.stopPropagation(); deletePB(r.preferred_bin_id); }}>Delete</button>
+      <button className="btn btn-sm btn-danger" onClick={(e) => { e.stopPropagation(); deletePB(r.preferred_bin_id); }}>{t('common.delete')}</button>
     )},
   ];
 
   return (
     <div>
-      <PageHeader title="Preferred Bins">
-        <button className="btn" onClick={exportCSV}>Export CSV</button>
-        <button className="btn btn-primary" onClick={openAdd}>Add Preferred Bin</button>
+      <PageHeader title={t('nav.preferredBins')}>
+        <button className="btn" onClick={exportCSV}>{t('common.exportCsv')}</button>
+        <button className="btn btn-primary" onClick={openAdd}>{t('preferredBins.add')}</button>
       </PageHeader>
 
       {message && (
@@ -155,45 +155,56 @@ export default function PreferredBins() {
       <div className="filter-bar">
         <input
           className="form-input"
-          placeholder="Search by SKU or item name..."
+          placeholder={t('preferredBins.searchPlaceholder')}
           value={search}
           onChange={(e) => setSearch(e.target.value)}
         />
       </div>
 
-      <DataTable rowKey="preferred_bin_id" columns={columns} data={rows} emptyMessage="No preferred bins configured" />
+      <DataTable rowKey="preferred_bin_id" columns={columns} data={rows} emptyMessageKey="preferredBins.empty" />
 
       {showAdd && (
         <Modal
-          title="Add Preferred Bin"
+          title={t('preferredBins.add')}
           onClose={() => setShowAdd(false)}
           footer={
             <>
-              <button className="btn" onClick={() => setShowAdd(false)}>Cancel</button>
-              <button className="btn btn-primary" onClick={saveAdd} disabled={!addForm.item_id || !addForm.bin_id}>Save</button>
+              <button className="btn" onClick={() => setShowAdd(false)}>{t('common.cancel')}</button>
+              <button className="btn btn-primary" onClick={saveAdd} disabled={!addForm.item_id || !addForm.bin_id}>{t('common.save')}</button>
             </>
           }
         >
           <div className="form-group">
-            <label>Item</label>
-            <select className="form-select" value={addForm.item_id} onChange={(e) => setAddForm({ ...addForm, item_id: e.target.value })}>
-              <option value="">Select item...</option>
-              {items.map((it) => (
-                <option key={it.item_id} value={it.item_id}>{it.sku} - {it.item_name}</option>
-              ))}
-            </select>
+            <label>{t('common.item')}</label>
+            <SkuBarcodeAutocomplete
+              listId="preferred-bins-item-options"
+              minChars={2}
+              placeholder={t('skuSearch.placeholder')}
+              value={itemSearch}
+              onChange={(v) => {
+                setItemSearch(v);
+                setAddForm((f) => ({ ...f, item_id: '' }));
+              }}
+              onItemSelect={(it) => {
+                if (it) {
+                  setAddForm((f) => ({ ...f, item_id: it.item_id }));
+                  setItemSearch(it.sku || '');
+                }
+              }}
+              apiOptions={{ silentPermissionDenied: true }}
+            />
           </div>
           <div className="form-group">
-            <label>Bin</label>
+            <label>{t('common.bin')}</label>
             <select className="form-select" value={addForm.bin_id} onChange={(e) => setAddForm({ ...addForm, bin_id: e.target.value })}>
-              <option value="">Select bin...</option>
+              <option value="">{t('settings.selectBin')}</option>
               {bins.map((b) => (
                 <option key={b.bin_id} value={b.bin_id}>{b.bin_code} - {b.zone_name || ''}</option>
               ))}
             </select>
           </div>
           <div className="form-group">
-            <label>Priority</label>
+            <label>{t('items.priority')}</label>
             <input className="form-input" type="number" min="1" value={addForm.priority} onChange={(e) => setAddForm({ ...addForm, priority: e.target.value })} style={{ width: 80 }} />
           </div>
         </Modal>

@@ -5,6 +5,13 @@ import DataTable from '../components/DataTable.jsx';
 import PageHeader from '../components/PageHeader.jsx';
 import Modal from '../components/Modal.jsx';
 import StatusTag from '../components/StatusTag.jsx';
+import SkuBarcodeAutocomplete from '../components/SkuBarcodeAutocomplete.jsx';
+import OrderLineEditor from '../components/OrderLineEditor.jsx';
+import { emptyOrderLine, resolveOrderLines } from '../utils/orderLines.js';
+import { resolveItemFromScan } from '../utils/itemScanOptions.js';
+import { useWarehouse } from '../warehouse.jsx';
+import { useLocale } from '../i18n/locale.jsx';
+import RichText from '../i18n/RichText.jsx';
 
 const STATUS_OPTIONS = ['All', 'OPEN', 'PARTIAL', 'RECEIVED', 'CLOSED', 'ARCHIVED'];
 const ALL_PO_STATUSES = ['OPEN', 'PARTIAL', 'RECEIVED', 'CLOSED', 'ARCHIVED'];
@@ -38,8 +45,27 @@ function formatApiError(data, fallback) {
   return data.error || fallback;
 }
 
+function emptyCreateForm(warehouseId) {
+  return {
+    po_number: '',
+    warehouse_id: warehouseId || '',
+    vendor_name: '',
+    expected_date: '',
+    notes: '',
+    lines: [emptyOrderLine()],
+  };
+}
+
 export default function PurchaseOrders() {
+  const { t } = useLocale();
   const [searchParams] = useSearchParams();
+  const { warehouses, warehouseId } = useWarehouse();
+  // Manual PO entry. The v1 product assumed every PO arrived from an ERP
+  // or a CSV import, so this lived in Settings under "Manual Entry" --
+  // three clicks away from the page where an operator looks for it.
+  const [createForm, setCreateForm] = useState(null);
+  const [createError, setCreateError] = useState('');
+  const [creating, setCreating] = useState(false);
   const [search, setSearch] = useState(searchParams.get('q') || '');
   const [orders, setOrders] = useState([]);
   const [pagination, setPagination] = useState(null);
@@ -62,46 +88,48 @@ export default function PurchaseOrders() {
   const [newLineQty, setNewLineQty] = useState('');
   const [newLineError, setNewLineError] = useState('');
   const [addingLine, setAddingLine] = useState(false);
-  // Typeahead state: debounced fetch as the operator types in the
-  // SKU field populates a datalist + drives a live "Found: ..."
-  // preview so the operator can see the resolution before clicking
-  // Add. Beats the original "type a SKU and pray it matches" UX.
-  const [skuSuggestions, setSkuSuggestions] = useState([]);
   const [resolvedItem, setResolvedItem] = useState(null);
 
   useEffect(() => { loadOrders(); }, [page, statusFilter, search, showArchived]);  // eslint-disable-line react-hooks/exhaustive-deps
 
-  // Debounced SKU lookup. Fires while the operator is typing in the
-  // Add Line SKU input so suggestions surface without a server query
-  // per keystroke. Skips when the modal is not open or the field
-  // is empty.
-  useEffect(() => {
-    if (!editing) return;
-    const sku = newLineSku.trim();
-    if (sku.length < 2) {
-      setSkuSuggestions([]);
-      setResolvedItem(null);
+  async function submitCreate() {
+    setCreateError('');
+    if (!String(createForm.po_number || '').trim()) {
+      setCreateError('PO number is required.');
       return;
     }
-    const handle = setTimeout(async () => {
-      const res = await api.get(
-        `/admin/items?q=${encodeURIComponent(sku)}&per_page=10&active=true`,
-      );
-      if (!res?.ok) {
-        setSkuSuggestions([]);
-        setResolvedItem(null);
-        return;
-      }
-      const data = await res.json();
-      const items = data.items || [];
-      setSkuSuggestions(items);
-      const exact = items.find(
-        (i) => String(i.sku || '').trim().toLowerCase() === sku.toLowerCase(),
-      ) || null;
-      setResolvedItem(exact);
-    }, 200);
-    return () => clearTimeout(handle);
-  }, [newLineSku, editing]);
+    if (!createForm.warehouse_id) {
+      setCreateError('Warehouse is required.');
+      return;
+    }
+    const { lines, error } = await resolveOrderLines(createForm.lines);
+    if (error) {
+      setCreateError(error);
+      return;
+    }
+
+    setCreating(true);
+    const res = await api.post('/admin/purchase-orders', {
+      po_number: createForm.po_number.trim(),
+      warehouse_id: Number(createForm.warehouse_id),
+      vendor_name: createForm.vendor_name.trim() || null,
+      expected_date: createForm.expected_date || null,
+      notes: createForm.notes.trim() || null,
+      lines,
+    });
+    setCreating(false);
+    if (!res?.ok) {
+      const data = await res?.json().catch(() => null);
+      setCreateError(formatApiError(data, 'Failed to create purchase order'));
+      return;
+    }
+    setCreateForm(null);
+    // Land on the new PO: it is OPEN, and a freshly created order is
+    // almost always the one the operator wants to look at next.
+    setStatusFilter('All');
+    setPage(1);
+    await loadOrders();
+  }
 
   async function loadOrders() {
     const qp = new URLSearchParams({ page: String(page), per_page: '50' });
@@ -241,16 +269,14 @@ export default function PurchaseOrders() {
   // and finds the exact case-insensitive match. Same pattern as
   // Settings.jsx Create PO so behavior is consistent across surfaces.
   async function resolveSku(sku) {
-    const key = String(sku || '').trim().toLowerCase();
+    const key = String(sku || '').trim();
     if (!key) return null;
     const res = await api.get(
-      `/admin/items?q=${encodeURIComponent(sku)}&per_page=10&active=true`,
+      `/admin/items?q=${encodeURIComponent(key)}&per_page=10&active=true`,
     );
     if (!res?.ok) return null;
     const data = await res.json();
-    return (data.items || []).find(
-      (i) => String(i.sku || '').trim().toLowerCase() === key,
-    ) || null;
+    return resolveItemFromScan(key, data.items || []);
   }
 
   async function addLine() {
@@ -277,7 +303,7 @@ export default function PurchaseOrders() {
         item = await resolveSku(sku);
       }
       if (!item) {
-        setNewLineError(`Unknown SKU: ${sku}`);
+        setNewLineError(t('salesOrders.unknownSku', { sku }));
         return;
       }
       const res = await api.post(
@@ -293,7 +319,6 @@ export default function PurchaseOrders() {
         setNewLineSku('');
         setNewLineQty('');
         setResolvedItem(null);
-        setSkuSuggestions([]);
       } else {
         let data = null;
         try { data = await res?.json(); } catch (_) { /* non-JSON body */ }
@@ -341,29 +366,40 @@ export default function PurchaseOrders() {
   }
 
   const columns = [
-    { key: 'po_number', label: 'PO Number', mono: true },
-    { key: 'vendor_name', label: 'Vendor' },
-    { key: 'expected_date', label: 'Expected Date', mono: true, render: (r) => r.expected_date ? new Date(r.expected_date).toLocaleDateString() : '-' },
-    { key: 'status', label: 'Status', render: (r) => <StatusTag status={r.status} /> },
-    { key: 'created_at', label: 'Created', render: (r) => r.created_at ? new Date(r.created_at).toLocaleDateString() : '-' },
+    { key: 'po_number', labelKey: 'purchaseOrders.number', mono: true },
+    { key: 'vendor_name', labelKey: 'common.vendor' },
+    { key: 'expected_date', labelKey: 'purchaseOrders.expectedDate', mono: true, render: (r) => r.expected_date ? new Date(r.expected_date).toLocaleDateString() : '-' },
+    { key: 'status', labelKey: 'common.status', render: (r) => <StatusTag status={r.status} /> },
+    { key: 'created_at', labelKey: 'salesOrders.created', render: (r) => r.created_at ? new Date(r.created_at).toLocaleDateString() : '-' },
     { key: 'actions', label: '', render: (r) => (
-      <button className="btn btn-sm" onClick={(e) => { e.stopPropagation(); openEdit(r); }} aria-label="Edit" title="Edit">&#9998;</button>
+      <div style={{ display: 'flex', gap: 4 }}>
+        <button className="btn btn-sm" onClick={(e) => { e.stopPropagation(); openEdit(r); }} aria-label={t('common.edit')} title={t('common.edit')}>&#9998;</button>
+      </div>
     )},
   ];
 
   return (
     <div>
-      <PageHeader title="Purchase Orders" />
+      <PageHeader title={t('nav.purchaseOrders')}>
+        <button className="btn btn-primary" onClick={() => { setCreateError(''); setCreateForm(emptyCreateForm(warehouseId)); }}>
+          {t('purchaseOrders.newOrder')}
+        </button>
+      </PageHeader>
 
       <div style={{ marginBottom: 16, display: 'flex', alignItems: 'center', gap: 8 }}>
-        <label style={{ fontSize: 13, color: 'var(--text-secondary)' }}>Status:</label>
+        <label style={{ fontSize: 13, color: 'var(--text-secondary)' }}>{t('common.status')}:</label>
         <select className="form-select" value={statusFilter} onChange={handleStatusChange} style={{ width: 160 }}>
-          {STATUS_OPTIONS.map((s) => <option key={s} value={s}>{s}</option>)}
+          {/* Translated like the status column beside it. */}
+          {STATUS_OPTIONS.map((st) => (
+            <option key={st} value={st}>
+              {st === 'All' ? t('common.all') : t(`status.${st}`)}
+            </option>
+          ))}
         </select>
         <input
           className="form-input"
           style={{ maxWidth: 320 }}
-          placeholder="Search by PO number or vendor"
+          placeholder={t('purchaseOrders.searchPlaceholder')}
           value={search}
           onChange={(e) => { setSearch(e.target.value); setPage(1); }}
         />
@@ -376,7 +412,7 @@ export default function PurchaseOrders() {
             checked={showArchived}
             onChange={(e) => { setShowArchived(e.target.checked); setPage(1); }}
           />
-          Show Archived
+          {t('purchaseOrders.showArchived')}
         </label>
       </div>
 
@@ -387,7 +423,7 @@ export default function PurchaseOrders() {
         pagination={pagination}
         onPageChange={handlePageChange}
         onRowClick={viewPO}
-        emptyMessage="No purchase orders found"
+        emptyMessageKey="purchaseOrders.empty"
       />
 
       {selectedPO && (
@@ -396,35 +432,35 @@ export default function PurchaseOrders() {
           onClose={() => { setSelectedPO(null); setPOLines([]); }}
           footer={
             <>
-              <button className="btn" onClick={exportPOCsv} disabled={poLines.length === 0}>Export CSV</button>
-              <button className="btn" onClick={() => { setSelectedPO(null); setPOLines([]); }}>Close</button>
+              <button className="btn" onClick={exportPOCsv} disabled={poLines.length === 0}>{t('common.exportCsv')}</button>
+              <button className="btn" onClick={() => { setSelectedPO(null); setPOLines([]); }}>{t('common.close')}</button>
             </>
           }
           size="wide"
         >
           <section className="section">
-            <div className="section-title">PO Summary</div>
+            <div className="section-title">{t('purchaseOrders.summary')}</div>
             <div className="detail-grid detail-grid-2col" style={{ marginBottom: 0 }}>
-              <span className="detail-label">Vendor</span><span>{selectedPO.vendor_name || '-'}</span>
-              <span className="detail-label">Status</span><span><StatusTag status={selectedPO.status} /></span>
-              <span className="detail-label">Expected Date</span><span className="mono">{selectedPO.expected_date ? new Date(selectedPO.expected_date).toLocaleDateString() : '-'}</span>
-              <span className="detail-label">Notes</span><span>{selectedPO.notes || '-'}</span>
+              <span className="detail-label">{t('common.vendor')}</span><span>{selectedPO.vendor_name || '-'}</span>
+              <span className="detail-label">{t('common.status')}</span><span><StatusTag status={selectedPO.status} /></span>
+              <span className="detail-label">{t('purchaseOrders.expectedDate')}</span><span className="mono">{selectedPO.expected_date ? new Date(selectedPO.expected_date).toLocaleDateString() : '-'}</span>
+              <span className="detail-label">{t('common.notes')}</span><span>{selectedPO.notes || '-'}</span>
             </div>
           </section>
 
           <section className="section" style={{ marginBottom: 0 }}>
-            <div className="section-title">Line Items</div>
+            <div className="section-title">{t('salesOrders.lineItems')}</div>
             {poLines.length > 0 ? (
               <table className="lines-table">
                 <thead>
                   <tr>
-                    <th>SKU</th>
-                    <th>UPC</th>
-                    <th>MPN</th>
-                    <th>Item Name</th>
-                    <th style={{ textAlign: 'right' }}>Ordered</th>
-                    <th style={{ textAlign: 'right' }}>Received</th>
-                    <th style={{ textAlign: 'right' }}>Remaining</th>
+                    <th>{t('common.sku')}</th>
+                    <th>{t('common.upc')}</th>
+                    <th>{t('purchaseOrders.mpn')}</th>
+                    <th>{t('common.itemName')}</th>
+                    <th style={{ textAlign: 'right' }}>{t('salesOrders.ordered')}</th>
+                    <th style={{ textAlign: 'right' }}>{t('purchaseOrders.received')}</th>
+                    <th style={{ textAlign: 'right' }}>{t('purchaseOrders.remaining')}</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -445,7 +481,7 @@ export default function PurchaseOrders() {
                 </tbody>
               </table>
             ) : (
-              <p style={{ fontSize: 13, color: 'var(--text-secondary)' }}>No line items</p>
+              <p style={{ fontSize: 13, color: 'var(--text-secondary)' }}>{t('salesOrders.noLineItems')}</p>
             )}
           </section>
         </Modal>
@@ -453,12 +489,12 @@ export default function PurchaseOrders() {
 
       {editing && (
         <Modal
-          title={`Edit PO ${editing.po_number}`}
+          title={t('purchaseOrders.editTitle', { po: editing.po_number })}
           onClose={closeEdit}
           footer={
             <>
-              <button className="btn" onClick={closeEdit}>Cancel</button>
-              <button className="btn btn-primary" onClick={saveEdit}>Save</button>
+              <button className="btn" onClick={closeEdit}>{t('common.cancel')}</button>
+              <button className="btn btn-primary" onClick={saveEdit}>{t('common.save')}</button>
             </>
           }
           size="wide"
@@ -482,10 +518,10 @@ export default function PurchaseOrders() {
           )}
 
           <section className="section">
-            <div className="section-title">Header</div>
+            <div className="section-title">{t('purchaseOrders.header')}</div>
             <div className="form-row">
               <div className="form-group">
-                <label>PO Number</label>
+                <label>{t('purchaseOrders.number')}</label>
                 <input
                   className="form-input"
                   value={editForm.po_number}
@@ -494,7 +530,7 @@ export default function PurchaseOrders() {
                 />
               </div>
               <div className="form-group">
-                <label>Vendor</label>
+                <label>{t('common.vendor')}</label>
                 <input
                   className="form-input"
                   value={editForm.vendor_name}
@@ -505,7 +541,7 @@ export default function PurchaseOrders() {
             </div>
             <div className="form-row">
               <div className="form-group">
-                <label>Expected Date</label>
+                <label>{t('purchaseOrders.expectedDate')}</label>
                 <input
                   className="form-input"
                   type="date"
@@ -515,7 +551,7 @@ export default function PurchaseOrders() {
                 />
               </div>
               <div className="form-group">
-                <label>Status</label>
+                <label>{t('common.status')}</label>
                 <select
                   className="form-select"
                   value={editForm.status}
@@ -528,7 +564,7 @@ export default function PurchaseOrders() {
               </div>
             </div>
             <div className="form-group">
-              <label>Notes</label>
+              <label>{t('common.notes')}</label>
               <textarea
                 className="form-input"
                 rows={2}
@@ -546,16 +582,16 @@ export default function PurchaseOrders() {
           </section>
 
           <section className="section">
-            <div className="section-title">Line Items</div>
+            <div className="section-title">{t('salesOrders.lineItems')}</div>
             {editLines.length > 0 ? (
               <table className="lines-table">
                 <thead>
                   <tr>
-                    <th>SKU</th>
-                    <th>Item Name</th>
-                    <th style={{ textAlign: 'right' }}>Ordered</th>
-                    <th style={{ textAlign: 'right' }}>Received</th>
-                    <th style={{ textAlign: 'right' }}>Variance</th>
+                    <th>{t('common.sku')}</th>
+                    <th>{t('common.itemName')}</th>
+                    <th style={{ textAlign: 'right' }}>{t('salesOrders.ordered')}</th>
+                    <th style={{ textAlign: 'right' }}>{t('purchaseOrders.received')}</th>
+                    <th style={{ textAlign: 'right' }}>{t('purchaseOrders.variance')}</th>
                     <th style={{ width: 40 }}></th>
                   </tr>
                 </thead>
@@ -590,9 +626,11 @@ export default function PurchaseOrders() {
                             onClick={() => removeLine(l)}
                             disabled={!removable}
                             title={!removable
-                              ? (lineLocked ? 'Locked while PO is ' + editing.status : 'Line has received units; reverse receipts first')
-                              : 'Remove line'}
-                            aria-label="Remove line"
+                              ? (lineLocked
+                                ? t('purchaseOrders.lineLocked', { status: editing.status })
+                                : t('purchaseOrders.lineHasReceipts'))
+                              : t('salesOrders.removeLine')}
+                            aria-label={t('salesOrders.removeLine')}
                           >&#10005;</button>
                         </td>
                       </tr>
@@ -601,7 +639,7 @@ export default function PurchaseOrders() {
                 </tbody>
               </table>
             ) : (
-              <p style={{ fontSize: 13, color: 'var(--text-secondary)' }}>No line items yet.</p>
+              <p style={{ fontSize: 13, color: 'var(--text-secondary)' }}>{t('salesOrders.noLineItemsYet')}</p>
             )}
 
             {!EDIT_LOCKED_STATUSES.has(editing.status) && (
@@ -612,23 +650,21 @@ export default function PurchaseOrders() {
               }}>
                 <div style={{ display: 'flex', alignItems: 'flex-start', gap: 8 }}>
                   <div style={{ flex: '0 0 240px' }}>
-                    <label style={{ fontSize: 11, color: 'var(--text-secondary)', fontWeight: 500 }}>SKU</label>
-                    <input
+                    <label style={{ fontSize: 11, color: 'var(--text-secondary)', fontWeight: 500 }}>{t('common.sku')}</label>
+                    <SkuBarcodeAutocomplete
                       className="form-input mono"
-                      placeholder="Type SKU to search"
-                      list="po-edit-sku-suggestions"
+                      listId="po-edit-sku-suggestions"
+                      minChars={2}
+                      placeholder={t('skuSearch.placeholder')}
                       value={newLineSku}
-                      onChange={(e) => setNewLineSku(e.target.value)}
+                      onChange={setNewLineSku}
+                      onItemSelect={setResolvedItem}
                       onKeyDown={(e) => { if (e.key === 'Enter') addLine(); }}
+                      showNoMatch
                     />
-                    <datalist id="po-edit-sku-suggestions">
-                      {skuSuggestions.map((it) => (
-                        <option key={it.item_id} value={it.sku}>{it.item_name}</option>
-                      ))}
-                    </datalist>
                   </div>
                   <div style={{ flex: '0 0 120px' }}>
-                    <label style={{ fontSize: 11, color: 'var(--text-secondary)', fontWeight: 500 }}>Quantity</label>
+                    <label style={{ fontSize: 11, color: 'var(--text-secondary)', fontWeight: 500 }}>{t('salesOrders.quantity')}</label>
                     <input
                       className="form-input"
                       type="number"
@@ -646,7 +682,7 @@ export default function PurchaseOrders() {
                     disabled={addingLine}
                     style={{ marginTop: 16 }}
                   >
-                    {addingLine ? 'Adding...' : 'Add Line'}
+                    {t(addingLine ? 'salesOrders.adding' : 'salesOrders.addLine')}
                   </button>
                 </div>
                 {/* Live resolution preview / error sit immediately under
@@ -658,12 +694,13 @@ export default function PurchaseOrders() {
                 )}
                 {!newLineError && resolvedItem && (
                   <div style={{ marginTop: 8, fontSize: 12, color: 'var(--success)' }}>
-                    Found: <strong>{resolvedItem.sku}</strong> - {resolvedItem.item_name}
-                  </div>
-                )}
-                {!newLineError && !resolvedItem && newLineSku.trim().length >= 2 && skuSuggestions.length === 0 && (
-                  <div style={{ marginTop: 8, fontSize: 12, color: 'var(--text-secondary)' }}>
-                    No matches for "{newLineSku.trim()}". Click Add Line to retry the lookup.
+                    <RichText
+                      text={t('salesOrders.foundItem')}
+                      values={{
+                        sku: <strong>{resolvedItem.sku}</strong>,
+                        name: resolvedItem.item_name,
+                      }}
+                    />
                   </div>
                 )}
               </div>
@@ -671,11 +708,99 @@ export default function PurchaseOrders() {
           </section>
         </Modal>
       )}
+
+      {createForm && (
+        <Modal
+          title={t('purchaseOrders.newOrder')}
+          onClose={() => setCreateForm(null)}
+          footer={
+            <>
+              <button className="btn" onClick={() => setCreateForm(null)} disabled={creating}>{t('common.cancel')}</button>
+              <button className="btn btn-primary" onClick={submitCreate} disabled={creating}>
+                {t(creating ? 'salesOrders.creating' : 'purchaseOrders.createOrder')}
+              </button>
+            </>
+          }
+        >
+          {createError && <div className="alert alert-error">{createError}</div>}
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
+            <div className="form-group">
+              <label htmlFor="po-create-number">{t('purchaseOrders.number')}</label>
+              <input
+                id="po-create-number"
+                className="form-input mono"
+                value={createForm.po_number}
+                onChange={(e) => setCreateForm({ ...createForm, po_number: e.target.value })}
+                placeholder="PO-2026-010"
+                autoFocus
+              />
+            </div>
+            <div className="form-group">
+              <label htmlFor="po-create-warehouse">{t('common.warehouse')}</label>
+              <select
+                id="po-create-warehouse"
+                className="form-input"
+                value={createForm.warehouse_id}
+                onChange={(e) => setCreateForm({ ...createForm, warehouse_id: e.target.value })}
+              >
+                <option value="">{t('salesOrders.selectWarehouse')}</option>
+                {warehouses.map((w) => (
+                  <option key={w.warehouse_id || w.id} value={w.warehouse_id || w.id}>
+                    {w.warehouse_code} &middot; {w.warehouse_name}
+                  </option>
+                ))}
+              </select>
+            </div>
+            <div className="form-group">
+              <label htmlFor="po-create-vendor">{t('common.vendor')}</label>
+              <input
+                id="po-create-vendor"
+                className="form-input"
+                value={createForm.vendor_name}
+                onChange={(e) => setCreateForm({ ...createForm, vendor_name: e.target.value })}
+              />
+            </div>
+            <div className="form-group">
+              <label htmlFor="po-create-expected">{t('purchaseOrders.expectedDate')}</label>
+              <input
+                id="po-create-expected"
+                className="form-input"
+                type="date"
+                value={createForm.expected_date}
+                onChange={(e) => setCreateForm({ ...createForm, expected_date: e.target.value })}
+              />
+            </div>
+          </div>
+          <div className="form-group">
+            <label htmlFor="po-create-notes">{t('common.notes')}</label>
+            <textarea
+              id="po-create-notes"
+              className="form-input"
+              rows={2}
+              value={createForm.notes}
+              onChange={(e) => setCreateForm({ ...createForm, notes: e.target.value })}
+            />
+          </div>
+          <h4 style={{ margin: '16px 0 8px', fontSize: 13, color: 'var(--text-secondary)' }}>{t('salesOrders.lines')}</h4>
+          <OrderLineEditor
+            lines={createForm.lines}
+            onChange={(lines) => setCreateForm({ ...createForm, lines })}
+            listIdPrefix="po-create"
+            disabled={creating}
+          />
+          <p style={{ marginTop: 12, fontSize: 12, color: 'var(--text-secondary)' }}>
+            The PO is created OPEN and its barcode is set to the PO number, so the
+            printed sheet scans straight into mobile Receive.
+          </p>
+        </Modal>
+      )}
+
     </div>
   );
 }
 
 function LineQtyInput({ line, disabled, onCommit }) {
+  const { t } = useLocale();
   const [val, setVal] = useState(String(line.quantity_ordered));
   const [saving, setSaving] = useState(false);
 

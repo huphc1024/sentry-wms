@@ -64,7 +64,7 @@ export function shippingGroupKey(order) {
     return parts.join('|');
   }
   const legacy = norm(order.ship_address);
-  return legacy ? `legacy:${name}|${legacy}` : null;
+  return legacy ? `legacy:${name}|${legacy}` : null; // i18n-ignore
 }
 
 // Group orders by ships-together key, keeping only groups of 2+ (a lone

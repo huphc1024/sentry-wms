@@ -150,9 +150,9 @@ describe('Tokens create-modal checkbox scope pickers (#159)', () => {
     expect(within(container).getByText('receipt.completed')).toBeInTheDocument();
     expect(within(container).getByText('ship.confirmed')).toBeInTheDocument();
 
-    // Endpoint slugs.
-    expect(within(container).getByText('events.poll')).toBeInTheDocument();
-    expect(within(container).getByText('snapshot.inventory')).toBeInTheDocument();
+    // Endpoint slugs, bound to the checkbox by accessible name.
+    expect(within(container).getByRole('checkbox', { name: 'events.poll' })).toBeInTheDocument();
+    expect(within(container).getByRole('checkbox', { name: 'snapshot.inventory' })).toBeInTheDocument();
   });
 
   it('All button selects every option for its list', async () => {

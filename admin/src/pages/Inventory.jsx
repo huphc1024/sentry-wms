@@ -3,6 +3,7 @@ import { api } from '../api.js';
 import { useWarehouse } from '../warehouse.jsx';
 import DataTable from '../components/DataTable.jsx';
 import PageHeader from '../components/PageHeader.jsx';
+import { useLocale } from '../i18n/locale.jsx';
 
 // Page-level warehouse + bin filters were added on 2026-05-10 because the
 // global topbar warehouse-picker was unreliable for some users (couldn't
@@ -12,6 +13,7 @@ import PageHeader from '../components/PageHeader.jsx';
 // can be independently changed without affecting global state.
 
 export default function Inventory() {
+  const { t } = useLocale();
   const { warehouseId: topbarWarehouseId } = useWarehouse();
   const [warehouses, setWarehouses] = useState([]);
   const [bins, setBins] = useState([]);
@@ -111,18 +113,18 @@ export default function Inventory() {
   }, [data, sortKey, sortDir]);
 
   const columns = [
-    { key: 'sku', label: 'SKU', mono: true, sortable: true },
-    { key: 'item_name', label: 'Item Name', sortable: true },
-    { key: 'bin_code', label: 'Bin Code', mono: true, sortable: true },
-    { key: 'zone_name', label: 'Zone', sortable: true },
-    { key: 'quantity_on_hand', label: 'On Hand', sortable: true },
-    { key: 'available', label: 'Available', sortable: true, render: (r) => (r.quantity_on_hand || 0) - (r.committed_to_orders || 0) },
-    { key: 'last_counted_at', label: 'Last Counted', mono: true, sortable: true, render: (r) => r.last_counted_at ? new Date(r.last_counted_at).toLocaleDateString() : '-' },
+    { key: 'sku', labelKey: 'common.sku', mono: true, sortable: true },
+    { key: 'item_name', labelKey: 'common.itemName', sortable: true },
+    { key: 'bin_code', labelKey: 'common.binCode', mono: true, sortable: true },
+    { key: 'zone_name', labelKey: 'common.zone', sortable: true },
+    { key: 'quantity_on_hand', labelKey: 'common.onHand', sortable: true },
+    { key: 'available', labelKey: 'common.available', sortable: true, render: (r) => (r.quantity_on_hand || 0) - (r.committed_to_orders || 0) },
+    { key: 'last_counted_at', labelKey: 'inventory.lastCounted', mono: true, sortable: true, render: (r) => r.last_counted_at ? new Date(r.last_counted_at).toLocaleDateString() : '-' },
   ];
 
   return (
     <div>
-      <PageHeader title="Inventory" />
+      <PageHeader title={t('nav.inventory')} />
       <div className="filter-bar" style={{ display: 'flex', gap: 12, flexWrap: 'wrap', alignItems: 'center' }}>
         <select
           className="form-input"
@@ -130,7 +132,7 @@ export default function Inventory() {
           onChange={(e) => { setWarehouseFilter(Number(e.target.value) || null); setPage(1); }}
           style={{ minWidth: 180 }}
         >
-          <option value="">- Select warehouse -</option>
+          <option value="">{t('common.selectWarehouse')}</option>
           {warehouses.map((w) => {
             const wId = w.warehouse_id || w.id;
             return (
@@ -147,7 +149,7 @@ export default function Inventory() {
           style={{ minWidth: 200 }}
           disabled={!warehouseFilter || bins.length === 0}
         >
-          <option value="">- All bins in warehouse -</option>
+          <option value="">{t('inventory.allBins')}</option>
           {bins.map((b) => {
             const bId = b.bin_id || b.id;
             return (
@@ -159,18 +161,18 @@ export default function Inventory() {
         </select>
         <input
           className="form-input"
-          placeholder="Search by SKU or item name (press Enter)"
+          placeholder={t('inventory.searchPlaceholder')}
           value={searchInput}
           onChange={(e) => setSearchInput(e.target.value)}
           onKeyDown={(e) => { if (e.key === 'Enter') commitSearch(); }}
           onBlur={commitSearch}
           style={{ minWidth: 280, flex: 1 }}
         />
-        {loading && <span style={{ color: 'rgba(255,255,255,0.5)', fontSize: 12 }}>Loading…</span>}
+        {loading && <span style={{ color: 'var(--text-secondary)', fontSize: 12 }}>{t('common.loading')}</span>}
       </div>
       {!warehouseFilter && (
-        <div style={{ padding: 24, color: 'rgba(255,255,255,0.5)', fontSize: 13 }}>
-          Select a warehouse to view inventory.
+        <div style={{ padding: 24, color: 'var(--text-secondary)', fontSize: 13 }}>
+          {t('inventory.selectWarehouse')}
         </div>
       )}
       {warehouseFilter && (

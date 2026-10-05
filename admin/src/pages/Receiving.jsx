@@ -4,6 +4,8 @@ import DataTable from '../components/DataTable.jsx';
 import PageHeader from '../components/PageHeader.jsx';
 import StatusTag from '../components/StatusTag.jsx';
 import Modal from '../components/Modal.jsx';
+import { useLocale } from '../i18n/locale.jsx';
+import RichText from '../i18n/RichText.jsx';
 
 // /api/receiving/receive only accepts OPEN or PARTIAL POs. Mirror
 // that constraint in the UI so the operator never sees a 400 from
@@ -11,6 +13,7 @@ import Modal from '../components/Modal.jsx';
 const RECEIVABLE_PO_STATUSES = new Set(['OPEN', 'PARTIAL']);
 
 export default function Receiving() {
+  const { t } = useLocale();
   const [pos, setPos] = useState([]);
   const [selected, setSelected] = useState(null);
   const [detail, setDetail] = useState(null);
@@ -185,11 +188,11 @@ export default function Receiving() {
     const qty = parseInt(draft.qty, 10);
     const binId = parseInt(draft.bin_id ?? defaultBinId, 10);
     if (isNaN(qty) || qty <= 0) {
-      updateDraft(line.po_line_id, { error: 'Enter a positive quantity' });
+      updateDraft(line.po_line_id, { error: t('salesOrders.enterQty') });
       return;
     }
     if (!binId) {
-      updateDraft(line.po_line_id, { error: 'Pick a bin' });
+      updateDraft(line.po_line_id, { error: t('receiving.pickBin') });
       return;
     }
     updateDraft(line.po_line_id, { saving: true, error: '' });
@@ -217,10 +220,10 @@ export default function Receiving() {
   }
 
   const columns = [
-    { key: 'po_number', label: 'PO Number', mono: true },
-    { key: 'vendor_name', label: 'Vendor' },
-    { key: 'expected_date', label: 'Expected Date', mono: true, render: (r) => r.expected_date || '-' },
-    { key: 'status', label: 'Status', render: (r) => <StatusTag status={r.status} /> },
+    { key: 'po_number', labelKey: 'purchaseOrders.number', mono: true },
+    { key: 'vendor_name', labelKey: 'common.vendor' },
+    { key: 'expected_date', labelKey: 'purchaseOrders.expectedDate', mono: true, render: (r) => r.expected_date || '-' },
+    { key: 'status', labelKey: 'common.status', render: (r) => <StatusTag status={r.status} /> },
   ];
 
   const po = detail?.purchase_order;
@@ -228,62 +231,61 @@ export default function Receiving() {
 
   return (
     <div>
-      <PageHeader title="Receiving" />
+      <PageHeader title={t('nav.receiving')} />
       <div className="filter-bar">
         <select className="form-select" style={{ width: 140 }} value={statusFilter} onChange={(e) => setStatusFilter(e.target.value)}>
-          <option value="active">Open / Partial</option>
-          <option value="all">All</option>
-          <option value="OPEN">Open</option>
-          <option value="PARTIAL">Partial</option>
-          <option value="RECEIVED">Received</option>
-          <option value="CLOSED">Closed</option>
+          <option value="active">{t('receiving.openOrPartial')}</option>
+          <option value="all">{t('common.all')}</option>
+          <option value="OPEN">{t('status.OPEN')}</option>
+          <option value="PARTIAL">{t('status.PARTIAL')}</option>
+          <option value="RECEIVED">{t('status.RECEIVED')}</option>
+          <option value="CLOSED">{t('status.CLOSED')}</option>
         </select>
       </div>
-      <DataTable rowKey="po_id" columns={columns} data={pos} onRowClick={viewPO} emptyMessage="No purchase orders" />
+      <DataTable rowKey="po_id" columns={columns} data={pos} onRowClick={viewPO} emptyMessageKey="receiving.noPos" />
 
       {selected && detail && (
         <Modal
-          title={`PO ${po?.po_number || selected.po_number}`}
+          title={t('receiving.poTitle', { po: po?.po_number || selected.po_number })}
           onClose={closeDetail}
-          footer={<button className="btn" onClick={closeDetail}>Close</button>}
+          footer={<button className="btn" onClick={closeDetail}>{t('common.close')}</button>}
           size="wide"
         >
           <section className="section">
-            <div className="section-title">PO Summary</div>
+            <div className="section-title">{t('purchaseOrders.summary')}</div>
             <div className="detail-grid detail-grid-2col" style={{ marginBottom: 0 }}>
-              <span className="detail-label">Vendor</span><span>{po?.vendor_name || '-'}</span>
-              <span className="detail-label">Status</span><span><StatusTag status={po?.status} /></span>
-              <span className="detail-label">Expected Date</span><span className="mono">{po?.expected_date || '-'}</span>
-              <span className="detail-label">Warehouse</span><span className="mono">{po?.warehouse_id ?? '-'}</span>
+              <span className="detail-label">{t('common.vendor')}</span><span>{po?.vendor_name || '-'}</span>
+              <span className="detail-label">{t('common.status')}</span><span><StatusTag status={po?.status} /></span>
+              <span className="detail-label">{t('purchaseOrders.expectedDate')}</span><span className="mono">{po?.expected_date || '-'}</span>
+              <span className="detail-label">{t('common.warehouse')}</span><span className="mono">{po?.warehouse_id ?? '-'}</span>
             </div>
           </section>
 
           <section className="section" style={{ marginBottom: 0 }}>
-            <div className="section-title">Line Items</div>
+            <div className="section-title">{t('salesOrders.lineItems')}</div>
             {!canReceive && (
               <p style={{
                 fontSize: 12, color: 'var(--text-secondary)',
                 marginBottom: 8, fontStyle: 'italic',
               }}>
-                PO status is {po?.status}; receiving is disabled until the
-                PO is OPEN or PARTIAL.
+                {t('receiving.disabledHint', { status: po?.status })}
               </p>
             )}
             {(detail.lines || []).length > 0 ? (
               <table className="lines-table">
                 <thead>
                   <tr>
-                    <th>SKU</th>
-                    <th>UPC</th>
-                    <th>MPN</th>
-                    <th>Item</th>
-                    <th style={{ textAlign: 'right' }}>Ordered</th>
-                    <th style={{ textAlign: 'right' }}>Received</th>
-                    <th style={{ textAlign: 'right' }}>Remaining</th>
+                    <th>{t('common.sku')}</th>
+                    <th>{t('common.upc')}</th>
+                    <th>{t('receiving.mpn')}</th>
+                    <th>{t('common.item')}</th>
+                    <th style={{ textAlign: 'right' }}>{t('salesOrders.ordered')}</th>
+                    <th style={{ textAlign: 'right' }}>{t('purchaseOrders.received')}</th>
+                    <th style={{ textAlign: 'right' }}>{t('purchaseOrders.remaining')}</th>
                     {canReceive && (
                       <>
-                        <th style={{ width: 90, textAlign: 'right' }}>Qty</th>
-                        <th style={{ width: 220 }}>Bin</th>
+                        <th style={{ width: 90, textAlign: 'right' }}>{t('common.qty')}</th>
+                        <th style={{ width: 220 }}>{t('common.bin')}</th>
                         <th style={{ width: 110 }}></th>
                       </>
                     )}
@@ -322,7 +324,9 @@ export default function Receiving() {
                                   ? 'Hide receipt history'
                                   : 'Show receipt history (with Unreceive)'}
                               >
-                                {isExpanded ? 'Hide' : 'Show'} receipts ({lineReceipts.length})
+                                {t(isExpanded
+                                  ? 'receiving.hideReceipts'
+                                  : 'receiving.showReceipts', { n: lineReceipts.length })}
                               </button>
                             )}
                           </td>
@@ -367,7 +371,7 @@ export default function Receiving() {
                                   disabled={!lineReceivable || draft.saving}
                                   onClick={() => receiveLine(l)}
                                 >
-                                  {draft.saving ? 'Receiving...' : 'Receive'}
+                                  {t(draft.saving ? 'receiving.receiving' : 'receiving.receive')}
                                 </button>
                               </td>
                             </>
@@ -387,17 +391,29 @@ export default function Receiving() {
                               {' - '}
                               <strong>{r.quantity_received}</strong> units to bin{' '}
                               <span className="mono">{r.bin_code}</span>
-                              {r.received_by ? <> by <strong>{r.received_by}</strong></> : null}
-                              {r.lot_number ? <> (lot {r.lot_number})</> : null}
-                              {r.serial_number ? <> (serial {r.serial_number})</> : null}
+                              {r.received_by ? (
+                                <>
+                                  {' '}
+                                  <RichText
+                                    text={t('receiving.byWhom')}
+                                    values={{ who: <strong>{r.received_by}</strong> }}
+                                  />
+                                </>
+                              ) : null}
+                              {r.lot_number
+                                ? ` (${t('warehouseSimulation.lotN', { lot: r.lot_number })})`
+                                : null}
+                              {r.serial_number
+                                ? ` (${t('receiving.serialN', { serial: r.serial_number })})`
+                                : null}
                             </td>
                             <td style={{ textAlign: 'right' }}>
                               <button
                                 className="btn btn-sm btn-danger"
                                 onClick={() => openUnreceive(r)}
-                                title="Reverse this receipt"
+                                title={t('receiving.reverseTooltip')}
                               >
-                                Unreceive
+                                {t('receiving.unreceive')}
                               </button>
                             </td>
                           </tr>
@@ -409,7 +425,7 @@ export default function Receiving() {
                     <tr key={`err-${lineId}`}>
                       <td colSpan={canReceive ? 10 : 7}>
                         <div className="form-error" style={{ fontSize: 12, padding: '4px 0' }}>
-                          Line {lineId}: {d.error}
+                          {t('receiving.lineError', { line: lineId })} {d.error}
                         </div>
                       </td>
                     </tr>
@@ -417,7 +433,7 @@ export default function Receiving() {
                 </tbody>
               </table>
             ) : (
-              <p style={{ fontSize: 13, color: 'var(--text-secondary)' }}>No line items</p>
+              <p style={{ fontSize: 13, color: 'var(--text-secondary)' }}>{t('salesOrders.noLineItems')}</p>
             )}
           </section>
         </Modal>
@@ -429,7 +445,7 @@ export default function Receiving() {
           audit row + the receipt.cancelled event payload. */}
       {unreceiving && (
         <Modal
-          title={`Unreceive: ${unreceiving.sku}`}
+          title={t('receiving.unreceiveTitle', { sku: unreceiving.sku })}
           onClose={closeUnreceive}
           footer={
             <>
@@ -437,13 +453,13 @@ export default function Receiving() {
                 className="btn"
                 onClick={closeUnreceive}
                 disabled={unreceiveSubmitting}
-              >Cancel</button>
+              >{t('common.cancel')}</button>
               <button
                 className="btn btn-danger"
                 onClick={submitUnreceive}
                 disabled={unreceiveSubmitting}
               >
-                {unreceiveSubmitting ? 'Reversing...' : 'Unreceive'}
+                {t(unreceiveSubmitting ? 'receiving.reversing' : 'receiving.unreceive')}
               </button>
             </>
           }
@@ -452,32 +468,39 @@ export default function Receiving() {
             <div className="form-error" style={{ marginBottom: 12 }}>{unreceiveError}</div>
           )}
           <p style={{ fontSize: 13, marginBottom: 12 }}>
-            Reverse <strong>{unreceiving.quantity_received}</strong> units of{' '}
-            <span className="mono">{unreceiving.sku}</span>{' '}
-            ({unreceiving.item_name}) received to bin{' '}
-            <span className="mono">{unreceiving.bin_code}</span>
-            {unreceiving.received_at ? (
-              <> on {new Date(unreceiving.received_at).toLocaleString()}</>
-            ) : null}
+            <RichText
+              text={t('receiving.reverseExplain', { item: unreceiving.item_name })}
+              values={{
+                qty: <strong>{unreceiving.quantity_received}</strong>,
+                sku: <span className="mono">{unreceiving.sku}</span>,
+                bin: <span className="mono">{unreceiving.bin_code}</span>,
+              }}
+            />
+            {unreceiving.received_at
+              ? ` ${t('receiving.onWhen', {
+                when: new Date(unreceiving.received_at).toLocaleString(),
+              })}`
+              : null}
             {unreceiving.received_by ? (
-              <> by <strong>{unreceiving.received_by}</strong></>
+              <>
+                {' '}
+                <RichText
+                  text={t('receiving.byWhom')}
+                  values={{ who: <strong>{unreceiving.received_by}</strong> }}
+                />
+              </>
             ) : null}.
           </p>
           <p style={{ fontSize: 12, color: 'var(--text-secondary)', marginBottom: 12 }}>
-            Inventory decrements from the warehouse pool (preferring the
-            receipt's original bin; falls through to other bins holding
-            this item if the goods have already been put away).
-            The PO line counter and PO status update in step, and a
-            receipt.cancelled event fires so a downstream subscriber
-            reverses the inbound count.
+            {t('receiving.unreceiveExplain')}
           </p>
           <div className="form-group">
-            <label>Reason (optional, audit-logged)</label>
+            <label>{t('receiving.reasonOptional')}</label>
             <input
               className="form-input"
               value={unreceiveReason}
               onChange={(e) => setUnreceiveReason(e.target.value)}
-              placeholder="e.g. double scan"
+              placeholder={t('receiving.reasonExample')}
               maxLength={500}
               disabled={unreceiveSubmitting}
             />

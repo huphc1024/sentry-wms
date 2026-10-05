@@ -1,6 +1,7 @@
 import { useState, useRef } from 'react';
 import { api } from '../api.js';
 import PageHeader from '../components/PageHeader.jsx';
+import { useLocale } from '../i18n/locale.jsx';
 
 // Every template must include every field the corresponding import
 // endpoint treats as required OR meaningfully useful. Issue #91: the
@@ -47,14 +48,19 @@ function downloadTemplate(type) {
 }
 
 const IMPORT_TYPES = [
-  { value: 'items', label: 'Items', desc: 'Import products with SKU, UPC, weight, and initial quantity' },
-  { value: 'bins', label: 'Bins', desc: 'Import bin locations with zone, aisle, and type' },
-  { value: 'purchase-orders', label: 'Purchase Orders', desc: 'Import POs with vendor and line items' },
-  { value: 'sales-orders', label: 'Sales Orders', desc: 'Import SOs with customer and line items' },
-  { value: 'inventory-adjustments', label: 'Inventory Adjustments', desc: 'Bulk adjust on-hand quantities (auto-approved). Signed qty: positive adds, negative subtracts. Memo lands on the adjustment record.' },
+  { value: 'items', labelKey: 'nav.items', descKey: 'imports.descItems' },
+  { value: 'bins', labelKey: 'nav.bins', descKey: 'imports.descBins' },
+  { value: 'purchase-orders', labelKey: 'nav.purchaseOrders', descKey: 'imports.descPos' },
+  { value: 'sales-orders', labelKey: 'nav.salesOrders', descKey: 'imports.descSos' },
+  {
+    value: 'inventory-adjustments',
+    labelKey: 'nav.adjustments',
+    descKey: 'imports.descAdjustments',
+  },
 ];
 
 export default function Imports() {
+  const { t } = useLocale();
   const [importType, setImportType] = useState('items');
   const [importResult, setImportResult] = useState(null);
   const [importing, setImporting] = useState(false);
@@ -89,10 +95,10 @@ export default function Imports() {
         setImportResult(data);
       } else {
         const data = await res?.json();
-        setImportResult({ error: data?.error || 'Import failed' });
+        setImportResult({ error: data?.error || t('imports.failed') });
       }
     } catch (err) {
-      setImportResult({ error: 'Failed to parse file' });
+      setImportResult({ error: t('imports.parseFailed') });
     }
     setImporting(false);
     fileRef.current.value = '';
@@ -100,49 +106,54 @@ export default function Imports() {
 
   return (
     <div>
-      <PageHeader title="Import" />
+      <PageHeader title={t('nav.import')} />
 
       <div className="settings-section">
-        <h3>Import Data</h3>
+        <h3>{t('imports.importData')}</h3>
         <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8, marginBottom: 8 }}>
-          {IMPORT_TYPES.map((t) => (
+          {/* The map used to bind `t`, which now names the translator. */}
+          {IMPORT_TYPES.map((kind) => (
             <button
-              key={t.value}
-              className={`btn ${importType === t.value ? 'btn-primary' : ''}`}
-              onClick={() => { setImportType(t.value); setImportResult(null); }}
+              key={kind.value}
+              className={`btn ${importType === kind.value ? 'btn-primary' : ''}`}
+              onClick={() => { setImportType(kind.value); setImportResult(null); }}
             >
-              {t.label}
+              {t(kind.labelKey)}
             </button>
           ))}
         </div>
-        <p className="settings-note">{IMPORT_TYPES.find((t) => t.value === importType)?.desc}</p>
+        <p className="settings-note">
+          {t(IMPORT_TYPES.find((kind) => kind.value === importType)?.descKey)}
+        </p>
 
         <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap', marginTop: 12 }}>
           <input ref={fileRef} type="file" accept=".csv,.json" style={{ fontSize: 13 }} />
           <button className="btn btn-primary" onClick={handleImport} disabled={importing}>
-            {importing ? 'Importing...' : 'Import'}
+            {t(importing ? 'imports.importing' : 'nav.import')}
           </button>
           <button className="btn btn-sm" onClick={() => downloadTemplate(importType)} style={{ fontSize: 12 }}>
-            Download Template
+            {t('imports.downloadTemplate')}
           </button>
         </div>
       </div>
 
       {importResult && (
         <div className="settings-section">
-          <h3>Results</h3>
+          <h3>{t('imports.results')}</h3>
           <div className="import-results">
             {importResult.error ? (
               <div className="errors">{importResult.error}</div>
             ) : (
               <>
-                <div className="success">Imported: {importResult.imported ?? 0}</div>
+                <div className="success">{t('imports.imported', { n: importResult.imported ?? 0 })}</div>
                 {importResult.errors?.length > 0 && (
                   <div className="errors" style={{ marginTop: 4 }}>
-                    Errors: {importResult.errors.length}
+                    {t('imports.errors', { n: importResult.errors.length })}
                     <ul style={{ margin: '4px 0 0 16px', fontSize: 12 }}>
                       {importResult.errors.slice(0, 20).map((err, i) => (
-                        <li key={i}>Row {err.row}: {err.error}</li>
+                        <li key={i}>
+                          {t('imports.rowError', { row: err.row })} {err.error}
+                        </li>
                       ))}
                     </ul>
                   </div>

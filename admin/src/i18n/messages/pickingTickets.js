@@ -1,0 +1,53 @@
+/**
+ * Strings owned by the picking tickets screen.
+ */
+
+export const en = {
+  'pickingTickets.batchTooltip': 'Queue has {queued}; one tab prints the top {limit} in the current sort. Clear them and Print All again for the rest.',
+  'pickingTickets.empty': 'No orders ready for picking',
+  'pickingTickets.findTicket': 'Find a ticket',
+  'pickingTickets.hidePrinted': 'Hide printed',
+  'pickingTickets.hidePrintedTooltip': 'Hide orders whose picking ticket has already been rendered',
+  'pickingTickets.noMatch': 'No sales order found matching “{term}”.',
+  'pickingTickets.open': 'Open',
+  'pickingTickets.printAll': 'Print All ({total})',
+  'pickingTickets.printFirst': 'Print First {limit} (of {total})',
+  'pickingTickets.printTicket': 'Print ticket',
+  'pickingTickets.readyToPick': 'Orders ready to pick',
+  'pickingTickets.searchPlaceholder': 'Sales order number, e.g. 648415',
+  'pickingTickets.items': 'Items',
+  'pickingTickets.group': 'Group',
+  'pickingTickets.multiOrders': 'Multi-Orders',
+  'pickingTickets.multiOrdersTooltip': 'Show only orders that share a shipping address with another order in the queue, clustered so they can be boxed and shipped together',
+  'pickingTickets.longOrders': 'Long Orders',
+  'pickingTickets.longOrdersTooltip': 'Show only long orders -- {min}+ line items -- so the picking-heavy orders can be batch-printed',
+  'pickingTickets.refreshTooltip': 'Re-fetch the list from the server (e.g. to pick up just-pushed customer name + shipping address)',
+  'pickingTickets.emptyLongMulti': 'No long orders share an address in this queue',
+  'pickingTickets.emptyMulti': 'No multi-order groups in this queue',
+  'pickingTickets.emptyLong': 'No long orders in this queue',
+};
+
+export const vi = {
+  'pickingTickets.batchTooltip': 'Hàng chờ có {queued}; mỗi tab in {limit} phiếu đầu theo thứ tự hiện tại. Xử lý xong rồi bấm In tất cả lần nữa cho phần còn lại.',
+  'pickingTickets.empty': 'Không có đơn nào sẵn sàng để lấy hàng',
+  'pickingTickets.findTicket': 'Tìm phiếu',
+  'pickingTickets.hidePrinted': 'Ẩn phiếu đã in',
+  'pickingTickets.hidePrintedTooltip': 'Ẩn những đơn đã in phiếu lấy hàng',
+  'pickingTickets.noMatch': 'Không tìm thấy đơn bán nào khớp “{term}”.',
+  'pickingTickets.open': 'Mở',
+  'pickingTickets.printAll': 'In tất cả ({total})',
+  'pickingTickets.printFirst': 'In {limit} phiếu đầu (trên {total})',
+  'pickingTickets.printTicket': 'In phiếu',
+  'pickingTickets.readyToPick': 'Đơn sẵn sàng lấy hàng',
+  'pickingTickets.searchPlaceholder': 'Số đơn bán, ví dụ 648415',
+  'pickingTickets.items': 'Số dòng',
+  'pickingTickets.group': 'Nhóm',
+  'pickingTickets.multiOrders': 'Đơn ghép',
+  'pickingTickets.multiOrdersTooltip': 'Chỉ hiện các đơn có cùng địa chỉ giao với đơn khác trong hàng chờ, xếp theo cụm để đóng và giao chung',
+  'pickingTickets.longOrders': 'Đơn dài',
+  'pickingTickets.longOrdersTooltip': 'Chỉ hiện các đơn dài -- từ {min} dòng hàng trở lên -- để in hàng loạt những đơn tốn nhiều công lấy hàng',
+  'pickingTickets.refreshTooltip': 'Tải lại danh sách từ máy chủ (ví dụ để lấy tên khách và địa chỉ giao vừa được đẩy về)',
+  'pickingTickets.emptyLongMulti': 'Không có đơn dài nào cùng địa chỉ trong hàng chờ này',
+  'pickingTickets.emptyMulti': 'Không có nhóm đơn ghép nào trong hàng chờ này',
+  'pickingTickets.emptyLong': 'Không có đơn dài nào trong hàng chờ này',
+};

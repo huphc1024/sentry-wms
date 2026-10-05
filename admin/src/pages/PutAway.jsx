@@ -3,6 +3,7 @@ import { api } from '../api.js';
 import { useWarehouse } from '../warehouse.jsx';
 import PageHeader from '../components/PageHeader.jsx';
 import Modal from '../components/Modal.jsx';
+import { useLocale } from '../i18n/locale.jsx';
 
 // Dashboard view of staging bins for the supervisor. Grid of
 // rounded-rectangle bin tiles, alphabetised, with a red border for
@@ -33,6 +34,7 @@ function downloadCsv(filename, headerRow, dataRows) {
 }
 
 export default function PutAway() {
+  const { t } = useLocale();
   const { warehouseId } = useWarehouse();
   const [bins, setBins] = useState([]);
   const [focusedBin, setFocusedBin] = useState(null);
@@ -80,14 +82,14 @@ export default function PutAway() {
 
   return (
     <div>
-      <PageHeader title="Put-Away">
+      <PageHeader title={t('nav.putaway')}>
         <button
           className="btn"
           onClick={exportAll}
           disabled={bins.length === 0}
-          title="Export every staging bin and its items to CSV"
+          title={t('putAway.exportAllTooltip')}
         >
-          Export All (CSV)
+          {t('putAway.exportAll')}
         </button>
       </PageHeader>
 
@@ -97,18 +99,24 @@ export default function PutAway() {
       }}>
         <span>
           <strong style={{ color: 'var(--text)' }}>{binsWithItems}</strong>
-          {' / '}{bins.length} staging bins with items
+          {' / '}{t('putAway.stagingBinsWithItems', { total: bins.length })}
         </span>
-        <span><strong style={{ color: 'var(--text)' }}>{totalSkus}</strong> total SKU rows</span>
-        <span><strong style={{ color: 'var(--text)' }}>{totalQty}</strong> total units</span>
+        <span>
+          <strong style={{ color: 'var(--text)' }}>{totalSkus}</strong>{' '}
+          {t('putAway.totalSkuRows')}
+        </span>
+        <span>
+          <strong style={{ color: 'var(--text)' }}>{totalQty}</strong>{' '}
+          {t('putAway.totalUnits')}
+        </span>
       </div>
 
       {loading && (
-        <p style={{ fontSize: 13, color: 'var(--text-secondary)' }}>Loading…</p>
+        <p style={{ fontSize: 13, color: 'var(--text-secondary)' }}>{t('common.loading')}</p>
       )}
       {!loading && bins.length === 0 && (
         <p style={{ fontSize: 13, color: 'var(--text-secondary)' }}>
-          No staging bins exist in this warehouse.
+          {t('putAway.noStagingBins')}
         </p>
       )}
 
@@ -124,7 +132,11 @@ export default function PutAway() {
               disabled={isEmpty}
               title={isEmpty
                 ? `${b.bin_code} - empty`
-                : `${b.bin_code} - ${b.sku_count} SKU${b.sku_count === 1 ? '' : 's'}, ${b.total_qty} units`}
+                : t('putAway.tileTooltip', {
+                  bin: b.bin_code,
+                  skus: b.sku_count,
+                  units: b.total_qty,
+                })}
             >
               <div className="putaway-tile-label">{b.bin_code}</div>
               <div className="putaway-tile-count">
@@ -137,27 +149,31 @@ export default function PutAway() {
 
       {focusedBin && (
         <Modal
-          title={`${focusedBin.bin_code} - ${focusedBin.sku_count} SKUs, ${focusedBin.total_qty} units`}
+          title={t('putAway.binTitle', {
+            bin: focusedBin.bin_code,
+            skus: focusedBin.sku_count,
+            units: focusedBin.total_qty,
+          })}
           onClose={() => setFocusedBin(null)}
           size="wide"
           footer={
             <>
               <button className="btn" onClick={() => exportBin(focusedBin)}>
-                Export {focusedBin.bin_code} (CSV)
+                {t('putAway.exportBin', { bin: focusedBin.bin_code })}
               </button>
-              <button className="btn btn-primary" onClick={() => setFocusedBin(null)}>Close</button>
+              <button className="btn btn-primary" onClick={() => setFocusedBin(null)}>{t('common.close')}</button>
             </>
           }
         >
           <table className="lines-table">
             <thead>
               <tr>
-                <th>SKU</th>
-                <th>Item Name</th>
-                <th>UPC</th>
-                <th style={{ textAlign: 'right' }}>Qty</th>
-                <th>Suggested Bin</th>
-                <th>Lot</th>
+                <th>{t('common.sku')}</th>
+                <th>{t('common.itemName')}</th>
+                <th>{t('common.upc')}</th>
+                <th style={{ textAlign: 'right' }}>{t('common.qty')}</th>
+                <th>{t('putAway.suggestedBin')}</th>
+                <th>{t('warehouseSimulation.lot')}</th>
               </tr>
             </thead>
             <tbody>

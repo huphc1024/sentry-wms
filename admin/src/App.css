@@ -1,3 +1,55 @@
+.commercial-tabs {
+  display: flex;
+  gap: 4px;
+  width: fit-content;
+  margin: 0 0 16px;
+  padding: 4px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: var(--surface);
+}
+
+.commercial-tab {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 36px;
+  padding: 7px 14px;
+  border: 0;
+  border-radius: 7px;
+  background: transparent;
+  color: var(--text-secondary);
+  font: inherit;
+  font-weight: 700;
+  cursor: pointer;
+  transition: background-color 180ms ease, color 180ms ease, box-shadow 180ms ease;
+}
+
+.commercial-tab span {
+  min-width: 22px;
+  padding: 1px 6px;
+  border-radius: 999px;
+  background: rgba(100, 116, 139, 0.14);
+  font-size: 11px;
+  text-align: center;
+}
+
+.commercial-tab:hover {
+  color: var(--text-primary);
+  background: rgba(255, 255, 255, 0.65);
+}
+
+.commercial-tab.active {
+  color: var(--text-primary);
+  background: var(--panel);
+  box-shadow: 0 1px 4px rgba(15, 23, 42, 0.14);
+}
+
+.commercial-tab:focus-visible {
+  outline: 2px solid var(--copper);
+  outline-offset: 2px;
+}
+
 /* ── Fonts (V-110: self-hosted, OFL) ─────────────── */
 /* Instrument Sans covers the 400/500/600/700 weights the admin panel
    renders. The single variable woff2 (wght + wdth axes) is smaller than
@@ -37,39 +89,222 @@
   padding: 0;
 }
 
+/* Two palettes, one set of names.
+ *
+ * Every colour the app uses is declared once here and once again under
+ * [data-theme="dark"]; nothing else in this file, and nothing in a
+ * component, should carry a literal colour. That is what makes a dark
+ * mode possible at all -- a hard-coded #fff somewhere deep in a rule is
+ * a white flash on a dark screen that nobody finds until a night shift
+ * complains.
+ *
+ * The accent is copper. It is two different coppers on purpose: the
+ * lighter #C4722A does not carry enough contrast against white for
+ * button text (3.6:1, under the 4.5:1 that small text needs), so light
+ * mode uses a darker one and dark mode uses the lighter, where it sits
+ * against a dark panel instead. Brick red, which used to be the accent,
+ * now means one thing only: destructive.
+ */
 :root {
-  --accent: #8e2715;
-  --accent-hover: #a83020;
-  --copper: #c4722a;
+  color-scheme: light;
+
+  --accent: #9C5718;
+  --accent-hover: #8F4F18;
+  /* Label colour on top of an accent fill. */
+  --on-accent: #FFFFFF;
+  /* The lighter copper, used where it sits on the dark chrome. */
+  --copper: #C4722A;
+  /* Kept for anything still asking for the old cream. */
   --cream: #FCF4E3;
 
-  --bg: #FAFAF7;
-  --white: #FFFFFF;
-  --surface: #F5F3EE;
+  --bg: #F6F6F5;
+  /* Card, table and dialog surface. Dark mode makes it dark; the name is
+     about the role, not the colour. */
+  --panel: #FFFFFF;
+  --white: var(--panel);
+  --surface: #F1F1EF;
 
-  --text: #1A1714;
-  --text-secondary: #6b5f50;
-  --text-tertiary: #a89a88;
+  --text: #1C1B19;
+  --text-secondary: #6E6B66;
+  /* Placeholders and disabled labels. Deliberately under AA -- it is
+     meant to recede, and nothing load-bearing is written in it. */
+  --text-tertiary: #9C9892;
 
-  --border: #e8e2d8;
-  --border-dark: #d4cdc0;
+  --border: #E3E2DF;
+  --border-dark: #CFCDC8;
 
-  --success: #2d7a3a;
-  --success-bg: #e8f5ea;
-  --warning: #8a6d1b;
-  --warning-bg: #fef9e7;
-  --danger: #8e2715;
-  --danger-bg: #fce8e5;
-  --info: #1e5f8a;
-  --info-bg: #e5f0f8;
+  --success: #1F6F3C;
+  --success-bg: #E7F3EB;
+  --warning: #806316;
+  --warning-bg: #FBF3DE;
+  --danger: #8E2715;
+  --danger-bg: #FAE7E4;
+  --info: #1E5F8A;
+  --info-bg: #E4EFF6;
   --purple: #534AB7;
   --purple-bg: #EEEDFE;
+
+  /* Top bar and sidebar. They are dark in both themes -- that is the
+     app's shape, not a light-mode decision -- so they get their own
+     names rather than borrowing the content palette. */
+  --chrome-bg: #26251F;
+  --chrome-raised: #32302A;
+  --chrome-text: #F5F2EC;
+  --chrome-text-muted: rgba(245, 242, 236, 0.7);
+  --chrome-hover: rgba(255, 255, 255, 0.08);
+  --chrome-active: rgba(196, 114, 42, 0.18);
+  --chrome-line: rgba(255, 255, 255, 0.1);
+
+  /* Warehouse simulation slot status */
+  --sim-empty-bg: #F1F0EE;
+  --sim-empty-border: #B4B0A9;
+  --sim-occupied-bg: #E7F3EB;
+  --sim-occupied-border: #1F6F3C;
+  --sim-expired-bg: #FBF3DE;
+  --sim-expired-border: #C4722A;
 
   --sans: 'Instrument Sans', 'Helvetica Neue', sans-serif;
   --mono: 'JetBrains Mono', 'Fira Code', monospace;
 
   --radius: 6px;
   --radius-lg: 8px;
+  --radius-sm: 4px;
+
+  /* The ring antd draws around a focused control. Repeated here so a
+     hand-written .form-input and an <Input> look the same when tabbed
+     to; the alpha matches antd's controlOutline. */
+  --focus-ring: 0 0 0 2px rgba(156, 87, 24, 0.14);
+  /* antd's control height and line-height for the middle / small sizes.
+     Hand-written controls sit in the same rows as antd ones, so they
+     have to agree on height or every toolbar looks ragged. */
+  --control-h: 32px;
+  --control-h-sm: 24px;
+  --control-line: 1.5714;
+
+
+  /* Warehouse floor plan.
+     The map is its own visual language -- a blue-grey drawing, not the
+     brand palette -- and flattening it into the app's neutrals would
+     cost the layering that separates a rack from an aisle from a chip.
+     So it keeps its own ramp, and light mode keeps exactly the colours
+     it had; only the dark values below are new. */
+  --map-surface: #FFFFFF;
+  --map-surface-2: #F7FAFF;
+  --map-fill: #EEF2F7;
+  --map-fill-2: #F8FAFC;
+  --map-border: #D6E3EF;
+  --map-border-strong: #CBD5E1;
+  --map-text: #253E5B;
+  --map-text-strong: #111827;
+  --map-muted: #5E7FA8;
+  --map-accent: #2563EB;
+  --map-accent-strong: #1D4ED8;
+  --map-accent-tint: #EFF6FF;
+  --map-ok: #16A34A;
+  --map-ok-text: #166534;
+  --map-ok-tint: #DCFCE7;
+  --map-ok-border: #86EFAC;
+  --map-warn: #E9B949;
+  --map-warn-text: #9A6700;
+  --map-warn-tint: #FFF8E7;
+  --map-warn-border: #EFD99B;
+  --map-bad: #DC2626;
+  --map-special: #7C3AED;
+  --map-cell-stocked: #CFE4FF;
+  --map-cell-full: #F6D7B8;
+
+  --shadow-pop: 0 8px 24px rgba(0, 0, 0, 0.18);
+}
+
+/* Set on <html> by the theme switch, never left to the media query
+   alone: the operator's choice has to survive a reload, and the first
+   paint has to agree with it. theme.js reads the stored choice and falls
+   back to the system preference. */
+:root[data-theme="dark"] {
+  color-scheme: dark;
+
+  /* A lighter copper than light mode uses, because here it is read
+     against a dark panel: #C4722A only manages 4.3:1 there, under the
+     4.5:1 small text needs. On a copper fill the label goes dark rather
+     than white, for the same reason in reverse. */
+  --accent: #D6883F;
+  --accent-hover: #E09A55;
+  --on-accent: #1A1A19;
+
+  --bg: #1A1A19;
+  --panel: #232322;
+  --surface: #2B2B29;
+
+  --text: #EDEBE7;
+  --text-secondary: #A8A49D;
+  --text-tertiary: #7A766F;
+
+  --border: #35342F;
+  --border-dark: #47453F;
+
+  /* Lifted well clear of the dark panel; the light-mode shades would be
+     unreadable on it. */
+  --success: #5FBF7A;
+  --success-bg: #1B2E20;
+  --warning: #D4AA3A;
+  --warning-bg: #2E2715;
+  --danger: #E57A66;
+  --danger-bg: #331C18;
+  --info: #5FA8D8;
+  --info-bg: #16262F;
+  --purple: #9B93E8;
+  --purple-bg: #221F33;
+
+  --chrome-bg: #1E1E1C;
+  --chrome-raised: #292825;
+  --chrome-text: #EDEBE7;
+  --chrome-text-muted: rgba(237, 235, 231, 0.65);
+  --chrome-hover: rgba(255, 255, 255, 0.06);
+  --chrome-active: rgba(196, 114, 42, 0.22);
+  --chrome-line: rgba(255, 255, 255, 0.08);
+
+  --sim-empty-bg: #262624;
+  --sim-empty-border: #56534D;
+  --sim-occupied-bg: #1B2E20;
+  --sim-occupied-border: #5FBF7A;
+  --sim-expired-bg: #2E2715;
+  --sim-expired-border: #D4AA3A;
+
+  --focus-ring: 0 0 0 2px rgba(196, 114, 42, 0.28);
+
+  --map-surface: #232322;
+  --map-surface-2: #282826;
+  --map-fill: #2B2B29;
+  --map-fill-2: #262624;
+  --map-border: #3A3934;
+  --map-border-strong: #4C4A44;
+  --map-text: #EDEBE7;
+  --map-text-strong: #FFFFFF;
+  --map-muted: #A8A49D;
+  /* Lifted well clear of the dark fills; #2563EB is 2.4:1 on them. */
+  --map-accent: #6BA8F0;
+  --map-accent-strong: #8FC0F7;
+  --map-accent-tint: #18242F;
+  --map-ok: #5FBF7A;
+  --map-ok-text: #8FD9A3;
+  --map-ok-tint: #1B2E20;
+  --map-ok-border: #2F6B41;
+  --map-warn: #D4AA3A;
+  --map-warn-text: #E3C368;
+  --map-warn-tint: #2E2715;
+  --map-warn-border: #6B5A24;
+  --map-bad: #E0705C;
+  --map-special: #9B93E8;
+  --map-cell-stocked: #223244;
+  --map-cell-full: #3A2E1E;
+
+  --shadow-pop: 0 8px 24px rgba(0, 0, 0, 0.5);
+}
+
+/* The canvas behind everything, so a reload in dark mode does not flash
+   the browser's default white before the layout paints. */
+html {
+  background: var(--bg);
 }
 
 body {
@@ -107,8 +342,8 @@ a {
   align-items: center;
   gap: 12px;
   padding: 0 16px;
-  background: #2a2520;
-  border-bottom: 2px solid #b87333;
+  background: var(--chrome-bg);
+  border-bottom: 2px solid var(--copper);
   z-index: 10;
 }
 
@@ -118,19 +353,19 @@ a {
   gap: 10px;
   font-weight: 600;
   font-size: 17px;
-  color: #fdf4e3;
+  color: var(--chrome-text);
   letter-spacing: 0.5px;
   white-space: nowrap;
 }
 
 .topbar-breadcrumb {
   font-size: 15px;
-  color: #ffffff;
+  color: var(--chrome-text);
   margin-left: 4px;
 }
 
 .topbar-breadcrumb span {
-  color: rgba(255,255,255,0.85);
+  color: var(--chrome-text-muted);
 }
 
 .topbar-wh-picker {
@@ -145,7 +380,7 @@ a {
 }
 
 .topbar-wh-picker:hover {
-  background: rgba(255,255,255,0.08);
+  background: var(--chrome-hover);
 }
 
 .topbar-wh-dropdown {
@@ -153,10 +388,10 @@ a {
   top: calc(100% + 6px);
   left: 0;
   min-width: 220px;
-  background: #352f2a;
-  border: 1px solid rgba(255,255,255,0.1);
+  background: var(--chrome-raised);
+  border: 1px solid var(--chrome-line);
   border-radius: 8px;
-  box-shadow: 0 8px 24px rgba(0,0,0,0.3);
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.35);
   z-index: 200;
   overflow: hidden;
 }
@@ -171,25 +406,25 @@ a {
 }
 
 .topbar-wh-option:hover {
-  background: rgba(183,115,51,0.15);
+  background: var(--chrome-active);
 }
 
 .topbar-wh-option.active {
-  background: rgba(183,115,51,0.15);
-  border-left: 3px solid #b87333;
+  background: var(--chrome-active);
+  border-left: 3px solid var(--copper);
 }
 
 .topbar-wh-code {
   font-family: var(--mono);
   font-size: 12px;
   font-weight: 500;
-  color: #fdf4e3;
+  color: var(--chrome-text);
   letter-spacing: 0.3px;
 }
 
 .topbar-wh-name {
   font-size: 12px;
-  color: rgba(255,255,255,0.7);
+  color: var(--chrome-text-muted);
 }
 
 .topbar-search {
@@ -203,28 +438,28 @@ a {
   padding: 6px 10px;
   font-size: 13px;
   font-family: var(--sans);
-  border: 0.5px solid rgba(255,255,255,0.1);
+  border: 0.5px solid var(--chrome-line);
   border-radius: 6px;
-  background: #352f2a;
-  color: #ffffff;
+  background: var(--chrome-raised);
+  color: var(--chrome-text);
   outline: none;
   transition: border-color 0.15s;
 }
 
 .topbar-search input::placeholder {
-  color: rgba(255,255,255,0.55);
+  color: var(--chrome-text-muted);
 }
 
 .topbar-search input:focus {
-  border-color: #b87333;
+  border-color: var(--copper);
 }
 
 .topbar-avatar {
   width: 30px;
   height: 30px;
   border-radius: 6px;
-  background: #8e2716;
-  color: #fdf4e3;
+  background: var(--danger);
+  color: var(--chrome-text);
   display: flex;
   align-items: center;
   justify-content: center;
@@ -238,22 +473,22 @@ a {
   position: absolute;
   top: 40px;
   right: 0;
-  background: #352f2a;
-  border: 1px solid rgba(255,255,255,0.1);
+  background: var(--chrome-raised);
+  border: 1px solid var(--chrome-line);
   border-radius: 8px;
   min-width: 180px;
-  box-shadow: 0 4px 12px rgba(0,0,0,0.3);
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.35);
   z-index: 100;
 }
 
 .topbar-dropdown-header {
   padding: 10px 14px;
-  color: #fdf4e3;
+  color: var(--chrome-text);
 }
 
 .topbar-dropdown-divider {
   height: 1px;
-  background: rgba(255,255,255,0.1);
+  background: var(--chrome-line);
 }
 
 .topbar-dropdown-item {
@@ -264,25 +499,25 @@ a {
   border: none;
   text-align: left;
   font-size: 13px;
-  color: rgba(255,255,255,0.7);
+  color: var(--chrome-text-muted);
   cursor: pointer;
 }
 
 .topbar-dropdown-item:hover {
-  background: rgba(255,255,255,0.05);
-  color: #fdf4e3;
+  background: var(--chrome-hover);
+  color: var(--chrome-text);
 }
 
 /* ── Sidebar ──────────────────────────────────── */
 
 .sidebar {
-  background: #2a2520;
+  background: var(--chrome-bg);
   overflow-y: auto;
   padding: 8px 6px;
 }
 
 .sidebar-card {
-  background: #352f2a;
+  background: var(--chrome-raised);
   border-radius: 8px;
   padding: 6px 0;
   margin-bottom: 6px;
@@ -290,12 +525,12 @@ a {
 
 .sidebar-group-label {
   width: 100%;
-  background: rgba(142,39,22,0.4);
+  background: var(--chrome-active);
   font-size: 13px;
   font-weight: 700;
   text-transform: uppercase;
   letter-spacing: 1px;
-  color: #fdf4e3;
+  color: var(--chrome-text);
   padding: 6px 10px;
 }
 
@@ -306,21 +541,21 @@ a {
   padding: 6px 10px;
   font-size: 14px;
   font-weight: 600;
-  color: #ffffff;
+  color: var(--chrome-text);
   border-left: 3px solid transparent;
   cursor: pointer;
   transition: background 0.1s, color 0.1s;
 }
 
 .sidebar-link:hover {
-  background: rgba(255,255,255,0.08);
-  color: #ffffff;
+  background: var(--chrome-hover);
+  color: var(--chrome-text);
 }
 
 .sidebar-link.active {
-  border-left-color: #b87333;
-  background: rgba(183,115,51,0.15);
-  color: #fdf4e3;
+  border-left-color: var(--copper);
+  background: var(--chrome-active);
+  color: var(--chrome-text);
   font-weight: 500;
 }
 
@@ -329,13 +564,13 @@ a {
   font-size: 9px;
   padding: 1px 6px;
   border-radius: 8px;
-  background: #8e2716;
-  color: white;
+  background: var(--danger);
+  color: var(--chrome-text);
 }
 
 .sidebar-link.active .sidebar-badge {
-  background: #8e2716;
-  color: white;
+  background: var(--danger);
+  color: var(--chrome-text);
 }
 
 /* ── Content ──────────────────────────────────── */
@@ -381,7 +616,7 @@ a {
   padding: 14px 10px;
   border-radius: 10px;
   border: 2px solid var(--border-dark);
-  background: var(--white);
+  background: var(--panel);
   font-family: var(--sans);
   cursor: pointer;
   transition: transform 0.1s, box-shadow 0.15s, border-color 0.15s;
@@ -432,7 +667,7 @@ a {
 
 .data-tab {
   padding: 8px 16px;
-  font-size: 13px;
+  font-size: 14px;
   font-weight: 500;
   font-family: inherit;
   color: var(--text-secondary);
@@ -536,37 +771,67 @@ a {
   margin-left: 8px;
 }
 
-/* ── Buttons ──────────────────────────────────── */
+/* ── Buttons ──────────────────────────────── */
+
+/* These match antd's Button rather than approximating it: the same 32px
+   height, the same 4px/15px padding, the same 14px text. Pages render
+   .btn next to <Button> constantly -- the CSV export beside a page's own
+   toolbar, a page's Save beside a dialog's chrome -- and a two-pixel
+   disagreement in height reads as sloppiness. */
 
 .btn {
   display: inline-flex;
   align-items: center;
-  gap: 6px;
-  padding: 7px 14px;
-  font-size: 13px;
+  justify-content: center;
+  gap: 8px;
+  min-height: var(--control-h);
+  padding: 4px 15px;
+  font-size: 14px;
+  line-height: var(--control-line);
   font-family: var(--sans);
-  font-weight: 500;
+  font-weight: 600;
   border-radius: var(--radius);
   cursor: pointer;
-  transition: background 0.15s, border-color 0.15s;
+  white-space: nowrap;
+  transition: color 0.15s, background 0.15s, border-color 0.15s, box-shadow 0.15s;
   border: 1px solid var(--border-dark);
-  background: var(--white);
+  background: var(--panel);
   color: var(--text);
 }
 
-.btn:hover {
+/* antd's default button answers a hover by turning its border and label
+   the primary colour, not by shading its background. */
+.btn:hover:not(:disabled) {
+  color: var(--accent);
+  border-color: var(--accent);
+}
+
+.btn:focus-visible {
+  outline: none;
+  border-color: var(--accent);
+  box-shadow: var(--focus-ring);
+}
+
+/* There was no disabled rule at all before, so a button the page had
+   disabled looked exactly like one that worked -- the operator only
+   found out by clicking it. */
+.btn:disabled {
+  color: var(--text-tertiary);
+  border-color: var(--border);
   background: var(--surface);
+  cursor: not-allowed;
 }
 
 .btn-primary {
   background: var(--accent);
-  color: var(--cream);
+  color: var(--on-accent);
   border-color: var(--accent);
 }
 
-.btn-primary:hover {
+.btn-primary:hover:not(:disabled) {
   background: var(--accent-hover);
   border-color: var(--accent-hover);
+  color: var(--on-accent);
 }
 
 .btn-danger {
@@ -574,28 +839,67 @@ a {
   border-color: var(--danger);
 }
 
-.btn-danger:hover {
+.btn-danger:hover:not(:disabled) {
+  color: var(--danger);
   background: var(--danger-bg);
+  border-color: var(--danger);
+}
+
+/* These two classes were being used on seven buttons without ever having
+   been defined, so they rendered as plain .btn -- an "Admin Pick" that
+   overrides the handheld looked exactly like Save. The styling follows
+   what the call sites mean: warning for an override, secondary for a
+   low-stakes action like Refresh. */
+.btn-warning {
+  color: var(--warning);
+  border-color: var(--warning);
+}
+
+.btn-warning:hover:not(:disabled) {
+  color: var(--warning);
+  background: var(--warning-bg);
+  border-color: var(--warning);
+}
+
+.btn-secondary {
+  color: var(--text-secondary);
+  background: var(--surface);
+  border-color: var(--border);
+}
+
+.btn-secondary:hover:not(:disabled) {
+  color: var(--text);
+  background: var(--surface);
+  border-color: var(--border-dark);
 }
 
 .btn-sm {
-  padding: 4px 10px;
-  font-size: 12px;
+  min-height: var(--control-h-sm);
+  padding: 0 7px;
+  font-size: 14px;
+  border-radius: var(--radius-sm);
 }
 
 /* ── Data Table ───────────────────────────────── */
 
 .data-table-wrapper {
-  background: var(--white);
+  background: var(--panel);
   border: 1px solid var(--border);
   border-radius: var(--radius-lg);
   overflow: hidden;
 }
 
+/* Seven tables are still written out by hand rather than through
+   DataTable -- the sales-order line items, the dashboard's activity
+   lists, the adjustment and transfer forms, the order-line editor. They
+   are laid out too specifically to go through a generic component, but
+   they sit on the same screens as antd tables, so these rules are
+   measured off a rendered <Table> rather than approximated: 14px text,
+   12px/8px cells, the same header fill and the same row rule. */
 .data-table {
   width: 100%;
   border-collapse: collapse;
-  font-size: 13px;
+  font-size: 14px;
 }
 
 .data-table thead {
@@ -603,17 +907,17 @@ a {
 }
 
 .data-table th {
-  padding: 8px 12px;
+  padding: 12px 8px;
   text-align: left;
   font-weight: 600;
-  font-size: 12px;
+  font-size: 14px;
   color: var(--text-secondary);
   border-bottom: 1px solid var(--border);
   white-space: nowrap;
 }
 
 .data-table td {
-  padding: 8px 12px;
+  padding: 12px 8px;
   border-bottom: 1px solid var(--border);
   color: var(--text);
 }
@@ -622,8 +926,10 @@ a {
   border-bottom: none;
 }
 
+/* antd tints the row it is hovering; the old rule set it back to the
+   panel colour, which did nothing at all. */
 .data-table tbody tr:hover {
-  background: #FDFCF9;
+  background: var(--surface);
 }
 
 .data-table tbody tr.clickable {
@@ -644,14 +950,26 @@ a {
 
 .data-table .mono {
   font-family: var(--mono);
-  font-size: 12px;
+  font-size: 13px;
 }
 
 .table-empty {
   padding: 32px;
   text-align: center;
-  color: var(--text-tertiary);
-  font-size: 13px;
+  color: var(--text-secondary);
+  font-size: 14px;
+}
+
+/* When a filter finds nothing, this line is the only thing on screen.
+   antd paints it in its disabled grey (2.9:1 on a white panel), which is
+   a strange choice for the one sentence the operator has to read. antd
+   exposes no token for it and wraps its own rule in :where(), so the
+   colour is set here -- scoped through the wrapper so it outranks the
+   stylesheet antd injects after this one. */
+.data-table-wrapper .ant-table-placeholder,
+.data-table-wrapper .ant-table-placeholder .ant-table-cell,
+.data-table-wrapper .ant-table-placeholder .ant-empty-description {
+  color: var(--text-secondary);
 }
 
 /* ── Pagination ───────────────────────────────── */
@@ -660,55 +978,69 @@ a {
   display: flex;
   align-items: center;
   justify-content: space-between;
+  gap: 12px;
+  flex-wrap: wrap;
   padding: 10px 12px;
   border-top: 1px solid var(--border);
   font-size: 12px;
   color: var(--text-secondary);
 }
 
-.pagination-buttons {
-  display: flex;
-  gap: 4px;
-}
-
-.pagination-btn {
-  padding: 4px 10px;
-  font-size: 12px;
-  font-family: var(--sans);
-  border: 1px solid var(--border);
-  border-radius: var(--radius);
-  background: var(--white);
-  color: var(--text-secondary);
-  cursor: pointer;
-}
-
-.pagination-btn:hover:not(:disabled) {
-  background: var(--surface);
-  color: var(--text);
-}
-
-.pagination-btn:disabled {
-  opacity: 0.4;
-  cursor: default;
-}
-
 /* ── Status Tags ──────────────────────────────── */
 
+/* Shaped like antd's Tag rather than a pill: a 4px rectangle with a
+   border in a tint of its own hue. The pill read as a chip you could
+   click; these are labels, and the app now renders antd tags elsewhere,
+   so two shapes for one meaning was the thing to fix. */
 .tag {
   display: inline-block;
-  padding: 2px 8px;
-  font-size: 11px;
+  padding: 0 7px;
+  font-size: 12px;
+  line-height: 20px;
   font-weight: 600;
-  border-radius: 10px;
+  border: 1px solid transparent;
+  border-radius: var(--radius-sm);
   white-space: nowrap;
 }
 
-.tag-info { background: var(--info-bg); color: var(--info); }
-.tag-warning { background: var(--warning-bg); color: var(--warning); }
-.tag-purple { background: var(--purple-bg); color: var(--purple); }
-.tag-success { background: var(--success-bg); color: var(--success); }
-.tag-danger { background: var(--danger-bg); color: var(--danger); }
-.tag-gray { background: var(--surface); color: var(--text-tertiary); }
+.tag-info {
+  background: var(--info-bg);
+  color: var(--info);
+  border-color: color-mix(in srgb, var(--info) 28%, transparent);
+}
+
+.tag-warning {
+  background: var(--warning-bg);
+  color: var(--warning);
+  border-color: color-mix(in srgb, var(--warning) 28%, transparent);
+}
+
+.tag-purple {
+  background: var(--purple-bg);
+  color: var(--purple);
+  border-color: color-mix(in srgb, var(--purple) 28%, transparent);
+}
+
+.tag-success {
+  background: var(--success-bg);
+  color: var(--success);
+  border-color: color-mix(in srgb, var(--success) 28%, transparent);
+}
+
+.tag-danger {
+  background: var(--danger-bg);
+  color: var(--danger);
+  border-color: color-mix(in srgb, var(--danger) 28%, transparent);
+}
+
+/* The one tag that carries no status. Secondary rather than tertiary:
+   it still names something -- a state with no colour of its own -- and
+   tertiary is the placeholder grey. */
+.tag-gray {
+  background: var(--surface);
+  color: var(--text-secondary);
+  border-color: var(--border-dark);
+}
 
 /* ── Pipeline Bar ─────────────────────────────── */
 
@@ -720,7 +1052,7 @@ a {
 }
 
 .pipeline-box {
-  background: var(--white);
+  background: var(--panel);
   border: 1px solid var(--border);
   border-radius: var(--radius-lg);
   padding: 14px 16px;
@@ -757,7 +1089,7 @@ a {
 }
 
 .modal {
-  background: var(--white);
+  background: var(--panel);
   border-radius: var(--radius-lg);
   width: 480px;
   max-width: 90vw;
@@ -805,6 +1137,12 @@ a {
 
 .modal-back:hover {
   color: var(--text);
+}
+
+/* The antd title slot holds the back arrow and the title side by side. */
+.modal-title-with-back {
+  display: inline-flex;
+  align-items: center;
 }
 
 /* ── Modal text scale ─────────────────────────────
@@ -863,6 +1201,8 @@ a {
 
 .modal-body {
   padding: 20px;
+  max-height: min(62vh, 620px);
+  overflow-y: auto;
 }
 
 .modal-footer {
@@ -873,7 +1213,7 @@ a {
   border-top: 1px solid var(--border);
 }
 
-/* ── Forms ────────────────────────────────────── */
+/* ── Forms ───────────────────────────────── */
 
 .form-group {
   margin-bottom: 14px;
@@ -887,37 +1227,62 @@ a {
   margin-bottom: 4px;
 }
 
-.form-input {
-  width: 100%;
-  padding: 7px 10px;
-  font-size: 13px;
-  font-family: var(--sans);
-  border: 1px solid var(--border);
-  border-radius: var(--radius);
-  background: var(--white);
-  color: var(--text);
-  outline: none;
-  transition: border-color 0.15s;
-}
-
-.form-input:focus {
-  border-color: var(--accent);
-}
-
+/* Sized against antd's Input: same height, same 11px side padding, same
+   14px text, and the darker border antd uses for controls rather than
+   the lighter one that separates table rows. A dialog now mixes both --
+   antd draws the chrome, the page draws the fields -- so they have to
+   agree. */
+.form-input,
 .form-select {
   width: 100%;
-  padding: 7px 10px;
-  font-size: 13px;
+  min-height: var(--control-h);
+  padding: 4px 11px;
+  font-size: 14px;
+  line-height: var(--control-line);
   font-family: var(--sans);
-  border: 1px solid var(--border);
+  border: 1px solid var(--border-dark);
   border-radius: var(--radius);
-  background: var(--white);
+  background: var(--panel);
   color: var(--text);
   outline: none;
+  transition: border-color 0.15s, box-shadow 0.15s;
 }
 
+.form-input:focus,
 .form-select:focus {
   border-color: var(--accent);
+  box-shadow: var(--focus-ring);
+}
+
+.form-input::placeholder {
+  color: var(--text-tertiary);
+}
+
+.form-input:disabled,
+.form-select:disabled {
+  background: var(--surface);
+  color: var(--text-tertiary);
+  cursor: not-allowed;
+}
+
+/* A native <select> arrow is drawn by the operating system and looks
+   nothing like the chevron antd's Select uses, which is glaring when a
+   filter bar holds one of each. Hiding it and painting our own closes
+   that gap; the chevron is inline so there is nothing to fetch.
+
+   Twenty-five dropdowns across the pages are written as
+   `<select className="form-input">` rather than `form-select`, so they
+   are matched here too -- otherwise a third of the app's dropdowns would
+   keep the operating system's arrow while the rest changed. */
+.form-select,
+select.form-input {
+  appearance: none;
+  -webkit-appearance: none;
+  padding-right: 30px;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 12 12'%3E%3Cpath fill='none' stroke='%23a89a88' stroke-width='1.4' stroke-linecap='round' stroke-linejoin='round' d='M2.5 4.5 6 8l3.5-3.5'/%3E%3C/svg%3E");
+  background-repeat: no-repeat;
+  background-position: right 11px center;
+  background-size: 12px 12px;
 }
 
 .form-row {
@@ -950,7 +1315,7 @@ a {
 /* ── Cards ────────────────────────────────────── */
 
 .card {
-  background: var(--white);
+  background: var(--panel);
   border: 1px solid var(--border);
   border-radius: var(--radius-lg);
   padding: 16px;
@@ -992,7 +1357,7 @@ a {
 }
 
 .login-card {
-  background: var(--white);
+  background: var(--panel);
   border: 1px solid var(--border);
   border-radius: var(--radius-lg);
   padding: 32px;
@@ -1006,7 +1371,12 @@ a {
   font-weight: 600;
   font-size: 16px;
   margin-bottom: 24px;
-  justify-content: center;
+  justify-content: space-between;
+}
+
+.login-logo .topbar-lang {
+  margin-right: 0;
+  background: var(--chrome-raised);
 }
 
 .login-card .form-group {
@@ -1153,13 +1523,13 @@ a {
 }
 
 .lines-table tbody tr:nth-child(even) {
-  background: #FDFCF9;
+  background: var(--panel);
 }
 
 /* ── Settings ─────────────────────────────────── */
 
 .settings-section {
-  background: var(--white);
+  background: var(--panel);
   border: 1px solid var(--border);
   border-radius: var(--radius-lg);
   padding: 20px;
@@ -1174,7 +1544,10 @@ a {
 
 .settings-note {
   font-size: 12px;
-  color: var(--text-tertiary);
+  /* Secondary, not tertiary: these notes explain what a setting does and
+     are meant to be read. Tertiary is 2.9:1 on a white panel, which is
+     fine for a placeholder and not fine for a sentence. */
+  color: var(--text-secondary);
   font-style: italic;
   margin-bottom: 12px;
 }
@@ -1233,3 +1606,1561 @@ a {
   background: var(--border-dark);
   border-radius: 3px;
 }
+
+/* ── Warehouse Simulation ───────────────────── */
+
+.warehouse-sim-layout {
+  display: grid;
+  grid-template-columns: 1fr 300px;
+  gap: 16px;
+  align-items: start;
+}
+
+.warehouse-sim-fullwidth {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 14px;
+  width: 100%;
+}
+
+@media (max-width: 960px) {
+  .warehouse-sim-layout {
+    grid-template-columns: 1fr;
+  }
+}
+
+.warehouse-sim-map-panel {
+  padding: 12px;
+  width: 100%;
+}
+
+.warehouse-rack-grid-wrap {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+.warehouse-rack-aisle {
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 10px;
+  background: var(--map-surface);
+}
+
+.warehouse-rack-aisle-title {
+  font-size: 13px;
+  font-weight: 700;
+  margin-bottom: 8px;
+}
+
+.warehouse-rack-list {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+  gap: 10px;
+}
+
+.warehouse-rack-card {
+  border: 1px solid var(--border-dark);
+  border-radius: 8px;
+  padding: 8px;
+  background: var(--panel);
+}
+
+.warehouse-rack-card-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  font-size: 11px;
+  color: var(--text-secondary);
+  margin-bottom: 6px;
+}
+
+.warehouse-rack-cells {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 6px;
+}
+
+.warehouse-rack-cell {
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 6px;
+  text-align: left;
+  cursor: pointer;
+  background: var(--map-surface);
+  transition: border-color 0.15s, box-shadow 0.15s;
+}
+
+.warehouse-rack-cell.empty {
+  background: var(--map-fill);
+}
+
+.warehouse-rack-cell.stocked {
+  background: var(--map-cell-stocked);
+}
+
+.warehouse-rack-cell.full {
+  background: var(--map-cell-full);
+}
+
+.warehouse-rack-cell:hover {
+  border-color: var(--accent);
+}
+
+.warehouse-rack-cell.is-selected {
+  border-color: var(--accent);
+  box-shadow: inset 0 0 0 1px var(--accent);
+}
+
+.warehouse-rack-cell-code {
+  display: block;
+  font-family: var(--mono);
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--text);
+}
+
+.warehouse-rack-cell-lot,
+.warehouse-rack-cell-qty {
+  display: block;
+  font-size: 10px;
+  color: var(--text-secondary);
+}
+
+/* Warehouse simulation style based on html.html mockup */
+.sim2-main {
+  display: grid;
+  grid-template-columns: 1fr 320px;
+  gap: 14px;
+  min-height: 720px;
+}
+
+.sim2-sidebar,
+.sim2-map-wrap,
+.sim2-detail {
+  background: var(--map-surface);
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  padding: 14px;
+}
+
+.sim2-detail {
+  display: flex;
+  flex-direction: column;
+  max-height: calc(100vh - 140px);
+  overflow: hidden;
+}
+
+.sim2-detail-scroll {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  padding-right: 4px;
+}
+
+.sim-slot-modal {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.sim-slot-meta {
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 8px 12px;
+  background: var(--map-fill-2);
+}
+
+.sim-slot-section h4 {
+  margin: 0 0 8px;
+  font-size: 13px;
+}
+
+.sim-slot-pallet-list {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  max-height: 180px;
+  overflow-y: auto;
+  padding-right: 2px;
+}
+
+.sim-slot-pallet-item {
+  display: grid;
+  grid-template-columns: 1.4fr 1fr 1fr 0.7fr;
+  gap: 8px;
+  text-align: left;
+  border: 1px solid var(--border);
+  background: var(--map-surface);
+  border-radius: 8px;
+  padding: 8px 10px;
+  cursor: pointer;
+  font-size: 12px;
+}
+
+.sim-slot-pallet-item:hover {
+  border-color: var(--map-border-strong);
+}
+
+.sim-slot-pallet-item.is-active {
+  border-color: var(--map-accent-strong);
+  background: var(--map-accent-tint);
+}
+
+.sim-slot-empty {
+  font-size: 13px;
+  color: var(--text-secondary);
+  padding: 8px 0;
+}
+
+.sim-slot-form-row {
+  display: flex;
+  gap: 8px;
+}
+
+.sim-slot-selected-sku {
+  margin-top: 8px;
+  font-size: 13px;
+}
+
+.sim-slot-sku-matches {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 8px;
+}
+
+.sim-slot-sku-chip {
+  border: 1px solid var(--border);
+  background: var(--map-surface);
+  border-radius: 999px;
+  padding: 4px 10px;
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.sim-slot-sku-chip:hover {
+  border-color: var(--map-accent);
+  color: var(--map-accent-strong);
+}
+
+.sim-slot-hint {
+  margin: 10px 0 0;
+  font-size: 12px;
+  color: var(--text-secondary);
+}
+
+.form-success {
+  color: var(--map-ok-text);
+  background: var(--map-ok-tint);
+  border: 1px solid var(--map-ok-border);
+  border-radius: 8px;
+  padding: 8px 10px;
+  font-size: 13px;
+}
+
+.sim-konva-canvas {
+  border: 1px solid var(--map-border-strong);
+  border-radius: 12px;
+  overflow: hidden;
+  background: var(--map-fill);
+  width: 100%;
+  min-height: 480px;
+}
+
+.sim2-sidebar h3,
+.sim2-detail h3 {
+  margin: 0 0 12px;
+  font-size: 15px;
+}
+
+.sim2-legend-item {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin: 6px 0;
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--text);
+}
+
+.sim2-legend-status {
+  padding: 8px 12px;
+  border-radius: 8px;
+  border: 1px solid;
+  transition: border-color 0.2s ease, box-shadow 0.2s ease;
+}
+
+.sim2-legend-status--empty {
+  background: var(--sim-empty-bg);
+  border-color: color-mix(in srgb, var(--sim-empty-border) 40%, var(--border));
+}
+
+.sim2-legend-status--occupied {
+  background: var(--sim-occupied-bg);
+  border-color: color-mix(in srgb, var(--sim-occupied-border) 35%, var(--border));
+}
+
+.sim2-legend-status--expired {
+  background: var(--sim-expired-bg);
+  border-color: color-mix(in srgb, var(--sim-expired-border) 40%, var(--border));
+}
+
+.sim2-dot {
+  width: 12px;
+  height: 12px;
+  border-radius: 3px;
+  border: 2px solid;
+  flex-shrink: 0;
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.45);
+}
+
+.sim2-dot.empty {
+  background: var(--sim-empty-bg);
+  border-color: var(--sim-empty-border);
+}
+
+.sim2-dot.occupied {
+  background: var(--sim-occupied-bg);
+  border-color: var(--sim-occupied-border);
+}
+
+.sim2-dot.expired {
+  background: var(--sim-expired-bg);
+  border-color: var(--sim-expired-border);
+}
+
+.sim2-line {
+  width: 18px;
+  border-top: 3px dashed;
+}
+
+.sim2-line.blue { border-color: var(--map-accent); }
+.sim2-line.green { border-color: var(--map-ok); border-top-style: dotted; }
+
+.sim2-map-toolbar {
+  display: flex;
+  justify-content: space-between;
+  gap: 10px;
+  margin-bottom: 10px;
+}
+
+.sim2-map-toolbar h2 {
+  margin: 0;
+  font-size: 17px;
+}
+
+.sim2-toolbar-actions {
+  display: flex;
+  gap: 8px;
+}
+
+.sim2-yard {
+  position: relative;
+  width: min(980px, 100%);
+  aspect-ratio: 98 / 65;
+  margin: 0 auto;
+  background: var(--map-fill);
+  border-radius: 18px;
+  border: 1px solid var(--map-border-strong);
+  overflow: hidden;
+}
+
+.sim2-entry,
+.sim2-exit {
+  position: absolute;
+  bottom: 80px;
+  color: var(--map-surface);
+  border-radius: 10px;
+  font-weight: 700;
+  text-align: center;
+  padding: 8px 10px;
+  font-size: 12px;
+}
+
+.sim2-entry { left: 20px; background: var(--map-accent); }
+.sim2-exit { right: 20px; background: var(--map-bad); }
+
+.sim2-warehouse {
+  position: absolute;
+  left: 14.8%;
+  top: 11.1%;
+  width: 70.4%;
+  height: 69.2%;
+  background: var(--map-surface);
+  border: 2px solid var(--map-border-strong);
+  border-radius: 10px;
+}
+
+.sim2-zone {
+  position: absolute;
+  border: 2px dashed var(--map-border-strong);
+  border-radius: 10px;
+  background: rgba(255, 255, 255, 0.85);
+  padding: 6px;
+}
+
+.sim2-zone-name,
+.sim2-zone-name-btn {
+  font-size: 11px;
+  font-weight: 800;
+  margin-bottom: 6px;
+  text-align: center;
+}
+
+.sim2-zone-name-btn {
+  width: 100%;
+  border: 1px solid transparent;
+  background: rgba(255, 255, 255, 0.6);
+  border-radius: 6px;
+  padding: 4px 6px;
+  cursor: pointer;
+}
+
+.sim2-zone-name-btn.is-active {
+  border-color: var(--map-text-strong);
+  box-shadow: inset 0 0 0 1px var(--map-text-strong);
+}
+
+.sim2-receiving { left: 1.8%; top: 3.8%; width: 17.4%; height: 87%; background: rgba(219, 234, 254, 0.9); border-color: var(--map-accent); }
+.sim2-shipping { right: 1.8%; top: 3.8%; width: 17.4%; height: 87%; background: rgba(254, 226, 226, 0.9); border-color: var(--map-bad); }
+.sim2-fast { left: 21.7%; top: 4.2%; width: 31.9%; height: 34%; background: rgba(220, 252, 231, 0.75); border-color: var(--map-ok); }
+.sim2-regular { left: 55.6%; top: 4.2%; width: 26%; height: 34%; background: rgba(219, 234, 254, 0.65); border-color: var(--map-accent); }
+.sim2-bulk { left: 21.7%; top: 58.3%; width: 59.9%; height: 27.7%; background: rgba(241, 245, 249, 0.9); }
+.sim2-packing { left: 21.7%; bottom: 3.1%; width: 33.3%; height: 16%; background: rgba(243, 232, 255, 0.9); border-color: var(--map-special); }
+.sim2-office { left: 56.5%; bottom: 3.1%; width: 25%; height: 16%; background: rgba(254, 249, 195, 0.95); border-color: var(--map-warn); }
+
+.sim2-dock {
+  width: 80px;
+  height: 52px;
+  margin: 10px auto;
+  border-radius: 8px;
+  border: 2px solid var(--map-muted);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-weight: 700;
+  background: var(--map-surface);
+}
+
+.sim2-grid {
+  display: grid;
+  gap: 5px;
+}
+
+.sim2-grid-fast { grid-template-columns: repeat(4, 1fr); }
+.sim2-grid-regular { grid-template-columns: repeat(3, 1fr); }
+.sim2-grid-bulk { grid-template-columns: repeat(8, 1fr); }
+
+.sim2-slot {
+  height: 26px;
+  border-radius: 6px;
+  border: 1px solid rgba(0, 0, 0, 0.14);
+  font-size: 10px;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.sim2-slot.empty {
+  background: var(--sim-empty-bg);
+  border-color: var(--sim-empty-border);
+  color: var(--text-secondary);
+}
+
+.sim2-slot.occupied {
+  background: var(--sim-occupied-bg);
+  border-color: var(--sim-occupied-border);
+  color: var(--success);
+}
+
+.sim2-slot.expired {
+  background: var(--sim-expired-bg);
+  border-color: var(--sim-expired-border);
+  color: var(--copper);
+}
+.sim2-slot.is-selected { outline: 2px solid var(--map-text-strong); }
+.sim2-slot.is-muted { opacity: 0.3; }
+
+.sim2-path {
+  position: absolute;
+  border: 3px dashed var(--map-accent);
+  border-radius: 16px;
+  pointer-events: none;
+}
+
+.sim2-path.forklift { left: 20.3%; top: 10.6%; width: 58.6%; height: 82.8%; }
+.sim2-path.pedestrian { left: 23.2%; top: 83.6%; width: 53.3%; height: 8%; border-color: var(--map-ok); border-style: dotted; }
+
+.sim2-metric-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+  margin-bottom: 12px;
+}
+
+.sim2-metric {
+  background: var(--map-fill-2);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 10px;
+}
+
+.sim2-metric span {
+  display: block;
+  font-size: 12px;
+  color: var(--text-secondary);
+}
+
+.sim2-metric strong {
+  display: block;
+  margin-top: 4px;
+  font-size: 18px;
+}
+
+.sim2-detail-card {
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 12px;
+  background: var(--map-fill-2);
+}
+
+.sim2-detail-row {
+  display: flex;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 6px 0;
+  border-bottom: 1px solid var(--map-fill);
+  font-size: 13px;
+}
+
+.sim2-detail-row:last-child { border-bottom: none; }
+.sim2-detail-row span { color: var(--text-secondary); }
+
+@media (max-width: 1280px) {
+  .sim2-main {
+    grid-template-columns: 1fr;
+  }
+}
+
+/* Warehouse map dashboard: bright operational palette and hierarchy. */
+.warehouse-simulation-page {
+  --sim-navy: var(--map-accent-strong);
+  --sim-blue: var(--map-accent);
+  --sim-sky: var(--map-surface-2);
+  --sim-green: var(--map-ok);
+  --sim-yellow: var(--map-warn);
+  --sim-red: var(--map-bad);
+  --sim-border: var(--map-border);
+  --sim-surface: var(--map-surface);
+  --sim-muted: var(--map-muted);
+  padding-bottom: 8px;
+}
+
+.warehouse-simulation-page .page-header {
+  min-height: 58px;
+  margin-bottom: 12px;
+  padding: 0 2px 12px;
+  border-bottom: 1px solid var(--sim-border);
+}
+
+.warehouse-simulation-page .page-header h1 {
+  color: var(--sim-navy);
+  font-size: 18px;
+  font-weight: 800;
+  letter-spacing: .02em;
+  text-transform: uppercase;
+}
+
+.sim2-search-input {
+  width: min(360px, 36vw);
+  min-width: 210px;
+  height: 34px;
+  border-color: var(--map-border);
+  border-radius: 6px;
+  box-shadow: inset 0 1px 1px rgb(15 48 83 / 4%);
+}
+
+.sim2-context-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  margin-bottom: 12px;
+  padding: 10px 14px;
+  border: 1px solid var(--sim-border);
+  border-left: 4px solid var(--sim-blue);
+  border-radius: 7px;
+  background: linear-gradient(90deg, var(--map-surface) 0%, var(--map-surface-2) 100%);
+}
+
+.sim2-context-bar strong,
+.sim2-context-eyebrow {
+  display: block;
+}
+
+.sim2-context-bar strong {
+  color: var(--sim-navy);
+  font-size: 14px;
+}
+
+.sim2-context-eyebrow,
+.sim2-kicker {
+  color: var(--map-muted);
+  font-size: 10px;
+  font-weight: 800;
+  letter-spacing: .08em;
+}
+
+.sim2-context-note {
+  color: var(--sim-muted);
+  font-size: 12px;
+}
+
+.warehouse-simulation-page .sim2-legend-bar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px 18px;
+  margin-bottom: 12px;
+  padding: 10px 14px;
+  border: 1px solid var(--sim-border);
+  border-radius: 7px;
+  background: var(--sim-surface);
+}
+
+.warehouse-simulation-page .sim2-map-tools {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 8px;
+}
+
+.warehouse-simulation-page .sim2-map-tools .sim2-search-input {
+  flex: 1 1 260px;
+  width: auto;
+  min-width: 200px;
+  max-width: none;
+}
+
+.warehouse-simulation-page .sim2-zoom-group {
+  display: flex;
+  gap: 6px;
+}
+
+.warehouse-simulation-page .sim2-breadcrumb {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  margin-bottom: 10px;
+  font-size: 12px;
+  color: var(--sim-muted);
+}
+
+.warehouse-simulation-page .sim2-breadcrumb button {
+  border: none;
+  background: none;
+  color: var(--sim-blue);
+  cursor: pointer;
+  padding: 0;
+  font-size: 12px;
+}
+
+.warehouse-simulation-page .sim2-breadcrumb .is-active {
+  color: var(--sim-navy);
+  font-weight: 700;
+}
+
+.warehouse-simulation-page .sim2-block-grid,
+.warehouse-simulation-page .sim2-block-list {
+  display: grid;
+  gap: 8px;
+}
+
+.sim-simple-toolbar {
+  margin-bottom: 12px;
+}
+
+.sim-simple-toolbar .sim2-search-input {
+  width: 100%;
+  max-width: 480px;
+}
+
+.sim-simple-panel {
+  background: var(--panel);
+  border: 1px solid var(--border, var(--map-fill));
+  border-radius: 12px;
+  padding: 16px 18px;
+  min-height: 280px;
+}
+
+.sim-simple-title {
+  margin: 0;
+  font-size: 16px;
+  font-weight: 700;
+}
+
+.sim-simple-panel-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 14px;
+  flex-wrap: wrap;
+}
+
+.sim-simple-panel-actions {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.sim-simple-level-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(140px, 1fr));
+  gap: 10px;
+}
+
+.sim-simple-level-card {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  align-items: flex-start;
+  padding: 14px 16px;
+  border: 1px solid var(--map-border-strong);
+  border-radius: 10px;
+  background: var(--map-fill-2);
+  cursor: pointer;
+  text-align: left;
+  transition: border-color 0.15s, box-shadow 0.15s;
+}
+
+.sim-simple-level-card:hover,
+.sim-simple-level-card:focus-visible {
+  border-color: var(--map-accent);
+  box-shadow: 0 0 0 2px rgba(37, 99, 235, 0.15);
+}
+
+.sim-simple-level-card strong {
+  font-size: 15px;
+  color: var(--map-text-strong);
+}
+
+.sim-simple-level-card span {
+  font-size: 12px;
+  color: var(--map-muted);
+}
+
+.warehouse-simulation-page .sim2-level-slots {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.warehouse-simulation-page .sim2-block-grid {
+  grid-template-columns: repeat(auto-fill, minmax(160px, 1fr));
+  gap: 10px;
+  max-height: min(52vh, 520px);
+  overflow-y: auto;
+  padding-right: 4px;
+}
+
+.warehouse-simulation-page .sim2-block-list {
+  max-height: min(52vh, 480px);
+  overflow-y: auto;
+}
+
+.warehouse-simulation-page .sim2-block-meter {
+  display: block;
+  height: 4px;
+  border-radius: 999px;
+  background: var(--map-fill);
+  position: relative;
+  overflow: hidden;
+  margin-top: 2px;
+}
+
+.warehouse-simulation-page .sim2-block-meter::after {
+  content: '';
+  position: absolute;
+  left: 0;
+  top: 0;
+  bottom: 0;
+  width: var(--sim-fill, 0%);
+  background: linear-gradient(90deg, var(--map-ok), var(--map-accent));
+  border-radius: inherit;
+}
+
+.warehouse-simulation-page .sim2-block-card {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  text-align: left;
+  border: 1px solid var(--map-border);
+  border-radius: 6px;
+  background: var(--map-surface-2);
+  padding: 8px 10px;
+  cursor: pointer;
+  color: var(--map-text);
+  font-size: 11px;
+}
+
+.warehouse-simulation-page .sim2-block-card strong {
+  color: var(--sim-navy);
+  font-size: 12px;
+}
+
+.warehouse-simulation-page .sim2-block-card:hover,
+.warehouse-simulation-page .sim2-block-card:focus-visible {
+  border-color: var(--sim-blue);
+  background: var(--map-surface-2);
+}
+
+.warehouse-simulation-page .sim2-block-fill {
+  color: var(--sim-blue);
+  font-weight: 700;
+}
+
+.warehouse-simulation-page .sim2-level-stack {
+  display: grid;
+  gap: 10px;
+  margin-top: 8px;
+}
+
+.warehouse-simulation-page .sim2-level-row {
+  display: grid;
+  gap: 6px;
+}
+
+.warehouse-simulation-page .sim2-level-label {
+  color: var(--map-muted);
+  font-size: 10px;
+  font-weight: 800;
+  letter-spacing: .06em;
+  text-transform: uppercase;
+}
+
+.warehouse-simulation-page .sim2-level-slots {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(110px, 1fr));
+  gap: 6px;
+}
+
+.warehouse-simulation-page .sim2-slot-chip {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  text-align: left;
+  border: 1px solid var(--map-border);
+  border-radius: 5px;
+  background: var(--map-surface);
+  padding: 6px 8px;
+  cursor: pointer;
+  color: var(--map-text);
+  font-size: 10px;
+}
+
+.warehouse-simulation-page .sim2-slot-chip strong {
+  font-size: 11px;
+  color: var(--sim-navy);
+}
+
+.warehouse-simulation-page .sim2-slot-chip em {
+  font-style: normal;
+  color: var(--map-muted);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.warehouse-simulation-page .sim2-slot-chip.status-occupied {
+  border-color: color-mix(in srgb, var(--sim-green) 55%, var(--map-border));
+  background: var(--map-fill-2);
+}
+
+.warehouse-simulation-page .sim2-slot-chip.status-empty {
+  background: var(--map-fill-2);
+}
+
+.warehouse-simulation-page .sim2-slot-chip.status-missing {
+  opacity: .45;
+  cursor: default;
+}
+
+.warehouse-simulation-page .sim2-slot-chip.is-active {
+  border-color: var(--sim-blue);
+  box-shadow: 0 0 0 1px var(--sim-blue);
+}
+
+.warehouse-simulation-page .sim2-content-row {
+  display: grid;
+  gap: 2px;
+  padding: 6px 0;
+  border-bottom: 1px solid var(--map-border);
+  font-size: 11px;
+  color: var(--map-text);
+}
+
+.warehouse-simulation-page .sim2-content-row:last-child {
+  border-bottom: none;
+}
+
+.warehouse-simulation-page .sim2-empty-hint {
+  margin-top: 8px;
+  color: var(--sim-muted);
+  font-size: 13px;
+}
+
+.warehouse-simulation-page .sim2-legend-bar-group {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+
+.warehouse-simulation-page .sim2-legend-bar-label {
+  color: var(--map-muted);
+  font-size: 10px;
+  font-weight: 800;
+  letter-spacing: .06em;
+  text-transform: uppercase;
+  margin-right: 2px;
+}
+
+.warehouse-simulation-page .sim2-legend-bar .sim2-legend-item {
+  margin: 0;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+  color: var(--map-text);
+}
+
+.warehouse-simulation-page .sim2-zone-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  border: 1px solid var(--map-border);
+  border-radius: 999px;
+  background: var(--map-surface-2);
+  color: var(--map-text);
+  font-size: 12px;
+  padding: 4px 10px;
+  cursor: pointer;
+}
+
+.warehouse-simulation-page .sim2-zone-chip strong {
+  color: var(--sim-navy);
+  font-size: 11px;
+}
+
+.warehouse-simulation-page .sim2-zone-chip.is-active,
+.warehouse-simulation-page .sim2-zone-chip:hover {
+  border-color: var(--sim-blue);
+  background: var(--map-surface-2);
+}
+
+.warehouse-simulation-page .sim2-main {
+  grid-template-columns: minmax(0, 1fr) 320px;
+  gap: 12px;
+  min-height: calc(100vh - 180px);
+  align-items: stretch;
+}
+
+.warehouse-simulation-page .sim2-sidebar,
+.warehouse-simulation-page .sim2-map-wrap,
+.warehouse-simulation-page .sim2-detail {
+  border: 1px solid var(--sim-border);
+  border-radius: 7px;
+  background: var(--sim-surface);
+  box-shadow: 0 1px 2px rgb(19 58 104 / 5%);
+}
+
+.warehouse-simulation-page .sim2-sidebar,
+.warehouse-simulation-page .sim2-detail {
+  padding: 12px;
+}
+
+.sim2-panel-heading {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 12px;
+  padding-bottom: 10px;
+  border-bottom: 1px solid var(--map-border);
+}
+
+.sim2-panel-heading h3 {
+  margin: 0;
+  color: var(--sim-navy);
+  font-size: 13px;
+  font-weight: 800;
+  text-transform: uppercase;
+}
+
+.sim2-panel-heading p {
+  margin: 2px 0 0;
+  color: var(--sim-muted);
+  font-size: 11px;
+}
+
+.sim2-step {
+  display: inline-grid;
+  width: 21px;
+  height: 21px;
+  place-items: center;
+  border-radius: 50%;
+  background: var(--sim-blue);
+  color: var(--map-surface);
+  font-size: 10px;
+  font-weight: 800;
+}
+
+.warehouse-simulation-page .sim2-legend-item {
+  gap: 7px;
+  margin: 6px 0;
+  color: var(--map-text);
+  font-size: 11px;
+}
+
+.warehouse-simulation-page .sim2-legend-status {
+  padding: 7px 8px;
+  border-radius: 5px;
+}
+
+.warehouse-simulation-page .sim2-legend-status--empty {
+  background: var(--map-surface);
+  border-color: var(--map-border);
+}
+
+.warehouse-simulation-page .sim2-legend-status--occupied {
+  background: var(--map-fill-2);
+  border-color: var(--map-ok-border);
+}
+
+.warehouse-simulation-page .sim2-legend-status--expired {
+  background: var(--map-warn-tint);
+  border-color: var(--map-warn-border);
+}
+
+.warehouse-simulation-page .sim2-dot {
+  width: 10px;
+  height: 10px;
+  border-width: 1px;
+  box-shadow: none;
+}
+
+.warehouse-simulation-page .sim2-dot.empty { background: var(--map-surface); border-color: var(--map-border-strong); }
+.warehouse-simulation-page .sim2-dot.occupied { background: var(--sim-green); border-color: var(--map-ok); }
+.warehouse-simulation-page .sim2-dot.expired { background: var(--sim-yellow); border-color: var(--map-warn); }
+.warehouse-simulation-page .sim2-line.blue { border-color: var(--sim-blue); }
+.warehouse-simulation-page .sim2-line.green { border-color: var(--sim-green); }
+
+.warehouse-simulation-page .sim2-layout-toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px 12px;
+  align-items: center;
+  margin-bottom: 10px;
+  padding: 10px 12px;
+  border: 1px solid var(--map-border-strong);
+  border-radius: 8px;
+  background: var(--map-surface);
+}
+
+.warehouse-simulation-page .sim2-layout-toolbar-group {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  align-items: center;
+}
+
+.warehouse-simulation-page .sim2-layout-toolbar-hint {
+  flex: 1 1 100%;
+  margin: 0;
+  font-size: 11px;
+  color: var(--text-secondary);
+}
+
+.warehouse-simulation-page .sim2-layout-warnings {
+  flex: 1 1 100%;
+  padding: 8px 10px;
+  border-radius: 6px;
+  background: var(--map-warn-tint);
+  border: 1px solid var(--map-warn);
+  font-size: 11px;
+  color: var(--map-warn-text);
+}
+
+.warehouse-simulation-page .sim2-map-wrap {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  min-height: calc(100vh - 210px);
+  padding: 12px;
+  overflow: hidden;
+}
+
+.warehouse-simulation-page .sim2-map-toolbar {
+  align-items: center;
+  margin-bottom: 10px;
+}
+
+.warehouse-simulation-page .sim2-map-toolbar h2 {
+  margin-top: 2px;
+  color: var(--sim-navy);
+  font-size: 15px;
+  font-weight: 800;
+  text-transform: uppercase;
+}
+
+.warehouse-simulation-page .sim2-toolbar-actions .btn {
+  min-height: 28px;
+  border-color: var(--map-border-strong);
+  border-radius: 5px;
+  font-size: 11px;
+}
+
+.warehouse-simulation-page .sim2-toolbar-actions .btn-primary {
+  border-color: var(--map-accent-strong);
+  background: var(--sim-blue);
+}
+
+.warehouse-simulation-page .sim-konva-canvas {
+  flex: 1 1 auto;
+  width: 100%;
+  min-height: 480px;
+  height: 100%;
+  border: 1px solid var(--map-border-strong);
+  border-radius: 5px;
+  background: var(--map-fill);
+  overflow: hidden;
+}
+
+.warehouse-simulation-page .sim2-metric-grid {
+  gap: 6px;
+}
+
+.warehouse-simulation-page .sim2-metric {
+  border-color: var(--map-border);
+  border-radius: 5px;
+  background: var(--map-surface-2);
+  padding: 8px;
+}
+
+.warehouse-simulation-page .sim2-metric span {
+  color: var(--map-muted);
+  font-size: 10px;
+}
+
+.warehouse-simulation-page .sim2-metric strong {
+  margin-top: 2px;
+  color: var(--sim-navy);
+  font-size: 17px;
+}
+
+.warehouse-simulation-page .sim2-detail-card {
+  border-color: var(--map-border);
+  border-radius: 5px;
+  background: var(--map-surface-2);
+  padding: 10px;
+}
+
+.warehouse-simulation-page .sim2-detail-row {
+  padding: 5px 0;
+  border-bottom-color: var(--map-border);
+  color: var(--map-text);
+  font-size: 12px;
+}
+
+.warehouse-simulation-page .sim2-pallet-list {
+  display: grid;
+  gap: 6px;
+  margin-top: 10px;
+}
+
+.warehouse-simulation-page .sim2-pallet-list-title {
+  color: var(--map-muted);
+  font-size: 10px;
+  font-weight: 800;
+  letter-spacing: .06em;
+  text-transform: uppercase;
+}
+
+.warehouse-simulation-page .sim-slot-pallet-item {
+  grid-template-columns: 1fr;
+  gap: 3px;
+  border-color: var(--map-border);
+  border-radius: 5px;
+  color: var(--map-text);
+  font-size: 11px;
+}
+
+.warehouse-simulation-page .sim-slot-pallet-item:hover {
+  border-color: var(--sim-blue);
+  background: var(--map-surface-2);
+}
+
+@media (max-width: 1280px) {
+  .warehouse-simulation-page .sim2-main {
+    grid-template-columns: 1fr;
+  }
+
+  .warehouse-simulation-page .sim2-detail {
+    max-height: none;
+  }
+}
+
+@media (max-width: 760px) {
+  .sim2-context-bar,
+  .warehouse-simulation-page .page-header,
+  .warehouse-simulation-page .sim2-map-toolbar {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+
+  .sim2-search-input {
+    width: 100%;
+  }
+
+  .warehouse-simulation-page .sim2-main {
+    grid-template-columns: 1fr;
+  }
+}
+
+.warehouse-sim-viewport {
+  margin-top: 8px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--map-surface);
+  overflow: hidden;
+  touch-action: none;
+  user-select: none;
+  cursor: grab;
+}
+
+.warehouse-design-editor {
+  border: 1px dashed var(--border-dark);
+  border-radius: 8px;
+  padding: 10px;
+  margin-bottom: 10px;
+  background: var(--map-surface);
+}
+
+.warehouse-design-label {
+  font-size: 12px;
+  color: var(--text-secondary);
+  margin-bottom: 8px;
+}
+
+.warehouse-design-textarea {
+  width: 100%;
+  min-height: 150px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 8px;
+  font-size: 12px;
+  font-family: var(--mono);
+  resize: vertical;
+}
+
+.warehouse-design-actions {
+  margin-top: 8px;
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.warehouse-design-upload {
+  position: relative;
+  overflow: hidden;
+}
+
+.warehouse-design-upload input {
+  position: absolute;
+  inset: 0;
+  opacity: 0;
+  cursor: pointer;
+}
+
+.warehouse-simple-aisle-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+  gap: 12px;
+}
+
+.warehouse-simple-aisle {
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 10px;
+  background: var(--map-surface);
+}
+
+.warehouse-simple-aisle-title {
+  font-size: 13px;
+  font-weight: 700;
+  margin-bottom: 8px;
+}
+
+.warehouse-simple-rack-row {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+}
+
+.warehouse-simple-rack-card {
+  border: 1px solid var(--border-dark);
+  border-radius: 8px;
+  background: var(--surface);
+  color: var(--text);
+  text-align: left;
+  padding: 10px;
+  cursor: pointer;
+  transition: border-color 0.15s, box-shadow 0.15s, background 0.15s;
+}
+
+.warehouse-simple-rack-card:hover {
+  border-color: var(--accent);
+  box-shadow: 0 4px 10px rgba(0, 0, 0, 0.06);
+}
+
+.warehouse-simple-rack-card.is-active {
+  border-color: var(--accent);
+  background: var(--map-warn-tint);
+}
+
+.warehouse-simple-rack-title {
+  font-size: 12px;
+  font-weight: 700;
+  margin-bottom: 6px;
+}
+
+.warehouse-simple-rack-metrics {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  font-size: 11px;
+  color: var(--text-secondary);
+}
+
+.warehouse-sim-legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px 16px;
+  margin-top: 12px;
+  font-size: 12px;
+  color: var(--text-secondary);
+}
+
+.warehouse-sim-legend-item {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.warehouse-sim-swatch {
+  display: inline-block;
+  width: 12px;
+  height: 12px;
+  border-radius: 2px;
+  border: 1px solid rgba(0, 0, 0, 0.1);
+  flex-shrink: 0;
+}
+
+.warehouse-sim-detail {
+  padding: 16px;
+}
+
+.warehouse-sim-pallet-table-wrap {
+  margin-top: 10px;
+}
+
+.warehouse-sim-pallet-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 12px;
+}
+
+.warehouse-sim-pallet-table th,
+.warehouse-sim-pallet-table td {
+  padding: 6px 8px;
+  border-bottom: 1px solid var(--border);
+  text-align: left;
+}
+
+.warehouse-sim-pallet-table tbody tr {
+  cursor: pointer;
+  transition: background 0.15s;
+}
+
+.warehouse-sim-pallet-table tbody tr:hover {
+  background: rgba(183, 115, 51, 0.12);
+}
+
+.warehouse-sim-pallet-table tbody tr.is-selected {
+  background: rgba(142, 39, 21, 0.16);
+}
+
+.warehouse-sim-pallet-actions {
+  margin-top: 12px;
+  border-top: 1px dashed var(--border-dark);
+  padding-top: 10px;
+}
+
+.warehouse-sim-detail-title {
+  font-size: 14px;
+  font-weight: 600;
+  margin: 0 0 12px;
+}
+
+.warehouse-sim-detail-subtitle {
+  font-size: 13px;
+  font-weight: 600;
+  margin: 0 0 8px;
+}
+
+.warehouse-sim-contents {
+  list-style: none;
+  padding: 0;
+  margin: 12px 0 0;
+  font-size: 12px;
+}
+
+.warehouse-sim-contents li {
+  padding: 8px 0;
+  border-bottom: 1px solid var(--border);
+}
+
+.warehouse-sim-contents li:last-child {
+  border-bottom: none;
+}
+
+.warehouse-sim-cat-badge {
+  display: inline-block;
+  padding: 2px 8px;
+  border-radius: 4px;
+  color: var(--map-surface);
+  font-size: 11px;
+  font-weight: 600;
+}
+
+.warehouse-sim-zone-list {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+  font-size: 12px;
+}
+
+.warehouse-sim-zone-list li {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 4px 0;
+}
+
+.warehouse-simple-rack-info {
+  border: 1px dashed var(--border-dark);
+  border-radius: 8px;
+  padding: 10px;
+  margin-bottom: 12px;
+}
+
+.warehouse-simple-bin-list {
+  margin-top: 8px;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.warehouse-simple-bin-chip {
+  border: 1px solid var(--border-dark);
+  background: var(--map-surface);
+  padding: 4px 8px;
+  border-radius: 999px;
+  font-size: 11px;
+  font-family: var(--mono);
+  cursor: pointer;
+}
+
+.warehouse-simple-bin-chip.is-active {
+  border-color: var(--accent);
+  background: var(--map-warn-tint);
+  color: var(--accent);
+}
+
+.warehouse-sim-pan-hint {
+  margin: 0 0 8px;
+  font-size: 11px;
+  color: var(--text-secondary);
+}
+
+.warehouse-sim-zoom-controls {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.warehouse-sim-zoom-label {
+  min-width: 44px;
+  text-align: center;
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+  color: var(--text-secondary);
+}
+
+.topbar-lang {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  margin-right: 12px;
+  background: rgba(0, 0, 0, 0.2);
+  border-radius: 6px;
+  padding: 2px;
+  flex-shrink: 0;
+}
+
+.topbar-lang-btn {
+  border: none;
+  background: transparent;
+  color: var(--chrome-text-muted);
+  font-size: 11px;
+  font-weight: 600;
+  padding: 4px 8px;
+  border-radius: 4px;
+  cursor: pointer;
+  letter-spacing: 0.3px;
+}
+
+.topbar-lang-btn:hover {
+  color: var(--chrome-text);
+}
+
+.topbar-lang-btn.active {
+  background: rgba(255, 255, 255, 0.15);
+  color: var(--chrome-text);
+}
+
+/* Light / dark switch. Sits in the same pill as the language switch so
+   the two read as one group of display settings rather than two
+   unrelated controls. */
+.topbar-theme-btn {
+  border: none;
+  background: transparent;
+  color: var(--chrome-text-muted);
+  font-size: 13px;
+  line-height: 1;
+  padding: 4px 8px;
+  border-radius: 4px;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+}
+
+.topbar-theme-btn:hover {
+  background: rgba(255, 255, 255, 0.15);
+  color: var(--chrome-text);
+}
+
+/* The modal title is a real <h2>; keep antd's title typography. */
+.modal .modal-title-text { margin: 0; font: inherit; color: inherit; display: inline; }

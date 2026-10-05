@@ -1,19 +1,17 @@
 import { useEffect, useState } from 'react';
 import { useNavigate, Navigate } from 'react-router-dom';
 import { useAuth } from '../auth.jsx';
+import { useLocale } from '../i18n/locale.jsx';
+import { BRAND_NAME } from '../brand.js';
 
 export default function Login() {
   const { user, login } = useAuth();
+  const { t, locale, setLocale } = useLocale();
   const navigate = useNavigate();
   const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
-  // v1.4.2 #98: ChangePassword writes a flash message to sessionStorage
-  // before resetting auth state, because React Router's location.state
-  // does not survive the AuthProvider state flip that logout() triggers
-  // between navigations. Read + clear on mount so the banner shows once
-  // and a later login does not re-surface it.
   const [flashMessage, setFlashMessage] = useState(() => {
     try {
       return sessionStorage.getItem('login_flash_message') || '';
@@ -37,58 +35,78 @@ export default function Login() {
     try {
       const userData = await login(username, password);
       if (userData && userData.role !== 'ADMIN') {
-        // V-045: the login() context function already called /auth/logout
-        // to clear the cookies for non-admin users. Just surface the error.
-        setError('Not authorized, contact admin');
+        setError(t('auth.notAuthorized'));
         setLoading(false);
         return;
       }
       navigate('/');
     } catch (err) {
-      setError(err.message === 'Not authorized' ? 'Not authorized, contact admin' : 'Wrong Username/Password');
+      setError(err.message === 'Not authorized' ? t('auth.notAuthorized') : t('auth.wrongCredentials'));
       setPassword('');
     } finally {
       setLoading(false);
     }
   }
 
+  const flashDisplay = flashMessage === 'Password changed. Please sign in with your new password.'
+    ? t('auth.passwordChanged')
+    : flashMessage;
+
   return (
     <div className="login-page">
       <div className="login-card">
         <div className="login-logo">
-          <svg width="24" height="24" viewBox="0 0 32 32">
-            <rect x="1" y="1" width="30" height="30" rx="5" fill="#8e2715"/>
-            <rect x="7" y="6" width="7.5" height="20" rx="1.5" fill="none" stroke="#FCF4E3" strokeWidth="1.6"/>
-            <rect x="17.5" y="6" width="7.5" height="20" rx="1.5" fill="none" stroke="#FCF4E3" strokeWidth="1.6"/>
-            <line x1="8.5" y1="12" x2="13" y2="12" stroke="#FCF4E3" strokeWidth="1" opacity="0.4"/>
-            <line x1="8.5" y1="16" x2="13" y2="16" stroke="#FCF4E3" strokeWidth="1" opacity="0.4"/>
-            <line x1="8.5" y1="20" x2="13" y2="20" stroke="#FCF4E3" strokeWidth="1" opacity="0.4"/>
-            <line x1="19" y1="12" x2="23.5" y2="12" stroke="#FCF4E3" strokeWidth="1" opacity="0.4"/>
-            <line x1="19" y1="16" x2="23.5" y2="16" stroke="#FCF4E3" strokeWidth="1" opacity="0.4"/>
-            <line x1="19" y1="20" x2="23.5" y2="20" stroke="#FCF4E3" strokeWidth="1" opacity="0.4"/>
-          </svg>
-          Sentry WMS
+          <span style={{ display: 'inline-flex', alignItems: 'center', gap: 8 }}>
+            <svg width="24" height="24" viewBox="0 0 32 32">
+              <rect x="1" y="1" width="30" height="30" rx="5" fill="#8e2715"/>
+              <rect x="7" y="6" width="7.5" height="20" rx="1.5" fill="none" stroke="#FCF4E3" strokeWidth="1.6"/>
+              <rect x="17.5" y="6" width="7.5" height="20" rx="1.5" fill="none" stroke="#FCF4E3" strokeWidth="1.6"/>
+              <line x1="8.5" y1="12" x2="13" y2="12" stroke="#FCF4E3" strokeWidth="1" opacity="0.4"/>
+              <line x1="8.5" y1="16" x2="13" y2="16" stroke="#FCF4E3" strokeWidth="1" opacity="0.4"/>
+              <line x1="8.5" y1="20" x2="13" y2="20" stroke="#FCF4E3" strokeWidth="1" opacity="0.4"/>
+              <line x1="19" y1="12" x2="23.5" y2="12" stroke="#FCF4E3" strokeWidth="1" opacity="0.4"/>
+              <line x1="19" y1="16" x2="23.5" y2="16" stroke="#FCF4E3" strokeWidth="1" opacity="0.4"/>
+              <line x1="19" y1="20" x2="23.5" y2="20" stroke="#FCF4E3" strokeWidth="1" opacity="0.4"/>
+            </svg>
+            {BRAND_NAME}
+          </span>
+          <div className="topbar-lang" role="group" aria-label={t('lang.label')}>
+            <button
+              type="button"
+              className={`topbar-lang-btn${locale === 'vi' ? ' active' : ''}`}
+              onClick={() => setLocale('vi')}
+            >
+              {t('lang.vi')}
+            </button>
+            <button
+              type="button"
+              className={`topbar-lang-btn${locale === 'en' ? ' active' : ''}`}
+              onClick={() => setLocale('en')}
+            >
+              {t('lang.en')}
+            </button>
+          </div>
         </div>
-        {flashMessage && (
+        {flashDisplay && (
           <div
             role="status"
             className="login-success"
             style={{
-              background: 'var(--success-bg, #e6f3ea)',
-              color: 'var(--success, #0f5132)',
+              background: 'var(--success-bg)',
+              color: 'var(--success)',
               padding: '10px 14px',
               borderRadius: 6,
               marginBottom: 16,
               fontSize: 14,
             }}
           >
-            {flashMessage}
+            {flashDisplay}
           </div>
         )}
         {error && <div className="login-error">{error}</div>}
         <form onSubmit={handleSubmit}>
           <div className="form-group">
-            <label>Username</label>
+            <label>{t('common.username')}</label>
             <input
               className="form-input"
               type="text"
@@ -98,7 +116,7 @@ export default function Login() {
             />
           </div>
           <div className="form-group">
-            <label>Password</label>
+            <label>{t('common.password')}</label>
             <input
               className="form-input"
               type="password"
@@ -107,7 +125,7 @@ export default function Login() {
             />
           </div>
           <button className="btn btn-primary" type="submit" disabled={loading}>
-            {loading ? 'Signing in...' : 'Sign in'}
+            {loading ? t('auth.signingIn') : t('auth.signIn')}
           </button>
         </form>
       </div>

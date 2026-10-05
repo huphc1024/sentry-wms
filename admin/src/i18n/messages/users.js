@@ -1,0 +1,81 @@
+/**
+ * Strings owned by the users and permissions screen.
+ *
+ * The page-grant checkboxes name the same pages as the sidebar, so
+ * they reuse the `nav.*` keys: renaming a page in the menu should
+ * rename the permission that opens it. The handful kept here are the
+ * ones whose wording genuinely differs -- the grant list says
+ * "Cycle Counts" where the menu says "Counts".
+ */
+
+export const en = {
+  'users.adminBypass': 'ADMIN role bypasses page permissions - full access to every web admin page.',
+  'users.applyPreset': 'Apply role preset',
+  'users.cannotDeleteSelf': 'Cannot delete yourself',
+  'users.clear': 'Clear',
+  'users.deleteUser': 'Delete User',
+  'users.deleteWarning': 'The user and all associated data will be permanently deleted.',
+  'users.editUser': 'Edit User',
+  'users.fnCount': 'Count',
+  'users.fnPack': 'Pack',
+  'users.fnPick': 'Pick',
+  'users.fnPutAway': 'Put-Away',
+  'users.fnReceive': 'Receive',
+  'users.fnShip': 'Ship',
+  'users.fnSell': 'Sell (POS)',
+  'users.fnTransfer': 'Transfer',
+  'users.groupOverrides': 'Overrides',
+  'users.mobileModules': 'Mobile Module Access',
+  'users.newPasswordHint': 'New Password (leave blank to keep current)',
+  'users.newUser': 'New User',
+  'users.noUsers': 'No users found',
+  'users.noWarehouses': 'No warehouses found',
+  'users.overrideSoFullEdit': 'Full SO edit (past OPEN, incl. source_system + line CRUD)',
+  'users.pageCountApprovals': 'Count Approvals',
+  'users.pageCycleCounts': 'Cycle Counts',
+  'users.pageImports': 'Imports',
+  'users.presetNote': 'Presets match docs/role-matrix.md. You can still tweak checkboxes after applying.',
+  'users.presetPicker': 'Picker',
+  'users.presetReceiver': 'Receiver',
+  'users.presetSupervisor': 'Supervisor',
+  'users.presetTooltip': 'Sets DB role, mobile modules, and web page grants',
+  'users.selectAll': 'Select all',
+  'users.warehouses': 'Warehouses',
+  'users.webPages': 'Web Admin Page Access',
+};
+
+export const vi = {
+  'users.adminBypass': 'Vai trò ADMIN bỏ qua phân quyền trang — toàn quyền với mọi trang quản trị.',
+  'users.applyPreset': 'Áp dụng mẫu vai trò',
+  'users.cannotDeleteSelf': 'Không thể tự xóa tài khoản của mình',
+  'users.clear': 'Bỏ chọn',
+  'users.deleteUser': 'Xóa người dùng',
+  'users.deleteWarning': 'Người dùng và toàn bộ dữ liệu liên quan sẽ bị xóa vĩnh viễn.',
+  'users.editUser': 'Sửa người dùng',
+  'users.fnCount': 'Kiểm kê',
+  'users.fnPack': 'Đóng gói',
+  'users.fnPick': 'Lấy hàng',
+  'users.fnPutAway': 'Cất hàng',
+  'users.fnReceive': 'Nhận hàng',
+  'users.fnShip': 'Giao hàng',
+  'users.fnSell': 'Bán hàng (POS)',
+  'users.fnTransfer': 'Chuyển kho',
+  'users.groupOverrides': 'Quyền đặc biệt',
+  'users.mobileModules': 'Quyền dùng module di động',
+  'users.newPasswordHint': 'Mật khẩu mới (để trống nếu giữ nguyên)',
+  'users.newUser': 'Người dùng mới',
+  'users.noUsers': 'Không tìm thấy người dùng',
+  'users.noWarehouses': 'Không tìm thấy kho',
+  'users.overrideSoFullEdit': 'Toàn quyền sửa đơn bán (sau trạng thái MỞ, gồm source_system và dòng hàng)',
+  'users.pageCountApprovals': 'Duyệt kiểm kê',
+  'users.pageCycleCounts': 'Kiểm kê định kỳ',
+  'users.pageImports': 'Nhập dữ liệu',
+  'users.presetNote': 'Mẫu vai trò khớp với docs/role-matrix.md. Áp dụng xong vẫn chỉnh được từng ô.',
+  'users.presetPicker': 'Nhân viên lấy hàng',
+  'users.presetReceiver': 'Nhân viên nhận hàng',
+  'users.presetSupervisor': 'Giám sát',
+  'users.presetTooltip': 'Đặt vai trò trong CSDL, module di động và quyền truy cập trang',
+  'users.selectAll': 'Chọn tất cả',
+  'users.warehouses': 'Kho',
+  'users.webPages': 'Quyền truy cập trang quản trị',
+};

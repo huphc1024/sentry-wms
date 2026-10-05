@@ -4,6 +4,7 @@ import { useWarehouse } from '../warehouse.jsx';
 import DataTable from '../components/DataTable.jsx';
 import PageHeader from '../components/PageHeader.jsx';
 import Modal from '../components/Modal.jsx';
+import { useLocale } from '../i18n/locale.jsx';
 
 // notification_webhooks admin surface. Operators
 // configure per-warehouse Teams destinations that receive the
@@ -23,7 +24,8 @@ import Modal from '../components/Modal.jsx';
 // the operator in minutes instead of going unnoticed.
 
 const SUPPORTED_CHANNELS = [
-  { value: 'teams', label: 'Microsoft Teams' },
+  // A product name, not copy -- it reads the same in both languages.
+  { value: 'teams', labelKey: 'notifications.channelTeams' },
 ];
 
 // Grouped so the operator can tell business events apart from
@@ -32,20 +34,20 @@ const SUPPORTED_CHANNELS = [
 // rejected at create/PATCH time.
 const EVENT_TYPE_GROUPS = [
   {
-    group: 'Backorder events',
+    groupKey: 'notifications.groupBackorder',
     options: [
-      { value: 'backorder.opened',      label: 'backorder.opened',      desc: 'an item was shorted on an order' },
-      { value: 'backorder.fulfillable', label: 'backorder.fulfillable', desc: 'a backorder is ready to ship' },
-      { value: 'backorder.cancelled',   label: 'backorder.cancelled',   desc: 'a backorder was cancelled' },
+      { value: 'backorder.opened',      label: 'backorder.opened',      descKey: 'notifications.descShorted' },
+      { value: 'backorder.fulfillable', label: 'backorder.fulfillable', descKey: 'notifications.descFulfillable' },
+      { value: 'backorder.cancelled',   label: 'backorder.cancelled',   descKey: 'notifications.descCancelled' },
     ],
   },
   {
-    group: 'Dispatcher health alerts',
+    groupKey: 'notifications.groupDispatcher',
     options: [
-      { value: 'dispatcher.delivery_stalled',     label: 'dispatcher.delivery_stalled',     desc: 'a webhook delivery is stuck in-flight' },
-      { value: 'dispatcher.dlq_growth',           label: 'dispatcher.dlq_growth',           desc: 'events are dead-lettering' },
-      { value: 'dispatcher.subscription_lagging', label: 'dispatcher.subscription_lagging', desc: 'a subscription is falling behind' },
-      { value: 'dispatcher.subscription_paused',  label: 'dispatcher.subscription_paused',  desc: 'a subscription auto-paused' },
+      { value: 'dispatcher.delivery_stalled',     label: 'dispatcher.delivery_stalled',     descKey: 'notifications.descStalled' },
+      { value: 'dispatcher.dlq_growth',           label: 'dispatcher.dlq_growth',           descKey: 'notifications.descDlq' },
+      { value: 'dispatcher.subscription_lagging', label: 'dispatcher.subscription_lagging', descKey: 'notifications.descLagging' },
+      { value: 'dispatcher.subscription_paused',  label: 'dispatcher.subscription_paused',  descKey: 'notifications.descPaused' },
     ],
   },
 ];
@@ -54,6 +56,7 @@ const DEFAULT_EVENT_FILTER = ['backorder.opened', 'backorder.fulfillable'];
 
 
 function EventFilterCheckboxes({ value, onChange, disabled = false }) {
+  const { t } = useLocale();
   const set = new Set(value || []);
   const toggle = (optValue, checked) => {
     const next = new Set(set);
@@ -63,9 +66,9 @@ function EventFilterCheckboxes({ value, onChange, disabled = false }) {
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
       {EVENT_TYPE_GROUPS.map((grp) => (
-        <div key={grp.group} style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+        <div key={grp.groupKey} style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
           <div style={{ fontSize: 11, textTransform: 'uppercase', letterSpacing: 0.5, opacity: 0.6 }}>
-            {grp.group}
+            {t(grp.groupKey)}
           </div>
           {grp.options.map((opt) => (
             <label key={opt.value} style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 13 }}>
@@ -76,7 +79,7 @@ function EventFilterCheckboxes({ value, onChange, disabled = false }) {
                 onChange={(e) => toggle(opt.value, e.target.checked)}
               />
               <span className="mono">{opt.label}</span>
-              {opt.desc && <span style={{ opacity: 0.55 }}>-- {opt.desc}</span>}
+              {opt.descKey && <span style={{ opacity: 0.55 }}>-- {t(opt.descKey)}</span>}
             </label>
           ))}
         </div>
@@ -87,6 +90,7 @@ function EventFilterCheckboxes({ value, onChange, disabled = false }) {
 
 
 function TestSendOutcome({ outcome }) {
+  const { t } = useLocale();
   if (!outcome) return null;
   const ok = outcome.delivered;
   return (
@@ -95,23 +99,28 @@ function TestSendOutcome({ outcome }) {
       style={{
         marginTop: 8,
         padding: '6px 10px',
-        background: ok ? 'var(--success-bg, #e8f5e9)' : 'var(--danger-bg, #fdecea)',
-        color: ok ? 'var(--success, #2e7d32)' : 'var(--danger, #c62828)',
-        border: `1px solid ${ok ? 'var(--success, #2e7d32)' : 'var(--danger, #c62828)'}`,
+        background: ok ? 'var(--success-bg)' : 'var(--danger-bg)',
+        color: ok ? 'var(--success)' : 'var(--danger)',
+        border: `1px solid ${ok ? 'var(--success)' : 'var(--danger)'}`,
         borderRadius: 4,
         fontSize: 12,
         whiteSpace: 'pre-wrap',
       }}
     >
       {ok
-        ? `Delivered (status ${outcome.status_code || 200}).`
-        : `Send failed: ${outcome.error_kind || 'unknown'}${outcome.status_code ? ` (status ${outcome.status_code})` : ''}${outcome.error_detail ? `\n${outcome.error_detail}` : ''}`}
+        ? t('notifications.delivered', { status: outcome.status_code || 200 })
+        : t('notifications.sendFailed', { kind: outcome.error_kind || t('tokens.noneLower') })
+          + (outcome.status_code
+            ? ` ${t('notifications.statusSuffix', { status: outcome.status_code })}`
+            : '')
+          + (outcome.error_detail ? `\n${outcome.error_detail}` : '')}
     </div>
   );
 }
 
 
 export default function Notifications() {
+  const { t } = useLocale();
   const { warehouseId } = useWarehouse();
   const [rows, setRows] = useState([]);
   const [loading, setLoading] = useState(false);
@@ -319,14 +328,14 @@ export default function Notifications() {
   }
 
   const columns = [
-    { key: 'webhook_id', label: 'ID', mono: true },
-    { key: 'channel_kind', label: 'Channel' },
-    { key: 'host_preview', label: 'Host',
+    { key: 'webhook_id', labelKey: 'notifications.id', mono: true },
+    { key: 'channel_kind', labelKey: 'posActivity.channel' },
+    { key: 'host_preview', labelKey: 'notifications.host',
       render: (r) => r.host_preview
         ? <span className="mono" style={{ fontSize: 12 }}>{r.host_preview}</span>
-        : <span style={{ color: 'var(--text-secondary)', fontSize: 12 }}>(decrypt failed)</span>,
+        : <span style={{ color: 'var(--text-secondary)', fontSize: 12 }}>{t('notifications.decryptFailed')}</span>,
     },
-    { key: 'event_filter', label: 'Events',
+    { key: 'event_filter', labelKey: 'notifications.events',
       render: (r) => (
         <div style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
           {(r.event_filter || []).map((e) => (
@@ -335,7 +344,7 @@ export default function Notifications() {
         </div>
       ),
     },
-    { key: 'enabled', label: 'Enabled',
+    { key: 'enabled', labelKey: 'notifications.enabled',
       render: (r) => (
         <label style={{ cursor: 'pointer', display: 'inline-flex', alignItems: 'center', gap: 6 }}>
           <input
@@ -343,14 +352,14 @@ export default function Notifications() {
             checked={r.enabled}
             onChange={(e) => { e.stopPropagation(); togglEnabled(r); }}
           />
-          <span style={{ fontSize: 12 }}>{r.enabled ? 'On' : 'Off'}</span>
+          <span style={{ fontSize: 12 }}>{t(r.enabled ? 'notifications.on' : 'notifications.off')}</span>
         </label>
       ),
     },
-    { key: 'created_at', label: 'Created',
+    { key: 'created_at', labelKey: 'salesOrders.created',
       render: (r) => r.created_at ? new Date(r.created_at).toLocaleString() : '-',
     },
-    { key: 'actions', label: 'Actions',
+    { key: 'actions', labelKey: 'common.actions',
       render: (r) => (
         <div onClick={(e) => e.stopPropagation()}>
           <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
@@ -360,13 +369,13 @@ export default function Notifications() {
               disabled={!!testInFlight[r.webhook_id]}
               title="Send a sample backorder.opened card to verify the channel"
             >
-              {testInFlight[r.webhook_id] ? 'Sending...' : 'Test'}
+              {t(testInFlight[r.webhook_id] ? 'notifications.sending' : 'notifications.test')}
             </button>
             <button className="btn btn-sm" onClick={() => openRotate(r)}>
-              Rotate URL
+              {t('notifications.rotateUrl')}
             </button>
             <button className="btn btn-sm btn-danger" onClick={() => openDelete(r)}>
-              Delete
+              {t('common.delete')}
             </button>
           </div>
           <TestSendOutcome outcome={testOutcomes[r.webhook_id]} />
@@ -377,18 +386,18 @@ export default function Notifications() {
 
   return (
     <div>
-      <PageHeader title="Notifications">
+      <PageHeader title={t('nav.notifications')}>
         <button
           className="btn btn-primary"
           onClick={openCreate}
           disabled={!warehouseId}
         >
-          New Webhook
+          {t('notifications.newWebhook')}
         </button>
       </PageHeader>
       {!warehouseId && (
         <p style={{ fontSize: 13, color: 'var(--text-secondary)' }}>
-          Pick a warehouse from the top bar to manage its notification webhooks.
+          {t('notifications.pickWarehouse')}
         </p>
       )}
       {successBanner && (
@@ -397,9 +406,9 @@ export default function Notifications() {
           style={{
             margin: '0 0 12px 0',
             padding: '8px 12px',
-            background: 'var(--success-bg, #e8f5e9)',
-            color: 'var(--success, #2e7d32)',
-            border: '1px solid var(--success, #2e7d32)',
+            background: 'var(--success-bg)',
+            color: 'var(--success)',
+            border: '1px solid var(--success)',
             borderRadius: 4,
             fontSize: 13,
           }}
@@ -416,23 +425,23 @@ export default function Notifications() {
           columns={columns}
           data={rows}
           loading={loading}
-          emptyMessage="No notification webhooks configured for this warehouse."
+          emptyMessageKey="notifications.empty"
         />
       </div>
 
       {creating && (
         <Modal
-          title="New Notification Webhook"
+          title={t('notifications.newWebhookTitle')}
           onClose={closeCreate}
           footer={
             <>
-              <button className="btn" onClick={closeCreate} disabled={createSubmitting}>Cancel</button>
+              <button className="btn" onClick={closeCreate} disabled={createSubmitting}>{t('common.cancel')}</button>
               <button
                 className="btn btn-primary"
                 onClick={submitCreate}
                 disabled={createSubmitting}
               >
-                {createSubmitting ? 'Creating...' : 'Create'}
+                {t(createSubmitting ? 'salesOrders.creating' : 'common.create')}
               </button>
             </>
           }
@@ -449,31 +458,31 @@ export default function Notifications() {
           </p>
           <div className="form-row">
             <div className="form-group">
-              <label>Channel</label>
+              <label>{t('posActivity.channel')}</label>
               <select
                 className="form-select"
                 value={createForm.channel_kind}
                 onChange={(e) => setCreateForm({ ...createForm, channel_kind: e.target.value })}
               >
                 {SUPPORTED_CHANNELS.map((c) => (
-                  <option key={c.value} value={c.value}>{c.label}</option>
+                  <option key={c.value} value={c.value}>{t(c.labelKey)}</option>
                 ))}
               </select>
             </div>
             <div className="form-group">
-              <label>Enabled</label>
+              <label>{t('notifications.enabled')}</label>
               <label style={{ display: 'flex', alignItems: 'center', gap: 8, paddingTop: 8 }}>
                 <input
                   type="checkbox"
                   checked={createForm.enabled}
                   onChange={(e) => setCreateForm({ ...createForm, enabled: e.target.checked })}
                 />
-                <span style={{ fontSize: 13 }}>Receive events immediately</span>
+                <span style={{ fontSize: 13 }}>{t('notifications.receiveNow')}</span>
               </label>
             </div>
           </div>
           <div className="form-group">
-            <label>URL</label>
+            <label>{t('webhooks.url')}</label>
             <input
               className="form-input"
               type="url"
@@ -483,18 +492,18 @@ export default function Notifications() {
             />
           </div>
           <div className="form-group">
-            <label>Events</label>
+            <label>{t('notifications.events')}</label>
             <EventFilterCheckboxes
               value={createForm.event_filter}
               onChange={(v) => setCreateForm({ ...createForm, event_filter: v })}
             />
           </div>
           <div className="form-group">
-            <label>HMAC secret (optional)</label>
+            <label>{t('notifications.hmacSecret')}</label>
             <input
               className="form-input"
               type="text"
-              placeholder="Leave blank for Teams incoming webhooks."
+              placeholder={t('notifications.hmacHint')}
               value={createForm.secret}
               onChange={(e) => setCreateForm({ ...createForm, secret: e.target.value })}
             />
@@ -504,17 +513,17 @@ export default function Notifications() {
 
       {rotating && (
         <Modal
-          title={`Rotate URL for webhook #${rotating.webhook_id}`}
+          title={t('notifications.rotateTitle', { id: rotating.webhook_id })}
           onClose={closeRotate}
           footer={
             <>
-              <button className="btn" onClick={closeRotate} disabled={rotateSubmitting}>Cancel</button>
+              <button className="btn" onClick={closeRotate} disabled={rotateSubmitting}>{t('common.cancel')}</button>
               <button
                 className="btn btn-primary"
                 onClick={submitRotate}
                 disabled={rotateSubmitting}
               >
-                {rotateSubmitting ? 'Rotating...' : 'Rotate'}
+                {t(rotateSubmitting ? 'notifications.rotating' : 'webhooks.rotate')}
               </button>
             </>
           }
@@ -523,12 +532,10 @@ export default function Notifications() {
             <div className="form-error" style={{ marginBottom: 12 }}>{rotateError}</div>
           )}
           <p style={{ fontSize: 13, marginBottom: 12 }}>
-            Replaces the encrypted URL on this row. The previous value
-            is not recoverable from the UI; if you need it, take it
-            from your Teams admin before rotating.
+            {t('notifications.rotateExplain')}
           </p>
           <div className="form-group">
-            <label>New URL</label>
+            <label>{t('notifications.newUrl')}</label>
             <input
               className="form-input"
               type="url"
@@ -542,17 +549,17 @@ export default function Notifications() {
 
       {deleting && (
         <Modal
-          title={`Delete webhook #${deleting.webhook_id}?`}
+          title={t('notifications.deleteTitle', { id: deleting.webhook_id })}
           onClose={closeDelete}
           footer={
             <>
-              <button className="btn" onClick={closeDelete} disabled={deleteSubmitting}>Cancel</button>
+              <button className="btn" onClick={closeDelete} disabled={deleteSubmitting}>{t('common.cancel')}</button>
               <button
                 className="btn btn-danger"
                 onClick={submitDelete}
                 disabled={deleteSubmitting}
               >
-                {deleteSubmitting ? 'Deleting...' : 'Delete'}
+                {t(deleteSubmitting ? 'notifications.deleting' : 'common.delete')}
               </button>
             </>
           }

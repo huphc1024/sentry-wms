@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import { api } from '../api.js';
+import { useLocale } from '../i18n/locale.jsx';
 import { TicketDocument } from './PickingTicketPrint.jsx';
 import { PRINT_BATCH_LIMIT } from './pickingConstants.js';
 import { groupOrdersByAddress } from './pickingGroups.js';
@@ -33,6 +34,7 @@ async function markPrintedWithRetry(soIds) {
 // stacked one per page so the user can hit Ctrl/Cmd+P natively. No
 // toolbar, no auto-print, no admin Layout chrome.
 export default function PickingTicketPrintAll() {
+  const { t } = useLocale();
   const [params] = useSearchParams();
   const status = params.get('status') || 'OPEN';
   const warehouseId = params.get('warehouse_id') || '';
@@ -141,7 +143,7 @@ export default function PickingTicketPrintAll() {
       }
       if (cancelled) return;
       if (out.length === 0) {
-        setError('No tickets could be loaded.');
+        setError(t('pickingTicketPrintAll.noneLoaded'));
         setLoading(false);
         return;
       }
@@ -194,23 +196,26 @@ export default function PickingTicketPrintAll() {
   // tell the queue tabs apart.
   useEffect(() => {
     if (loading) {
-      document.title = 'Loading picking tickets…';
+      document.title = t('pickingTicketPrintAll.tabLoading');
     } else if (error) {
-      document.title = 'Picking tickets - error';
+      document.title = t('pickingTicketPrintAll.tabError');
     } else {
-      document.title = `Picking tickets (${tickets.length}) - ${status}`;
+      document.title = t('pickingTicketPrintAll.tabTitle', {
+        count: tickets.length,
+        status,
+      });
     }
-  }, [loading, error, tickets.length, status]);
+  }, [t, loading, error, tickets.length, status]);
 
   if (loading) {
-    return <div className="pt-root"><div className="pt-page">Loading tickets…</div></div>;
+    return <div className="pt-root"><div className="pt-page">{t('pickingTicketPrintAll.loading')}</div></div>;
   }
 
   if (error) {
     return (
       <div className="pt-root">
         <div className="pt-page">
-          <h2>Could not render tickets</h2>
+          <h2>{t('pickingTicketPrintAll.renderFailed')}</h2>
           <p>{error}</p>
         </div>
       </div>
@@ -221,8 +226,8 @@ export default function PickingTicketPrintAll() {
     return (
       <div className="pt-root">
         <div className="pt-page">
-          <h2>No tickets to print</h2>
-          <p>No sales orders matched status {status}.</p>
+          <h2>{t('pickingTicketPrintAll.nothingToPrint')}</h2>
+          <p>{t('pickingTicketPrintAll.noneMatched', { status })}</p>
         </div>
       </div>
     );
@@ -237,10 +242,10 @@ export default function PickingTicketPrintAll() {
             the list to verify, or retry.
           </span>
           <button type="button" onClick={retryMarkPrinted} disabled={retryingMark}>
-            {retryingMark ? 'Retrying…' : 'Retry'}
+            {retryingMark ? t('pickingTicketPrintAll.retrying') : t('common.retry')}
           </button>
           <button type="button" onClick={() => setMarkPrintedFailed(false)}>
-            Dismiss
+            {t('common.dismiss')}
           </button>
         </div>
       )}

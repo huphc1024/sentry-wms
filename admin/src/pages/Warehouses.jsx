@@ -3,8 +3,11 @@ import { api } from '../api.js';
 import DataTable from '../components/DataTable.jsx';
 import PageHeader from '../components/PageHeader.jsx';
 import Modal from '../components/Modal.jsx';
+import { useLocale } from '../i18n/locale.jsx';
+import RichText from '../i18n/RichText.jsx';
 
 export default function Warehouses() {
+  const { t } = useLocale();
   const [warehouses, setWarehouses] = useState([]);
   const [showModal, setShowModal] = useState(false);
   const [editId, setEditId] = useState(null);
@@ -38,8 +41,8 @@ export default function Warehouses() {
 
   async function save() {
     setError('');
-    if (!form.warehouse_name) { setError('Name is required'); return; }
-    if (!editId && !form.warehouse_code) { setError('Code is required'); return; }
+    if (!form.warehouse_name) { setError(t('warehouses.nameRequired')); return; }
+    if (!editId && !form.warehouse_code) { setError(t('warehouses.codeRequired')); return; }
     const res = editId
       ? await api.put(`/admin/warehouses/${editId}`, { warehouse_name: form.warehouse_name, address: form.address, is_active: form.is_active })
       : await api.post('/admin/warehouses', { warehouse_code: form.warehouse_code, warehouse_name: form.warehouse_name, address: form.address });
@@ -66,61 +69,65 @@ export default function Warehouses() {
   }
 
   const columns = [
-    { key: 'warehouse_code', label: 'Code', mono: true },
-    { key: 'warehouse_name', label: 'Name' },
-    { key: 'address', label: 'Address' },
-    { key: 'is_active', label: 'Active', render: (r) => r.is_active ? 'Yes' : 'No' },
+    { key: 'warehouse_code', labelKey: 'bins.code', mono: true },
+    { key: 'warehouse_name', labelKey: 'common.name' },
+    { key: 'address', labelKey: 'warehouses.address' },
+    {
+      key: 'is_active',
+      labelKey: 'items.active',
+      render: (r) => t(r.is_active ? 'common.yes' : 'common.no'),
+    },
     { key: 'actions', label: '', render: (r) => (
       <div style={{ display: 'flex', gap: 4 }}>
-        <button className="btn btn-sm" onClick={(e) => { e.stopPropagation(); openEdit(r); }} aria-label="Edit" title="Edit">&#9998;</button>
-        <button className="btn btn-sm btn-danger" onClick={(e) => { e.stopPropagation(); setConfirmDelete(r); }} aria-label="Delete" title="Delete">&#128465;</button>
+        <button className="btn btn-sm" onClick={(e) => { e.stopPropagation(); openEdit(r); }} aria-label={t('common.edit')} title={t('common.edit')}>&#9998;</button>
+        <button className="btn btn-sm btn-danger" onClick={(e) => { e.stopPropagation(); setConfirmDelete(r); }} aria-label={t('common.delete')} title={t('common.delete')}>&#128465;</button>
       </div>
     )},
   ];
 
   return (
     <div>
-      <PageHeader title="Warehouses">
-        <button className="btn btn-primary" onClick={openCreate}>New Warehouse</button>
+      <PageHeader title={t('nav.warehouses')}>
+        <button className="btn btn-primary" onClick={openCreate}>{t('warehouses.newWarehouse')}</button>
       </PageHeader>
 
       {error && (
         <div className="form-error" style={{ marginBottom: 12 }}>{error}</div>
       )}
 
-      <DataTable rowKey="warehouse_id" columns={columns} data={warehouses} emptyMessage="No warehouses found" />
+      <DataTable rowKey="warehouse_id" columns={columns} data={warehouses} emptyMessageKey="warehouses.empty" />
 
       {showModal && (
         <Modal
-          title={editId ? 'Edit Warehouse' : 'New Warehouse'}
+          title={t(editId ? 'warehouses.editWarehouse' : 'warehouses.newWarehouse')}
           onClose={() => setShowModal(false)}
           footer={
             <>
-              <button className="btn" onClick={() => setShowModal(false)}>Cancel</button>
-              <button className="btn btn-primary" onClick={save}>Save</button>
+              <button className="btn" onClick={() => setShowModal(false)}>{t('common.cancel')}</button>
+              <button className="btn btn-primary" onClick={save}>{t('common.save')}</button>
             </>
           }
         >
           {error && <div className="form-error" style={{ marginBottom: 12 }}>{error}</div>}
           {!editId && (
             <div className="form-group">
-              <label>Code</label>
+              <label>{t('bins.code')}</label>
               <input className="form-input" value={form.warehouse_code || ''} onChange={(e) => setForm({ ...form, warehouse_code: e.target.value })} />
             </div>
           )}
           <div className="form-group">
-            <label>Name</label>
+            <label>{t('common.name')}</label>
             <input className="form-input" value={form.warehouse_name || ''} onChange={(e) => setForm({ ...form, warehouse_name: e.target.value })} />
           </div>
           <div className="form-group">
-            <label>Address</label>
+            <label>{t('warehouses.address')}</label>
             <input className="form-input" value={form.address || ''} onChange={(e) => setForm({ ...form, address: e.target.value })} />
           </div>
           {editId && (
             <div className="form-group">
               <label style={{ display: 'flex', alignItems: 'center', gap: 8, cursor: 'pointer' }}>
                 <input type="checkbox" checked={form.is_active === false} onChange={(e) => setForm({ ...form, is_active: !e.target.checked })} />
-                Inactive
+                {t('warehouses.inactive')}
               </label>
             </div>
           )}
@@ -129,19 +136,22 @@ export default function Warehouses() {
 
       {confirmDelete && (
         <Modal
-          title="Confirm Delete"
+          title={t('warehouses.confirmDelete')}
           onClose={() => setConfirmDelete(null)}
           footer={
             <>
-              <button className="btn" onClick={() => setConfirmDelete(null)}>Cancel</button>
-              <button className="btn btn-primary" style={{ background: 'var(--copper)' }} onClick={() => deleteWarehouse(confirmDelete.warehouse_id)}>Delete</button>
+              <button className="btn" onClick={() => setConfirmDelete(null)}>{t('common.cancel')}</button>
+              <button className="btn btn-primary" style={{ background: 'var(--copper)' }} onClick={() => deleteWarehouse(confirmDelete.warehouse_id)}>{t('common.delete')}</button>
             </>
           }
         >
-          <p style={{ fontSize: 13, fontWeight: 600, color: 'var(--danger)' }}>Are you sure? This permanently deletes the warehouse. There is no undo.</p>
-          <p style={{ fontSize: 13, color: 'var(--text-secondary)', marginTop: 4 }}>To temporarily disable a warehouse, use the Inactive checkbox in Edit instead.</p>
+          <p style={{ fontSize: 13, fontWeight: 600, color: 'var(--danger)' }}>{t('warehouses.deleteWarning')}</p>
+          <p style={{ fontSize: 13, color: 'var(--text-secondary)', marginTop: 4 }}>{t('warehouses.disableInstead')}</p>
           <p style={{ fontSize: 13, color: 'var(--text-secondary)', marginTop: 8 }}>
-            Warehouse: <span className="mono">{confirmDelete.warehouse_code}</span> &mdash; {confirmDelete.warehouse_name}
+            <RichText
+              text={t('warehouses.deleteTarget', { name: confirmDelete.warehouse_name })}
+              values={{ code: <span className="mono">{confirmDelete.warehouse_code}</span> }}
+            />
           </p>
         </Modal>
       )}

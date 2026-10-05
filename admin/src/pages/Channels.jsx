@@ -3,15 +3,18 @@ import { api } from '../api.js';
 import DataTable from '../components/DataTable.jsx';
 import PageHeader from '../components/PageHeader.jsx';
 import Modal from '../components/Modal.jsx';
+import { t as tr } from '../i18n/translate.js';
+import { useLocale } from '../i18n/locale.jsx';
+import RichText from '../i18n/RichText.jsx';
 
 // Pipe C availability channels. Mirrors the Webhooks page: a list with
 // per-channel publish stats, a create / edit modal, pause-resume, soft-delete,
 // and a DLQ viewer for parked rows.
 
 const STATUS_BADGE = {
-  active: { label: 'active', color: 'var(--text-secondary)' },
-  paused: { label: 'paused', color: '#c49100' },
-  revoked: { label: 'revoked', color: 'var(--danger)' },
+  active: { labelKey: 'webhooks.statusActive', color: 'var(--text-secondary)' },
+  paused: { labelKey: 'webhooks.statusPaused', color: 'var(--warning)' },
+  revoked: { labelKey: 'webhooks.statusRevoked', color: 'var(--danger)' },
 };
 
 function Badge({ label, color }) {
@@ -71,7 +74,7 @@ function formToBody(f) {
   let transform = {};
   if (f.transform.trim()) {
     try { transform = JSON.parse(f.transform); }
-    catch { return [null, 'Transform must be valid JSON.']; }
+    catch { return [null, tr('channels.transformNotJson')]; }
   }
   return [{
     display_name: f.display_name.trim(),
@@ -85,59 +88,60 @@ function formToBody(f) {
 }
 
 function ChannelForm({ form, setForm, isEdit }) {
+  const { t } = useLocale();
   const set = (k) => (e) => setForm({ ...form, [k]: e.target.value });
   return (
     <>
       {!isEdit && (
         <div className="form-group">
-          <label>Channel ID</label>
+          <label>{t('channels.channelId')}</label>
           <input className="form-input mono" value={form.channel_id}
                  onChange={set('channel_id')} placeholder="amazon-fba" />
         </div>
       )}
       <div className="form-group">
-        <label>Display name</label>
+        <label>{t('webhooks.displayName')}</label>
         <input className="form-input" value={form.display_name}
-               onChange={set('display_name')} placeholder="Amazon FBA" />
+               onChange={set('display_name')} placeholder={t('channels.nameExample')} />
       </div>
       <div className="form-group">
-        <label>Delivery URL (sink)</label>
+        <label>{t('channels.deliveryUrl')}</label>
         <input className="form-input mono" value={form.delivery_url}
                onChange={set('delivery_url')} placeholder="https://sink.example.com/availability" />
       </div>
       <div className="form-group">
-        <label>SKU scope &ndash; skus (comma-separated, blank = all)</label>
+        <label>{t('channels.scopeSkus')}</label>
         <input className="form-input" value={form.skus} onChange={set('skus')}
-               placeholder="TST-001, TST-002" />
+               placeholder={t('channels.skusExample')} />
       </div>
       <div className="form-group">
-        <label>SKU scope &ndash; categories</label>
+        <label>{t('channels.scopeCategories')}</label>
         <input className="form-input" value={form.categories}
-               onChange={set('categories')} placeholder="reels, waders" />
+               onChange={set('categories')} placeholder={t('channels.categoriesExample')} />
       </div>
       <div className="form-group">
-        <label>SKU scope &ndash; warehouse IDs (blank = all)</label>
+        <label>{t('channels.scopeWarehouses')}</label>
         <input className="form-input" value={form.warehouse_ids}
                onChange={set('warehouse_ids')} placeholder="1, 2" />
       </div>
       <div className="form-group">
-        <label>Transform (JSON: rename + constants, blank = none)</label>
+        <label>{t('channels.transform')}</label>
         <textarea className="form-input mono" rows={5} value={form.transform}
                   onChange={set('transform')} placeholder={TRANSFORM_PLACEHOLDER} />
       </div>
       <div style={{ display: 'flex', gap: 12 }}>
         <div className="form-group" style={{ flex: 1 }}>
-          <label>Rate (per sec)</label>
+          <label>{t('channels.rate')}</label>
           <input className="form-input" type="number" value={form.rate_limit_per_second}
                  onChange={set('rate_limit_per_second')} />
         </div>
         <div className="form-group" style={{ flex: 1 }}>
-          <label>Batch size</label>
+          <label>{t('channels.batchSize')}</label>
           <input className="form-input" type="number" value={form.batch_size}
                  onChange={set('batch_size')} />
         </div>
         <div className="form-group" style={{ flex: 1 }}>
-          <label>Debounce (sec)</label>
+          <label>{t('channels.debounce')}</label>
           <input className="form-input" type="number" value={form.debounce_seconds}
                  onChange={set('debounce_seconds')} />
         </div>
@@ -147,6 +151,7 @@ function ChannelForm({ form, setForm, isEdit }) {
 }
 
 export default function Channels() {
+  const { t } = useLocale();
   const [channels, setChannels] = useState([]);
   const [loading, setLoading] = useState(true);
   const [pageError, setPageError] = useState('');
@@ -186,7 +191,7 @@ export default function Channels() {
     const res = await api.post('/admin/channels', body);
     const data = await res.json().catch(() => ({}));
     if (res.ok) { setShowCreate(false); setForm(emptyForm()); load(); }
-    else { setCreateError(data.detail || data.error || 'Create failed.'); }
+    else { setCreateError(data.detail || data.error || t('channels.createFailed')); }
   }
 
   async function submitEdit() {
@@ -196,7 +201,7 @@ export default function Channels() {
     const res = await api.patch(`/admin/channels/${editing.channel_id}`, body);
     const data = await res.json().catch(() => ({}));
     if (res.ok) { setEditing(null); load(); }
-    else { setEditError(data.detail || data.error || 'Update failed.'); }
+    else { setEditError(data.detail || data.error || t('channels.updateFailed')); }
   }
 
   async function setStatus(channel, status) {
@@ -221,19 +226,19 @@ export default function Channels() {
   }
 
   const columns = [
-    { key: 'channel_id', label: 'Channel', mono: true },
-    { key: 'display_name', label: 'Name' },
+    { key: 'channel_id', labelKey: 'channels.channel', mono: true },
+    { key: 'display_name', labelKey: 'common.name' },
     {
-      key: 'status', label: 'Status',
+      key: 'status', labelKey: 'common.status',
       render: (r) => {
         const b = STATUS_BADGE[r.status] || STATUS_BADGE.active;
-        return <Badge label={b.label} color={b.color} />;
+        return <Badge label={t(b.labelKey)} color={b.color} />;
       },
     },
-    { key: 'item_count', label: 'Items' },
-    { key: 'dirty_count', label: 'Pending' },
+    { key: 'item_count', labelKey: 'nav.items' },
+    { key: 'dirty_count', labelKey: 'webhooks.statPending' },
     {
-      key: 'dlq_count', label: 'DLQ',
+      key: 'dlq_count', labelKey: 'webhooks.statDlq',
       render: (r) => (
         <span style={{ color: r.dlq_count ? 'var(--danger)' : 'inherit' }}>
           {r.dlq_count}
@@ -241,7 +246,7 @@ export default function Channels() {
       ),
     },
     {
-      key: 'last_published_at', label: 'Last publish',
+      key: 'last_published_at', labelKey: 'channels.lastPublish',
       render: (r) => (r.last_published_at
         ? new Date(r.last_published_at).toLocaleString() : '—'),
     },
@@ -251,15 +256,15 @@ export default function Channels() {
         <div style={{ display: 'flex', gap: 6 }}>
           <button className="btn btn-sm" onClick={() => {
             setEditing(r); setEditForm(rowToForm(r)); setEditError('');
-          }}>Edit</button>
+          }}>{t('common.edit')}</button>
           {r.status === 'active' ? (
-            <button className="btn btn-sm" onClick={() => setStatus(r, 'paused')}>Pause</button>
+            <button className="btn btn-sm" onClick={() => setStatus(r, 'paused')}>{t('webhooks.pause')}</button>
           ) : (
-            <button className="btn btn-sm" onClick={() => setStatus(r, 'active')}>Resume</button>
+            <button className="btn btn-sm" onClick={() => setStatus(r, 'active')}>{t('webhooks.resume')}</button>
           )}
-          <button className="btn btn-sm" onClick={() => openDlq(r)}>DLQ</button>
+          <button className="btn btn-sm" onClick={() => openDlq(r)}>{t('webhooks.statDlq')}</button>
           <button className="btn btn-sm btn-danger" onClick={() => setConfirmDelete(r)}>
-            Delete
+            {t('common.delete')}
           </button>
         </div>
       ),
@@ -268,26 +273,26 @@ export default function Channels() {
 
   return (
     <div>
-      <PageHeader title="Channels">
+      <PageHeader title={t('nav.channels')}>
         <button className="btn btn-primary" onClick={() => {
           setForm(emptyForm()); setCreateError(''); setShowCreate(true);
-        }}>New channel</button>
+        }}>{t('channels.newChannel')}</button>
       </PageHeader>
 
       {pageError && <div className="form-error">{pageError}</div>}
 
       {loading ? (
-        <p style={{ color: 'var(--text-secondary)' }}>Loading&hellip;</p>
+        <p style={{ color: 'var(--text-secondary)' }}>{t('common.loading')}</p>
       ) : (
         <DataTable rowKey="channel_id" columns={columns} data={channels}
-                   emptyMessage="No channels configured yet." />
+                   emptyMessageKey="channels.empty" />
       )}
 
       {showCreate && (
-        <Modal title="New channel" onClose={() => setShowCreate(false)} footer={
+        <Modal title={t('channels.newChannel')} onClose={() => setShowCreate(false)} footer={
           <>
-            <button className="btn" onClick={() => setShowCreate(false)}>Cancel</button>
-            <button className="btn btn-primary" onClick={submitCreate}>Create</button>
+            <button className="btn" onClick={() => setShowCreate(false)}>{t('common.cancel')}</button>
+            <button className="btn btn-primary" onClick={submitCreate}>{t('common.create')}</button>
           </>
         }>
           {createError && <div className="form-error">{createError}</div>}
@@ -296,10 +301,10 @@ export default function Channels() {
       )}
 
       {editing && (
-        <Modal title={`Edit ${editing.channel_id}`} onClose={() => setEditing(null)} footer={
+        <Modal title={t('channels.editTitle', { id: editing.channel_id })} onClose={() => setEditing(null)} footer={
           <>
-            <button className="btn" onClick={() => setEditing(null)}>Cancel</button>
-            <button className="btn btn-primary" onClick={submitEdit}>Save</button>
+            <button className="btn" onClick={() => setEditing(null)}>{t('common.cancel')}</button>
+            <button className="btn btn-primary" onClick={submitEdit}>{t('common.save')}</button>
           </>
         }>
           {editError && <div className="form-error">{editError}</div>}
@@ -308,35 +313,37 @@ export default function Channels() {
       )}
 
       {confirmDelete && (
-        <Modal title="Revoke channel" onClose={() => setConfirmDelete(null)} footer={
+        <Modal title={t('channels.revokeTitle')} onClose={() => setConfirmDelete(null)} footer={
           <>
-            <button className="btn" onClick={() => setConfirmDelete(null)}>Cancel</button>
-            <button className="btn btn-danger" onClick={doDelete}>Revoke</button>
+            <button className="btn" onClick={() => setConfirmDelete(null)}>{t('common.cancel')}</button>
+            <button className="btn btn-danger" onClick={doDelete}>{t('webhooks.revoke')}</button>
           </>
         }>
           <p>
-            Revoke <span className="mono">{confirmDelete.channel_id}</span>? The
-            publisher stops sending to it; the config is kept for the record.
+            <RichText
+              text={t('channels.revokeConfirm')}
+              values={{ id: <span className="mono">{confirmDelete.channel_id}</span> }}
+            />
           </p>
         </Modal>
       )}
 
       {dlqChannel && (
-        <Modal title={`DLQ — ${dlqChannel.channel_id}`}
+        <Modal title={t('channels.dlqTitle', { id: dlqChannel.channel_id })}
                onClose={() => setDlqChannel(null)} size="large">
           {dlqRows.length === 0 ? (
-            <p style={{ color: 'var(--text-secondary)' }}>No parked rows.</p>
+            <p style={{ color: 'var(--text-secondary)' }}>{t('channels.noParkedRows')}</p>
           ) : (
             <DataTable
               rowKey="item_id"
               columns={[
-                { key: 'sku', label: 'SKU', mono: true },
-                { key: 'available_qty', label: 'Available' },
-                { key: 'attempt_count', label: 'Attempts' },
-                { key: 'last_error', label: 'Last error' },
+                { key: 'sku', labelKey: 'common.sku', mono: true },
+                { key: 'available_qty', labelKey: 'common.available' },
+                { key: 'attempt_count', labelKey: 'webhooks.statAttempts' },
+                { key: 'last_error', labelKey: 'channels.lastError' },
               ]}
               data={dlqRows}
-              emptyMessage="No parked rows."
+              emptyMessageKey="channels.noParkedRows"
             />
           )}
         </Modal>

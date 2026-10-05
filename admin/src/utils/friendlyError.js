@@ -1,49 +1,49 @@
 /**
  * V-021: map backend error responses to user-friendly strings.
  *
- * The admin SPA used to render `data.error` verbatim, which surfaced
- * backend internals (SQL constraint names, Python exception reprs) to
- * end users. This helper converts a response payload to a finite,
- * human-readable message. Anything not explicitly mapped falls back to
- * a generic message and never echoes the raw backend string.
+ * The API answers with a code; the operator needs a sentence. The
+ * mapping used to carry its own Vietnamese table and its own read of
+ * the stored locale, which made it the fifth place in this app that
+ * knew how to translate something. Now it maps code to message *key*
+ * and hands that to the shared resolver, so a wording change happens in
+ * one place and the table invariants cover these strings too.
  */
 
-// Backend-defined `error` values that are safe to surface as-is because
-// they are end-user oriented (not internal diagnostics). Keys map to
-// the user-facing string the UI should show.
-const KNOWN_ERROR_MESSAGES = {
-  validation_error: 'One or more fields have invalid values.',
-  unsupported_media_type: 'That request format is not supported.',
-  'Invalid username or password': 'Wrong username or password.',
-  'Account disabled or deleted': 'Your account is no longer active. Contact an admin.',
-  'Token expired': 'Your session has expired. Please sign in again.',
-  Unauthorized: 'You need to sign in to continue.',
-  Forbidden: 'You do not have permission for that action.',
-  'CSRF token missing or invalid': 'Your session is out of sync. Refresh the page and try again.',
-  'Access denied for this warehouse': 'You do not have access to that warehouse.',
-  'Current password is incorrect': 'Current password is incorrect.',
-  'User not found': 'Account not found.',
-  "Password cannot be 'admin'": "Password cannot be 'admin'.",
-  'Password must be at least 8 characters': 'Password must be at least 8 characters.',
-  'Password must contain at least one letter': 'Password must contain at least one letter.',
-  'Password must contain at least one digit': 'Password must contain at least one digit.',
-  password_change_required: 'You must change your password before continuing.',
+import { t } from '../i18n/translate.js';
+
+const KEY_BY_CODE = {
+  validation_error: 'errors.api.validation',
+  unsupported_media_type: 'errors.api.unsupportedMedia',
+  'Invalid username or password': 'errors.api.badCredentials',
+  'Account disabled or deleted': 'errors.api.accountInactive',
+  'Token expired': 'errors.api.sessionExpired',
+  Unauthorized: 'errors.api.signInNeeded',
+  Forbidden: 'errors.api.forbidden',
+  'CSRF token missing or invalid': 'errors.api.sessionOutOfSync',
+  'Access denied for this warehouse': 'errors.api.warehouseDenied',
+  'Current password is incorrect': 'errors.api.currentPasswordWrong',
+  'User not found': 'errors.api.accountNotFound',
+  "Password cannot be 'admin'": 'errors.api.passwordNotAdmin',
+  'Password must be at least 8 characters': 'errors.api.passwordLength',
+  'Password must contain at least one letter': 'errors.api.passwordLetter',
+  'Password must contain at least one digit': 'errors.api.passwordDigit',
+  password_change_required: 'errors.api.passwordChangeRequired',
 };
 
-export function friendlyError(payload, fallback = 'Something went wrong. Please try again.') {
-  if (!payload || typeof payload !== 'object') return fallback;
-  const code = payload.error;
-  if (code && Object.prototype.hasOwnProperty.call(KNOWN_ERROR_MESSAGES, code)) {
-    return KNOWN_ERROR_MESSAGES[code];
-  }
-  return fallback;
+/**
+ * @param payload   the parsed error body, or anything at all
+ * @param fallback  a message key, or a literal for callers not yet
+ *                  converted -- `translate` returns an unknown key
+ *                  unchanged, so a literal still reads correctly.
+ */
+export function friendlyError(payload, fallback = 'errors.tryAgain') {
+  const code = payload && typeof payload === 'object' ? payload.error : null;
+  const key = code && Object.prototype.hasOwnProperty.call(KEY_BY_CODE, code)
+    ? KEY_BY_CODE[code]
+    : fallback;
+  return t(key);
 }
 
-/**
- * Resolve a friendly error from a fetch Response. Reads the JSON body
- * (if any) and maps via friendlyError. Use this when you have a non-ok
- * Response and want the right user-facing string.
- */
 export async function friendlyErrorFromResponse(res, fallback) {
   let body = null;
   try {

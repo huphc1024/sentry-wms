@@ -1,6 +1,8 @@
 import { useState, useEffect, useRef } from 'react';
 import { api } from '../api.js';
 import PageHeader from '../components/PageHeader.jsx';
+import SkuBarcodeAutocomplete from '../components/SkuBarcodeAutocomplete.jsx';
+import { useLocale } from '../i18n/locale.jsx';
 
 // Bin + item lookups switched from preloaded
 // dropdowns to debounced server-side search so 30K SKUs and 3K bins
@@ -16,7 +18,7 @@ const dropdownStyle = {
   right: 0,
   maxHeight: 200,
   overflowY: 'auto',
-  background: '#fff',
+  background: 'var(--panel)',
   border: '1px solid #ddd',
   borderRadius: 8,
   boxShadow: '0 4px 12px rgba(0,0,0,0.1)',
@@ -55,6 +57,7 @@ function useDebouncedBinSearch(warehouseId, query, selectedId) {
 }
 
 export default function InterWarehouseTransfers() {
+  const { t } = useLocale();
   const [warehouses, setWarehouses] = useState([]);
   const [transfers, setTransfers] = useState([]);
   const [submitting, setSubmitting] = useState(false);
@@ -76,12 +79,9 @@ export default function InterWarehouseTransfers() {
   const [destBinSearch, setDestBinSearch] = useState('');
   const [destBinOpen, setDestBinOpen] = useState(false);
   const [itemSearch, setItemSearch] = useState('');
-  const [itemOpen, setItemOpen] = useState(false);
-  const [itemResults, setItemResults] = useState([]);
   const [itemSearching, setItemSearching] = useState(false);
   const sourceBinRef = useRef(null);
   const destBinRef = useRef(null);
-  const itemRef = useRef(null);
 
   const sourceBinQuery = useDebouncedBinSearch(
     form.source_warehouse_id, sourceBinSearch, form.source_bin_id,
@@ -94,30 +94,11 @@ export default function InterWarehouseTransfers() {
   // transfer endpoint validates that the chosen item actually has
   // inventory in the source bin, so an unrelated catalog match just
   // bounces back with a clear error.
-  useEffect(() => {
-    const q = itemSearch.trim();
-    if (q.length < 2 || form.item_id) {
-      setItemResults([]);
-      return;
-    }
-    setItemSearching(true);
-    const handle = setTimeout(async () => {
-      const res = await api.get(
-        `/admin/items?q=${encodeURIComponent(q)}&per_page=25&active=true`,
-      );
-      setItemSearching(false);
-      if (!res?.ok) return;
-      const data = await res.json();
-      setItemResults(data.items || []);
-    }, 200);
-    return () => clearTimeout(handle);
-  }, [itemSearch, form.item_id]);
 
   useEffect(() => {
     function handleClick(e) {
       if (sourceBinRef.current && !sourceBinRef.current.contains(e.target)) setSourceBinOpen(false);
       if (destBinRef.current && !destBinRef.current.contains(e.target)) setDestBinOpen(false);
-      if (itemRef.current && !itemRef.current.contains(e.target)) setItemOpen(false);
     }
     document.addEventListener('mousedown', handleClick);
     return () => document.removeEventListener('mousedown', handleClick);
@@ -174,8 +155,7 @@ export default function InterWarehouseTransfers() {
 
   function selectItem(i) {
     setForm((f) => ({ ...f, item_id: i.item_id }));
-    setItemSearch(`${i.sku}  -  ${i.item_name}`);
-    setItemOpen(false);
+    setItemSearch(i.sku || '');
   }
 
   async function handleSubmit(e) {
@@ -184,12 +164,12 @@ export default function InterWarehouseTransfers() {
     setSuccess('');
 
     if (!form.source_warehouse_id || !form.source_bin_id || !form.destination_warehouse_id || !form.destination_bin_id || !form.item_id || !form.quantity) {
-      setError('All fields are required.');
+      setError(t('interTransfers.allRequired'));
       return;
     }
 
     if (Number(form.quantity) < 1) {
-      setError('Quantity must be at least 1.');
+      setError(t('interTransfers.minQty'));
       return;
     }
 
@@ -214,10 +194,10 @@ export default function InterWarehouseTransfers() {
         loadTransfers();
       } else {
         const data = await res.json().catch(() => null);
-        setError(data?.error || `Transfer failed (${res.status}).`);
+        setError(data?.error || t('interTransfers.failed', { status: res.status }));
       }
     } catch (err) {
-      setError('Network error. Please try again.');
+      setError(t('common.networkError'));
     } finally {
       setSubmitting(false);
     }
@@ -230,34 +210,45 @@ export default function InterWarehouseTransfers() {
 
   function statusTag(status) {
     const cls = status === 'completed' ? 'tag tag-success' : 'tag tag-info';
-    return <span className={cls}>{status}</span>;
+    // `completed` is the API's own value; the label moves, the value
+    // does not.
+    return <span className={cls}>{t(`status.${String(status).toUpperCase()}`)}</span>;
   }
 
   return (
     <div>
-      <PageHeader title="Inter-Warehouse Transfers" />
+      <PageHeader title={t('nav.transfers')} />
 
       <div className="settings-section">
-        <h3>Create Transfer</h3>
-        {error && <div className="form-error" style={{ color: '#c0392b', marginBottom: 12 }}>{error}</div>}
-        {success && <div className="form-success" style={{ color: '#27ae60', marginBottom: 12 }}>{success}</div>}
+        <h3>{t('interTransfers.create')}</h3>
+        {error && <div className="form-error" style={{ color: 'var(--danger)', marginBottom: 12 }}>{error}</div>}
+        {success && <div className="form-success" style={{ color: 'var(--success)', marginBottom: 12 }}>{success}</div>}
 
         <form onSubmit={handleSubmit}>
           <div className="form-row">
             <div className="form-group">
-              <label>Source Warehouse</label>
+              <label>{t('transferOrders.sourceWarehouse')}</label>
               <select className="form-select" value={form.source_warehouse_id} onChange={(e) => updateField('source_warehouse_id', e.target.value)}>
-                <option value="">Select warehouse...</option>
+                <option value="">{t('rma.selectWarehouse')}</option>
                 {warehouses.map((w) => (
                   <option key={w.warehouse_id} value={w.warehouse_id}>{w.warehouse_name} ({w.warehouse_code})</option>
                 ))}
               </select>
             </div>
             <div className="form-group" ref={sourceBinRef} style={{ position: 'relative' }}>
-              <label>Source Bin {sourceBinQuery.searching && <span style={{ fontSize: 11, color: 'var(--text-secondary)' }}>(searching...)</span>}</label>
+              <label>
+                {t('interTransfers.sourceBin')}{' '}
+                {sourceBinQuery.searching && (
+                  <span style={{ fontSize: 11, color: 'var(--text-secondary)' }}>
+                    {t('interTransfers.searching')}
+                  </span>
+                )}
+              </label>
               <input
                 className="form-input mono"
-                placeholder={form.source_warehouse_id ? 'Type bin code to search' : 'Pick warehouse first'}
+                placeholder={t(form.source_warehouse_id
+                  ? 'interTransfers.typeBinCode'
+                  : 'interTransfers.pickWarehouseFirst')}
                 value={sourceBinSearch}
                 onChange={(e) => { setSourceBinSearch(e.target.value); updateField('source_bin_id', ''); setSourceBinOpen(true); }}
                 onFocus={() => setSourceBinOpen(true)}
@@ -275,7 +266,7 @@ export default function InterWarehouseTransfers() {
               )}
               {sourceBinOpen && !sourceBinQuery.searching && sourceBinSearch.trim().length >= 1 && !form.source_bin_id && sourceBinQuery.results.length === 0 && (
                 <div style={{ ...dropdownStyle, padding: 12, fontSize: 12, color: 'var(--text-secondary)' }}>
-                  No bins match "{sourceBinSearch.trim()}" in this warehouse.
+                  {t('interTransfers.noBinsMatch', { query: sourceBinSearch.trim() })}
                 </div>
               )}
             </div>
@@ -283,19 +274,26 @@ export default function InterWarehouseTransfers() {
 
           <div className="form-row">
             <div className="form-group">
-              <label>Destination Warehouse</label>
+              <label>{t('transferOrders.destWarehouse')}</label>
               <select className="form-select" value={form.destination_warehouse_id} onChange={(e) => updateField('destination_warehouse_id', e.target.value)}>
-                <option value="">Select warehouse...</option>
+                <option value="">{t('rma.selectWarehouse')}</option>
                 {warehouses.map((w) => (
                   <option key={w.warehouse_id} value={w.warehouse_id}>{w.warehouse_name} ({w.warehouse_code})</option>
                 ))}
               </select>
             </div>
             <div className="form-group" ref={destBinRef} style={{ position: 'relative' }}>
-              <label>Destination Bin {destBinQuery.searching && <span style={{ fontSize: 11, color: 'var(--text-secondary)' }}>(searching...)</span>}</label>
+              <label>
+                {t('interTransfers.destBin')}{' '}
+                {destBinQuery.searching && (
+                  <span style={{ fontSize: 11, color: 'var(--text-secondary)' }}>
+                    {t('interTransfers.searching')}
+                  </span>
+                )}
+              </label>
               <input
                 className="form-input mono"
-                placeholder={form.destination_warehouse_id ? 'Type bin code to search' : 'Pick warehouse first'}
+                placeholder={t(form.destination_warehouse_id ? 'interTransfers.typeBinCode' : 'interTransfers.pickWarehouseFirst')}
                 value={destBinSearch}
                 onChange={(e) => { setDestBinSearch(e.target.value); updateField('destination_bin_id', ''); setDestBinOpen(true); }}
                 onFocus={() => setDestBinOpen(true)}
@@ -313,78 +311,74 @@ export default function InterWarehouseTransfers() {
               )}
               {destBinOpen && !destBinQuery.searching && destBinSearch.trim().length >= 1 && !form.destination_bin_id && destBinQuery.results.length === 0 && (
                 <div style={{ ...dropdownStyle, padding: 12, fontSize: 12, color: 'var(--text-secondary)' }}>
-                  No bins match "{destBinSearch.trim()}" in this warehouse.
+                  {t('interTransfers.noBinsMatch', { query: destBinSearch.trim() })}
                 </div>
               )}
             </div>
           </div>
 
           <div className="form-row">
-            <div className="form-group" ref={itemRef} style={{ position: 'relative' }}>
-              <label>Item {itemSearching && <span style={{ fontSize: 11, color: 'var(--text-secondary)' }}>(searching...)</span>}</label>
-              <input
-                className="form-input"
-                placeholder="Type SKU or item name (min 2 chars)"
+            <div className="form-group">
+              <label>
+                {t('common.item')}{' '}
+                {itemSearching && (
+                  <span style={{ fontSize: 11, color: 'var(--text-secondary)' }}>
+                    {t('interTransfers.searching')}
+                  </span>
+                )}
+              </label>
+              <SkuBarcodeAutocomplete
+                listId="iwt-item-options"
+                minChars={2}
+                perPage={25}
+                placeholder={t('skuSearch.placeholderMin2')}
                 value={itemSearch}
-                onChange={(e) => { setItemSearch(e.target.value); updateField('item_id', ''); setItemOpen(true); }}
-                onFocus={() => setItemOpen(true)}
-                autoComplete="off"
+                onChange={(v) => { setItemSearch(v); updateField('item_id', ''); }}
+                onItemSelect={(it) => { if (it) selectItem(it); }}
+                onSearchingChange={setItemSearching}
+                showNoMatch={itemSearch.trim().length >= 2 && !form.item_id}
               />
-              {itemOpen && itemResults.length > 0 && (
-                <div style={dropdownStyle}>
-                  {itemResults.map((i) => (
-                    <div key={i.item_id} style={dropdownItemStyle} onMouseDown={() => selectItem(i)}>
-                      <strong className="mono">{i.sku}</strong>  -  {i.item_name}
-                    </div>
-                  ))}
-                </div>
-              )}
-              {itemOpen && !itemSearching && itemSearch.trim().length >= 2 && !form.item_id && itemResults.length === 0 && (
-                <div style={{ ...dropdownStyle, padding: 12, fontSize: 12, color: 'var(--text-secondary)' }}>
-                  No items match "{itemSearch.trim()}".
-                </div>
-              )}
             </div>
             <div className="form-group">
-              <label>Quantity</label>
-              <input className="form-input" type="number" min="1" value={form.quantity} onChange={(e) => updateField('quantity', e.target.value)} placeholder="Qty" />
+              <label>{t('salesOrders.quantity')}</label>
+              <input className="form-input" type="number" min="1" value={form.quantity} onChange={(e) => updateField('quantity', e.target.value)} placeholder={t('common.qty')} />
             </div>
           </div>
 
           <button className="btn btn-primary" type="submit" disabled={submitting}>
-            {submitting ? 'Submitting...' : 'Create Transfer'}
+            {t(submitting ? 'interTransfers.submitting' : 'interTransfers.create')}
           </button>
         </form>
       </div>
 
       <div className="settings-section" style={{ marginTop: 24 }}>
-        <h3>Recent Transfers</h3>
+        <h3>{t('interTransfers.recent')}</h3>
         <div className="data-table-wrapper">
           <table className="data-table">
             <thead>
               <tr>
-                <th>ID</th>
-                <th>Item</th>
-                <th>Qty</th>
-                <th>From</th>
-                <th>To</th>
-                <th>Status</th>
-                <th>Created</th>
+                <th>{t('notifications.id')}</th>
+                <th>{t('common.item')}</th>
+                <th>{t('common.qty')}</th>
+                <th>{t('webhooks.from')}</th>
+                <th>{t('webhooks.to')}</th>
+                <th>{t('common.status')}</th>
+                <th>{t('salesOrders.created')}</th>
               </tr>
             </thead>
             <tbody>
               {transfers.length === 0 && (
-                <tr><td colSpan={7} style={{ textAlign: 'center', padding: 24, color: '#999' }}>No transfers found</td></tr>
+                <tr><td colSpan={7} style={{ textAlign: 'center', padding: 24, color: 'var(--text-secondary)' }}>{t('interTransfers.empty')}</td></tr>
               )}
-              {transfers.map((t) => (
-                <tr key={t.transfer_id || t.id}>
-                  <td>{t.transfer_id || t.id}</td>
-                  <td>{t.sku || t.item_name || t.item_id}</td>
-                  <td>{t.quantity}</td>
-                  <td>{t.from_warehouse_name || t.from_warehouse_code || t.from_warehouse_id} / {t.from_bin_code || t.from_bin_id}</td>
-                  <td>{t.to_warehouse_name || t.to_warehouse_code || t.to_warehouse_id} / {t.to_bin_code || t.to_bin_id}</td>
-                  <td>{statusTag(t.status || 'completed')}</td>
-                  <td style={{ fontFamily: 'monospace' }}>{formatDate(t.transferred_at || t.created_at)}</td>
+              {transfers.map((row) => (
+                <tr key={row.transfer_id || row.id}>
+                  <td>{row.transfer_id || row.id}</td>
+                  <td>{row.sku || row.item_name || row.item_id}</td>
+                  <td>{row.quantity}</td>
+                  <td>{row.from_warehouse_name || row.from_warehouse_code || row.from_warehouse_id} / {row.from_bin_code || row.from_bin_id}</td>
+                  <td>{row.to_warehouse_name || row.to_warehouse_code || row.to_warehouse_id} / {row.to_bin_code || row.to_bin_id}</td>
+                  <td>{statusTag(row.status || 'completed')}</td>
+                  <td style={{ fontFamily: 'monospace' }}>{formatDate(row.transferred_at || row.created_at)}</td>
                 </tr>
               ))}
             </tbody>

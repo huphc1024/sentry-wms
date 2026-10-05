@@ -129,3 +129,29 @@ describe('DataTable CSV export', () => {
     expect(csv).toContain('CLOSED');
   });
 });
+
+/**
+ * A converted page names its headings with `labelKey`. Both the header
+ * cell and the CSV header have to resolve it: the export used to be
+ * handed the dictionary lookup, which only ever matched English label
+ * text, so a page that had been converted would have rendered a
+ * translated table and exported an untranslated file -- the kind of
+ * split nobody notices until a customer opens the spreadsheet.
+ */
+describe('DataTable column headings', () => {
+  it('resolves labelKey in the header cell and in the CSV', () => {
+    const columns = [
+      { key: 'customer_name', labelKey: 'common.customer' },
+      { key: 'so_number', label: 'SO Number' },
+    ];
+    const { getByRole, container } = renderTable(columns, [
+      { customer_name: 'Acme', so_number: 'SO-1' },
+    ]);
+
+    expect(container.textContent).toContain('Customer');
+    expect(container.textContent).not.toContain('common.customer');
+
+    const csv = captureExportedCsv(getByRole('button', { name: /csv/i }));
+    expect(csv.split('\n')[0]).toBe('Customer,SO Number');
+  });
+});

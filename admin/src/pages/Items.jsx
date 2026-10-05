@@ -4,14 +4,30 @@ import { api } from '../api.js';
 import DataTable from '../components/DataTable.jsx';
 import PageHeader from '../components/PageHeader.jsx';
 import Modal from '../components/Modal.jsx';
+import { useLocale } from '../i18n/locale.jsx';
 
 const FILTER_OPTIONS = [
-  { label: 'Active', value: 'active' },
-  { label: 'Archived', value: 'archived' },
-  { label: 'All', value: 'all' },
+  { labelKey: 'items.filterActive', value: 'active' },
+  { labelKey: 'items.filterArchived', value: 'archived' },
+  { labelKey: 'common.all', value: 'all' },
 ];
 
+const KG_TO_LB = 2.2046226218;
+
+function numberOrNull(value) {
+  return value === '' || value == null ? null : Number(value);
+}
+
+function itemToForm(item) {
+  return {
+    ...item,
+    weight_kg: item.weight_lbs != null ? (Number(item.weight_lbs) / KG_TO_LB).toFixed(3) : '',
+    barcode_aliases_text: (item.barcode_aliases || []).join('\n'),
+  };
+}
+
 export default function Items() {
+  const { t } = useLocale();
   const [searchParams] = useSearchParams();
   const [items, setItems] = useState([]);
   const [pagination, setPagination] = useState(null);
@@ -80,14 +96,22 @@ export default function Items() {
 
   function openCreate() {
     setEditId(null);
-    setForm({ is_active: true });
+    setForm({
+      is_active: true,
+      reorder_point: 0,
+      reorder_qty: 0,
+    });
     setError('');
     setShowModal(true);
   }
 
-  function openEdit(item) {
-    setEditId(item.id || item.item_id);
-    setForm({ ...item, id: item.id || item.item_id });
+  async function openEdit(item) {
+    const id = item.id || item.item_id;
+    setEditId(id);
+    const res = await api.get(`/admin/items/${id}`);
+    const data = res?.ok ? await res.json() : null;
+    const fullItem = data?.item || item;
+    setForm(itemToForm({ ...fullItem, id }));
     setError('');
     setShowModal(true);
   }
@@ -97,11 +121,20 @@ export default function Items() {
     const body = {
       sku: form.sku,
       item_name: form.item_name,
+      description: form.description || null,
       upc: form.upc || null,
       mpn: form.mpn || null,
+      barcode_aliases: (form.barcode_aliases_text || '')
+        .split(/[\n,;]+/)
+        .map((value) => value.trim())
+        .filter(Boolean),
       category: form.category || null,
-      weight_lbs: (form.weight_lbs || form.weight) ? Number(form.weight_lbs || form.weight) : null,
+      weight_lbs: form.weight_kg === '' || form.weight_kg == null
+        ? null
+        : Number(form.weight_kg) * KG_TO_LB,
       default_bin_id: form.default_bin_id ? Number(form.default_bin_id) : null,
+      reorder_point: numberOrNull(form.reorder_point) ?? 0,
+      reorder_qty: numberOrNull(form.reorder_qty) ?? 0,
     };
     const res = editId
       ? await api.put(`/admin/items/${editId}`, body)
@@ -148,35 +181,39 @@ export default function Items() {
   }
 
   const columns = [
-    { key: 'sku', label: 'SKU', mono: true },
-    { key: 'item_name', label: 'Item Name' },
-    { key: 'upc', label: 'UPC', mono: true, render: (r) => r.upc || '-' },
-    { key: 'mpn', label: 'MPN', mono: true, render: (r) => r.mpn || '-' },
-    { key: 'default_bin_code', label: 'Default Bin', mono: true, render: (r) => r.default_bin_code || '\u2013' },
-    { key: 'category', label: 'Category', render: (r) => r.category || '-' },
-    { key: 'weight_lbs', label: 'Weight', render: (r) => r.weight_lbs ? `${r.weight_lbs} lb` : '-' },
-    { key: 'is_active', label: 'Active', render: (r) => r.is_active ? 'Yes' : 'No' },
+    { key: 'sku', labelKey: 'common.sku', mono: true },
+    { key: 'item_name', labelKey: 'common.itemName' },
+    { key: 'upc', labelKey: 'common.upc', mono: true, render: (r) => r.upc || '-' },
+    { key: 'mpn', labelKey: 'items.mpn', mono: true, render: (r) => r.mpn || '-' },
+    { key: 'default_bin_code', labelKey: 'items.defaultBin', mono: true, render: (r) => r.default_bin_code || '\u2013' },
+    { key: 'category', labelKey: 'items.category', render: (r) => r.category || '-' },
+    { key: 'weight_lbs', labelKey: 'items.weight', render: (r) => r.weight_lbs != null ? `${(r.weight_lbs / KG_TO_LB).toFixed(2)} kg` : '-' },
+    {
+      key: 'is_active',
+      labelKey: 'items.active',
+      render: (r) => t(r.is_active ? 'common.yes' : 'common.no'),
+    },
     { key: 'actions', label: '', render: (r) => (
       <div style={{ display: 'flex', gap: 4 }}>
-        <button className="btn btn-sm" onClick={(e) => { e.stopPropagation(); openEdit(r); }} aria-label="Edit" title="Edit">&#9998;</button>
-        <button className="btn btn-sm btn-danger" onClick={(e) => { e.stopPropagation(); deleteItem(r.id || r.item_id); }} aria-label="Delete" title="Delete">&#128465;</button>
+        <button className="btn btn-sm" onClick={(e) => { e.stopPropagation(); openEdit(r); }} aria-label={t('common.edit')} title={t('common.edit')}>&#9998;</button>
+        <button className="btn btn-sm btn-danger" onClick={(e) => { e.stopPropagation(); deleteItem(r.id || r.item_id); }} aria-label={t('common.delete')} title={t('common.delete')}>&#128465;</button>
       </div>
     )},
   ];
 
   const invCols = [
-    { key: 'bin_code', label: 'Bin', mono: true },
-    { key: 'quantity_on_hand', label: 'On Hand' },
-    { key: 'quantity_allocated', label: 'Allocated' },
+    { key: 'bin_code', labelKey: 'common.bin', mono: true },
+    { key: 'quantity_on_hand', labelKey: 'common.onHand' },
+    { key: 'quantity_allocated', labelKey: 'common.allocated' },
   ];
 
   return (
     <div>
-      <PageHeader title="Items">
-        <button className="btn btn-primary" onClick={openCreate}>New Item</button>
+      <PageHeader title={t('nav.items')}>
+        <button className="btn btn-primary" onClick={openCreate}>{t('items.newItem')}</button>
       </PageHeader>
       <div className="filter-bar">
-        <input className="form-input" placeholder="Search by SKU, name, UPC, or MPN..." value={search} onChange={(e) => { setSearch(e.target.value); setPage(1); }} />
+        <input className="form-input" placeholder={t('items.searchPlaceholder')} value={search} onChange={(e) => { setSearch(e.target.value); setPage(1); }} />
         <select
           className="form-select"
           value={filter}
@@ -184,7 +221,7 @@ export default function Items() {
           style={{ width: 'auto', minWidth: 120 }}
         >
           {FILTER_OPTIONS.map((opt) => (
-            <option key={opt.value} value={opt.value}>{opt.label}</option>
+            <option key={opt.value} value={opt.value}>{t(opt.labelKey)}</option>
           ))}
         </select>
       </div>
@@ -192,29 +229,39 @@ export default function Items() {
 
       {detail && !showModal && (
         <Modal title={detail.item_name || detail.sku} onClose={() => setDetail(null)}
-          footer={<button className="btn" onClick={() => setDetail(null)}>Close</button>}
+          footer={<button className="btn" onClick={() => setDetail(null)}>{t('common.close')}</button>}
         >
           <div className="detail-grid">
-            <span className="detail-label">SKU</span><span className="mono">{detail.sku}</span>
-            <span className="detail-label">UPC</span><span className="mono">{detail.upc || '-'}</span>
-            <span className="detail-label">MPN</span><span className="mono">{detail.mpn || '-'}</span>
-            <span className="detail-label">Category</span><span>{detail.category || '-'}</span>
-            <span className="detail-label">Weight</span><span>{(detail.weight_lbs || detail.weight) ? `${detail.weight_lbs || detail.weight} lb` : '-'}</span>
-            <span className="detail-label">Active</span><span>{detail.is_active ? 'Yes' : 'No'}</span>
+            <span className="detail-label">{t('common.sku')}</span><span className="mono">{detail.sku}</span>
+            <span className="detail-label">{t('common.upc')}</span><span className="mono">{detail.upc || '-'}</span>
+            <span className="detail-label">{t('items.mpn')}</span><span className="mono">{detail.mpn || '-'}</span>
+            <span className="detail-label">{t('items.category')}</span><span>{detail.category || '-'}</span>
+            <span className="detail-label">{t('items.weight')}</span><span>{detail.weight_lbs != null ? `${(detail.weight_lbs / KG_TO_LB).toFixed(3)} kg` : '-'}</span>
+            <span className="detail-label">{t('items.reorder')}</span>
+            <span>
+              {t('items.reorderValue', {
+                point: detail.reorder_point ?? 0,
+                qty: detail.reorder_qty ?? 0,
+              })}
+            </span>
+            <span className="detail-label">{t('items.barcodeAliases')}</span><span className="mono">{(detail.barcode_aliases || []).join(', ') || '-'}</span>
+            <span className="detail-label">{t('items.description')}</span><span>{detail.description || '-'}</span>
+            <span className="detail-label">{t('items.active')}</span>
+            <span>{t(detail.is_active ? 'common.yes' : 'common.no')}</span>
           </div>
           {detail.preferred_bins && detail.preferred_bins.length > 0 && (
             <>
-              <div className="section-title">Preferred Bins</div>
+              <div className="section-title">{t('nav.preferredBins')}</div>
               <DataTable rowKey="preferred_bin_id" columns={[
-                { key: 'bin_code', label: 'Bin', mono: true },
-                { key: 'zone_name', label: 'Zone' },
-                { key: 'priority', label: 'Priority' },
+                { key: 'bin_code', labelKey: 'common.bin', mono: true },
+                { key: 'zone_name', labelKey: 'common.zone' },
+                { key: 'priority', labelKey: 'items.priority' },
               ]} data={detail.preferred_bins} />
             </>
           )}
           {detail.inventory && detail.inventory.length > 0 && (
             <>
-              <div className="section-title">Inventory locations</div>
+              <div className="section-title">{t('items.inventoryLocations')}</div>
               <DataTable rowKey="inventory_id" columns={invCols} data={detail.inventory} />
             </>
           )}
@@ -222,19 +269,19 @@ export default function Items() {
       )}
 
       {showModal && (
-        <Modal title={editId ? 'Edit Item' : 'New Item'} onClose={() => setShowModal(false)}
+        <Modal title={t(editId ? 'items.editItem' : 'items.newItem')} onClose={() => setShowModal(false)}
           footer={
             <div style={{ display: 'flex', justifyContent: 'space-between', width: '100%' }}>
               <div style={{ display: 'flex', gap: 4 }}>
                 {editId && (
                   <button className="btn btn-sm" onClick={() => toggleArchive(form)}>
-                    {form.is_active ? 'Archive' : 'Restore'}
+                    {t(form.is_active ? 'items.archive' : 'items.restore')}
                   </button>
                 )}
               </div>
               <div style={{ display: 'flex', gap: 4 }}>
-                <button className="btn" onClick={() => setShowModal(false)}>Cancel</button>
-                <button className="btn btn-primary" onClick={save}>Save</button>
+                <button className="btn" onClick={() => setShowModal(false)}>{t('common.cancel')}</button>
+                <button className="btn btn-primary" onClick={save}>{t('common.save')}</button>
               </div>
             </div>
           }
@@ -242,46 +289,73 @@ export default function Items() {
           {error && <div className="form-error" style={{ marginBottom: 12 }}>{error}</div>}
           <div className="form-row">
             <div className="form-group">
-              <label>SKU</label>
+              <label>{t('common.sku')}</label>
               <input className="form-input" value={form.sku || ''} onChange={(e) => setForm({ ...form, sku: e.target.value })} />
             </div>
             <div className="form-group">
-              <label>UPC</label>
+              <label>{t('common.upc')}</label>
               <input className="form-input" value={form.upc || ''} onChange={(e) => setForm({ ...form, upc: e.target.value })} />
             </div>
           </div>
           <div className="form-group">
-            <label>MPN</label>
+            <label>{t('items.mpn')}</label>
             <input className="form-input" value={form.mpn || ''} onChange={(e) => setForm({ ...form, mpn: e.target.value })} />
           </div>
           <div className="form-group">
-            <label>Item Name</label>
+            <label>{t('common.itemName')}</label>
             <input className="form-input" value={form.item_name || ''} onChange={(e) => setForm({ ...form, item_name: e.target.value })} />
           </div>
           <div className="form-row">
             <div className="form-group">
-              <label>Category</label>
+              <label>{t('items.category')}</label>
               <input className="form-input" value={form.category || ''} onChange={(e) => setForm({ ...form, category: e.target.value })} />
             </div>
+          </div>
+          <div className="form-row">
             <div className="form-group">
-              <label>Weight (lb)</label>
-              <input className="form-input" type="number" step="0.01" value={form.weight_lbs ?? form.weight ?? ''} onChange={(e) => setForm({ ...form, weight_lbs: e.target.value, weight: e.target.value })} />
+              <label>{t('items.weightKg')}</label>
+              <input className="form-input" type="number" min="0" step="0.001" value={form.weight_kg ?? ''} onChange={(e) => setForm({ ...form, weight_kg: e.target.value })} />
             </div>
+            <div className="form-group">
+              <label>{t('items.defaultBinId')}</label>
+              <input className="form-input" type="number" min="1" value={form.default_bin_id ?? ''} onChange={(e) => setForm({ ...form, default_bin_id: e.target.value })} />
+            </div>
+          </div>
+          <div className="form-row">
+            <div className="form-group">
+              <label>{t('items.reorderPoint')}</label>
+              <input className="form-input" type="number" min="0" value={form.reorder_point ?? 0} onChange={(e) => setForm({ ...form, reorder_point: e.target.value })} />
+            </div>
+            <div className="form-group">
+              <label>{t('items.reorderQty')}</label>
+              <input className="form-input" type="number" min="0" value={form.reorder_qty ?? 0} onChange={(e) => setForm({ ...form, reorder_qty: e.target.value })} />
+            </div>
+          </div>
+          <div className="form-group">
+            <label>
+              {t('items.altBarcodes')}{' '}
+              <span className="settings-note">{t('items.onePerLine')}</span>
+            </label>
+            <textarea className="form-input" rows="3" value={form.barcode_aliases_text || ''} onChange={(e) => setForm({ ...form, barcode_aliases_text: e.target.value })} />
+          </div>
+          <div className="form-group">
+            <label>{t('items.descriptionNotes')}</label>
+            <textarea className="form-input" rows="3" value={form.description || ''} onChange={(e) => setForm({ ...form, description: e.target.value })} />
           </div>
         </Modal>
       )}
 
       {showDeleteConfirm && (
-        <Modal title="Delete Item" onClose={() => setShowDeleteConfirm(null)}
+        <Modal title={t('items.deleteItem')} onClose={() => setShowDeleteConfirm(null)}
           footer={
             <>
-              <button className="btn" onClick={() => setShowDeleteConfirm(null)}>Cancel</button>
-              <button className="btn btn-danger" onClick={confirmDeleteItem}>Delete</button>
+              <button className="btn" onClick={() => setShowDeleteConfirm(null)}>{t('common.cancel')}</button>
+              <button className="btn btn-danger" onClick={confirmDeleteItem}>{t('common.delete')}</button>
             </>
           }
         >
-          <p style={{ fontSize: 14, marginBottom: 8 }}>Are you sure? This action cannot be undone.</p>
-          <p style={{ fontSize: 13, color: 'var(--text-secondary)' }}>The item and all associated data will be permanently deleted.</p>
+          <p style={{ fontSize: 14, marginBottom: 8 }}>{t('common.areYouSure')}</p>
+          <p style={{ fontSize: 13, color: 'var(--text-secondary)' }}>{t('items.deleteWarning')}</p>
         </Modal>
       )}
     </div>

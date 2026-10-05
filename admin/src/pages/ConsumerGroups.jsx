@@ -3,6 +3,8 @@ import { api } from '../api.js';
 import DataTable from '../components/DataTable.jsx';
 import PageHeader from '../components/PageHeader.jsx';
 import Modal from '../components/Modal.jsx';
+import { useLocale } from '../i18n/locale.jsx';
+import RichText from '../i18n/RichText.jsx';
 
 function formatDate(iso) {
   if (!iso) return '—';
@@ -10,6 +12,7 @@ function formatDate(iso) {
 }
 
 export default function ConsumerGroups() {
+  const { t } = useLocale();
   const [groups, setGroups] = useState([]);
   const [connectors, setConnectors] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -159,8 +162,8 @@ export default function ConsumerGroups() {
 
   async function submitCreateGroup() {
     setGroupError('');
-    if (!groupForm.consumer_group_id.trim()) { setGroupError('Group ID is required'); return; }
-    if (!groupForm.connector_id) { setGroupError('Connector is required'); return; }
+    if (!groupForm.consumer_group_id.trim()) { setGroupError(t('consumerGroups.groupIdRequired')); return; }
+    if (!groupForm.connector_id) { setGroupError(t('webhooks.connectorRequired')); return; }
     let parsed;
     try {
       parsed = JSON.parse(groupForm.subscription || '{}');
@@ -220,12 +223,12 @@ export default function ConsumerGroups() {
   }
 
   const columns = [
-    { key: 'consumer_group_id', label: 'Group ID', mono: true },
-    { key: 'connector_id', label: 'Connector', mono: true },
-    { key: 'last_cursor', label: 'Cursor' },
+    { key: 'consumer_group_id', labelKey: 'consumerGroups.groupId', mono: true },
+    { key: 'connector_id', labelKey: 'webhooks.connector', mono: true },
+    { key: 'last_cursor', labelKey: 'consumerGroups.cursor' },
     {
       key: 'subscription',
-      label: 'Subscription',
+      labelKey: 'webhooks.subscription',
       render: (r) => {
         const s = r.subscription || {};
         const keys = Object.keys(s);
@@ -237,16 +240,16 @@ export default function ConsumerGroups() {
         );
       },
     },
-    { key: 'last_heartbeat', label: 'Heartbeat', render: (r) => formatDate(r.last_heartbeat) },
+    { key: 'last_heartbeat', labelKey: 'consumerGroups.heartbeat', render: (r) => formatDate(r.last_heartbeat) },
     {
       key: 'actions',
       label: '',
       render: (r) => (
         <div style={{ display: 'flex', gap: 4 }}>
           <button className="btn btn-sm" onClick={(e) => { e.stopPropagation(); openEditGroup(r); }}
-                  aria-label="Edit" title="Edit subscription">&#9998;</button>
+                  aria-label={t('common.edit')} title={t('consumerGroups.editSubscription')}>&#9998;</button>
           <button className="btn btn-sm btn-danger" onClick={(e) => { e.stopPropagation(); setConfirmDelete(r); }}
-                  aria-label="Delete" title="Delete">&#128465;</button>
+                  aria-label={t('common.delete')} title={t('common.delete')}>&#128465;</button>
         </div>
       ),
     },
@@ -254,12 +257,12 @@ export default function ConsumerGroups() {
 
   return (
     <div>
-      <PageHeader title="Consumer groups">
+      <PageHeader title={t('nav.consumerGroups')}>
         <div style={{ display: 'flex', gap: 8 }}>
-          <button className="btn" onClick={() => setShowConnectors(true)}>View connectors</button>
-          <button className="btn" onClick={openCreateConnector}>New connector</button>
+          <button className="btn" onClick={() => setShowConnectors(true)}>{t('consumerGroups.viewConnectors')}</button>
+          <button className="btn" onClick={openCreateConnector}>{t('consumerGroups.newConnector')}</button>
           <button className="btn btn-primary" onClick={openCreateGroup} disabled={connectors.length === 0}>
-            New group
+            {t('consumerGroups.newGroup')}
           </button>
         </div>
       </PageHeader>
@@ -267,7 +270,7 @@ export default function ConsumerGroups() {
       {pageError && <div className="form-error" style={{ marginBottom: 12 }}>{pageError}</div>}
       {connectors.length === 0 && !loading && (
         <div style={{ fontSize: 13, color: 'var(--text-secondary)', marginBottom: 12 }}>
-          Create a connector first to provision consumer groups.
+          {t('consumerGroups.createConnectorFirst')}
         </div>
       )}
 
@@ -275,23 +278,23 @@ export default function ConsumerGroups() {
         rowKey="consumer_group_id"
         columns={columns}
         data={groups}
-        emptyMessage={loading ? 'Loading…' : 'No consumer groups yet'}
+        emptyMessageKey={loading ? 'common.loading' : 'consumerGroups.empty'}
       />
 
       {showCreateGroup && (
         <Modal
-          title="New consumer group"
+          title={t('consumerGroups.newGroupTitle')}
           onClose={() => setShowCreateGroup(false)}
           footer={
             <>
-              <button className="btn" onClick={() => setShowCreateGroup(false)}>Cancel</button>
-              <button className="btn btn-primary" onClick={submitCreateGroup}>Create</button>
+              <button className="btn" onClick={() => setShowCreateGroup(false)}>{t('common.cancel')}</button>
+              <button className="btn btn-primary" onClick={submitCreateGroup}>{t('common.create')}</button>
             </>
           }
         >
           {groupError && <div className="form-error" style={{ marginBottom: 12 }}>{groupError}</div>}
           <div className="form-group">
-            <label>Group ID</label>
+            <label>{t('consumerGroups.groupId')}</label>
             <input
               className="form-input"
               value={groupForm.consumer_group_id}
@@ -300,7 +303,7 @@ export default function ConsumerGroups() {
             />
           </div>
           <div className="form-group">
-            <label>Connector</label>
+            <label>{t('webhooks.connector')}</label>
             <select
               className="form-input"
               value={groupForm.connector_id}
@@ -314,7 +317,7 @@ export default function ConsumerGroups() {
             </select>
           </div>
           <div className="form-group">
-            <label>Subscription (JSON object)</label>
+            <label>{t('consumerGroups.subscriptionJson')}</label>
             <textarea
               className="form-input"
               rows={6}
@@ -323,8 +326,14 @@ export default function ConsumerGroups() {
               style={{ fontFamily: 'JetBrains Mono, monospace', fontSize: 12 }}
             />
             <div style={{ fontSize: 12, color: 'var(--text-secondary)', marginTop: 4 }}>
-              Optional. Supported keys: <code>event_types</code>, <code>warehouse_ids</code>.
-              Unknown keys are stored but ignored on the hot path.
+              <RichText
+                text={t('consumerGroups.subscriptionHint')}
+                values={{
+                  a: <code>event_types</code>,
+                  b: <code>warehouse_ids</code>,
+                }}
+              />
+              {' '}{t('consumerGroups.unknownKeysHint')}
             </div>
           </div>
         </Modal>
@@ -332,32 +341,32 @@ export default function ConsumerGroups() {
 
       {showCreateConnector && (
         <Modal
-          title="New connector"
+          title={t('consumerGroups.newConnector')}
           onClose={() => setShowCreateConnector(false)}
           footer={
             <>
-              <button className="btn" onClick={() => setShowCreateConnector(false)}>Cancel</button>
-              <button className="btn btn-primary" onClick={submitCreateConnector}>Create</button>
+              <button className="btn" onClick={() => setShowCreateConnector(false)}>{t('common.cancel')}</button>
+              <button className="btn btn-primary" onClick={submitCreateConnector}>{t('common.create')}</button>
             </>
           }
         >
           {connectorError && <div className="form-error" style={{ marginBottom: 12 }}>{connectorError}</div>}
           <div className="form-group">
-            <label>Connector ID</label>
+            <label>{t('consumerGroups.connectorId')}</label>
             <input
               className="form-input"
               value={connectorForm.connector_id}
               onChange={(e) => setConnectorForm({ ...connectorForm, connector_id: e.target.value })}
-              placeholder="fabric"
+              placeholder={t('consumerGroups.connectorIdExample')}
             />
           </div>
           <div className="form-group">
-            <label>Display name</label>
+            <label>{t('webhooks.displayName')}</label>
             <input
               className="form-input"
               value={connectorForm.display_name}
               onChange={(e) => setConnectorForm({ ...connectorForm, display_name: e.target.value })}
-              placeholder="Fabric Production"
+              placeholder={t('consumerGroups.displayNameExample')}
             />
           </div>
         </Modal>
@@ -365,18 +374,20 @@ export default function ConsumerGroups() {
 
       {editGroup && (
         <Modal
-          title={`Edit subscription: ${editGroup.consumer_group_id}`}
+          title={t('consumerGroups.editSubscriptionTitle', {
+            id: editGroup.consumer_group_id,
+          })}
           onClose={() => setEditGroup(null)}
           footer={
             <>
-              <button className="btn" onClick={() => setEditGroup(null)}>Cancel</button>
-              <button className="btn btn-primary" onClick={submitEdit}>Save</button>
+              <button className="btn" onClick={() => setEditGroup(null)}>{t('common.cancel')}</button>
+              <button className="btn btn-primary" onClick={submitEdit}>{t('common.save')}</button>
             </>
           }
         >
           {editError && <div className="form-error" style={{ marginBottom: 12 }}>{editError}</div>}
           <div className="form-group">
-            <label>Subscription (JSON object)</label>
+            <label>{t('consumerGroups.subscriptionJson')}</label>
             <textarea
               className="form-input"
               rows={8}
@@ -390,41 +401,41 @@ export default function ConsumerGroups() {
 
       {confirmDelete && (
         <Modal
-          title="Delete consumer group"
+          title={t('consumerGroups.deleteGroupTitle')}
           onClose={() => setConfirmDelete(null)}
           footer={
             <>
-              <button className="btn" onClick={() => setConfirmDelete(null)}>Cancel</button>
+              <button className="btn" onClick={() => setConfirmDelete(null)}>{t('common.cancel')}</button>
               <button className="btn btn-primary" style={{ background: 'var(--copper)' }}
-                      onClick={() => deleteGroup(confirmDelete)}>Delete</button>
+                      onClick={() => deleteGroup(confirmDelete)}>{t('common.delete')}</button>
             </>
           }
         >
           <p style={{ fontSize: 13, fontWeight: 600, color: 'var(--danger)' }}>
-            Delete {confirmDelete.consumer_group_id}? Connectors that rely on
-            this group for cursor state will start a fresh scan from event_id=0
-            on their next poll.
+            {t('consumerGroups.deleteGroupConfirm', {
+              id: confirmDelete.consumer_group_id,
+            })}
           </p>
         </Modal>
       )}
 
       {showConnectors && (
         <Modal
-          title="Registered connectors"
+          title={t('consumerGroups.registeredConnectors')}
           onClose={() => setShowConnectors(false)}
-          footer={<button className="btn" onClick={() => setShowConnectors(false)}>Close</button>}
+          footer={<button className="btn" onClick={() => setShowConnectors(false)}>{t('common.close')}</button>}
         >
           {connectors.length === 0 ? (
             <div style={{ fontSize: 13, color: 'var(--text-secondary)' }}>
-              No connectors registered yet.
+              {t('consumerGroups.noConnectors')}
             </div>
           ) : (
             <DataTable
               rowKey="connector_id"
               columns={[
-                { key: 'connector_id', label: 'Connector ID', render: (r) => <span className="mono">{r.connector_id}</span> },
-                { key: 'display_name', label: 'Display name' },
-                { key: 'created_at', label: 'Created', render: (r) => formatDate(r.created_at) },
+                { key: 'connector_id', labelKey: 'consumerGroups.connectorId', render: (r) => <span className="mono">{r.connector_id}</span> },
+                { key: 'display_name', labelKey: 'webhooks.displayName' },
+                { key: 'created_at', labelKey: 'salesOrders.created', render: (r) => formatDate(r.created_at) },
                 {
                   key: 'actions',
                   label: '',
@@ -433,16 +444,16 @@ export default function ConsumerGroups() {
                       <button
                         className="btn btn-sm"
                         onClick={(e) => { e.stopPropagation(); openEditConnector(r); }}
-                        aria-label="Edit"
-                        title="Edit"
+                        aria-label={t('common.edit')}
+                        title={t('common.edit')}
                       >
                         &#9998;
                       </button>
                       <button
                         className="btn btn-sm btn-danger"
                         onClick={(e) => { e.stopPropagation(); setDeleteConnectorError(null); setConfirmDeleteConnector(r); }}
-                        aria-label="Delete"
-                        title="Delete"
+                        aria-label={t('common.delete')}
+                        title={t('common.delete')}
                       >
                         &#128465;
                       </button>
@@ -458,25 +469,27 @@ export default function ConsumerGroups() {
 
       {editConnector && (
         <Modal
-          title={`Edit connector ${editConnector.connector_id}`}
+          title={t('consumerGroups.editConnectorTitle', {
+            id: editConnector.connector_id,
+          })}
           onClose={() => setEditConnector(null)}
           footer={
             <>
-              <button className="btn" onClick={() => setEditConnector(null)}>Cancel</button>
-              <button className="btn btn-primary" onClick={submitEditConnector}>Save</button>
+              <button className="btn" onClick={() => setEditConnector(null)}>{t('common.cancel')}</button>
+              <button className="btn btn-primary" onClick={submitEditConnector}>{t('common.save')}</button>
             </>
           }
         >
           {editConnectorError && <div className="form-error" style={{ marginBottom: 12 }}>{editConnectorError}</div>}
           <div className="form-group">
-            <label>Connector ID</label>
+            <label>{t('consumerGroups.connectorId')}</label>
             <input className="form-input mono" value={editConnector.connector_id} readOnly disabled />
             <div style={{ fontSize: 12, color: 'var(--text-secondary)', marginTop: 4 }}>
-              Connector ID is the FK target for consumer groups and webhook subscriptions; it cannot be renamed.
+              {t('consumerGroups.connectorIdFixed')}
             </div>
           </div>
           <div className="form-group">
-            <label>Display name</label>
+            <label>{t('webhooks.displayName')}</label>
             <input
               className="form-input"
               value={editConnectorName}
@@ -488,31 +501,36 @@ export default function ConsumerGroups() {
 
       {confirmDeleteConnector && (
         <Modal
-          title="Delete connector"
+          title={t('consumerGroups.deleteConnectorTitle')}
           onClose={() => setConfirmDeleteConnector(null)}
           footer={
             <>
-              <button className="btn" onClick={() => setConfirmDeleteConnector(null)}>Cancel</button>
+              <button className="btn" onClick={() => setConfirmDeleteConnector(null)}>{t('common.cancel')}</button>
               <button
                 className="btn btn-primary"
                 style={{ background: 'var(--danger)' }}
                 onClick={() => deleteConnector(confirmDeleteConnector)}
               >
-                Delete
+                {t('common.delete')}
               </button>
             </>
           }
         >
           <p style={{ fontSize: 13, fontWeight: 600, color: 'var(--danger)' }}>
-            Permanently delete connector {confirmDeleteConnector.connector_id}?
+            {t('consumerGroups.deleteConnectorConfirm', {
+              id: confirmDeleteConnector.connector_id,
+            })}
           </p>
           <p style={{ fontSize: 13 }}>
-            Refused while any consumer group or webhook subscription references this connector. Migrate or delete dependents first.
+            {t('consumerGroups.deleteConnectorRefused')}
           </p>
           {deleteConnectorError && (
             <div className="form-error" style={{ marginTop: 12 }}>
               <div style={{ fontWeight: 600 }}>
-                Connector is in use: {deleteConnectorError.consumer_groups} consumer group{deleteConnectorError.consumer_groups === 1 ? '' : 's'}, {deleteConnectorError.webhook_subscriptions} webhook subscription{deleteConnectorError.webhook_subscriptions === 1 ? '' : 's'}.
+                {t('consumerGroups.connectorInUse', {
+                  groups: deleteConnectorError.consumer_groups,
+                  subs: deleteConnectorError.webhook_subscriptions,
+                })}
               </div>
               <div style={{ fontSize: 12, marginTop: 4 }}>{deleteConnectorError.detail}</div>
             </div>

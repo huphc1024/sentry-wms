@@ -1,5 +1,6 @@
 import { Routes, Route, Navigate, useLocation } from 'react-router-dom';
 import { useAuth } from './auth.jsx';
+import { useLocale } from './i18n/locale.jsx';
 import ErrorBoundary from './components/ErrorBoundary.jsx';
 import Layout from './components/Layout.jsx';
 import Login from './pages/Login.jsx';
@@ -60,6 +61,7 @@ function ProtectedRoute({ children }) {
 }
 
 export default function App() {
+  const { t } = useLocale();
   return (
     <Routes>
       <Route path="/login" element={<Login />} />
@@ -71,7 +73,7 @@ export default function App() {
         path="/picking-tickets/print-all"
         element={
           <ProtectedRoute>
-            <ErrorBoundary fallbackMessage="Could not render picking tickets.">
+            <ErrorBoundary fallbackMessage={t('errors.printAllFailed')}>
               <PickingTicketPrintAll />
             </ErrorBoundary>
           </ProtectedRoute>
@@ -85,43 +87,43 @@ export default function App() {
         path="/picking-tickets/:soId/print"
         element={
           <ProtectedRoute>
-            <ErrorBoundary fallbackMessage="Could not render picking ticket.">
+            <ErrorBoundary fallbackMessage={t('errors.printFailed')}>
               <PickingTicketPrint />
             </ErrorBoundary>
           </ProtectedRoute>
         }
       />
       <Route element={<ProtectedRoute><Layout /></ProtectedRoute>}>
-        <Route path="/change-password" element={<ErrorBoundary fallbackMessage="Could not load change-password form."><ChangePassword /></ErrorBoundary>} />
-        <Route path="/" element={<ErrorBoundary fallbackMessage="Could not load dashboard."><Dashboard /></ErrorBoundary>} />
-        <Route path="/inventory" element={<ErrorBoundary fallbackMessage="Could not load inventory."><Inventory /></ErrorBoundary>} />
-        <Route path="/cycle-counts" element={<ErrorBoundary fallbackMessage="Could not load cycle counts."><CycleCounts /></ErrorBoundary>} />
-        <Route path="/count-approvals" element={<ErrorBoundary fallbackMessage="Could not load count approvals."><CycleCountApproval /></ErrorBoundary>} />
-        <Route path="/receiving" element={<ErrorBoundary fallbackMessage="Could not load receiving."><Receiving /></ErrorBoundary>} />
-        <Route path="/purchase-orders" element={<ErrorBoundary fallbackMessage="Could not load purchase orders."><PurchaseOrders /></ErrorBoundary>} />
-        <Route path="/putaway" element={<ErrorBoundary fallbackMessage="Could not load put-away."><PutAway /></ErrorBoundary>} />
-        <Route path="/sales-orders" element={<ErrorBoundary fallbackMessage="Could not load sales orders."><SalesOrders /></ErrorBoundary>} />
-        <Route path="/pos-activity" element={<ErrorBoundary fallbackMessage="Could not load POS activity."><POSActivity /></ErrorBoundary>} />
-        <Route path="/fraud" element={<ErrorBoundary fallbackMessage="Could not load fraud queue."><Fraud /></ErrorBoundary>} />
-        <Route path="/backorders" element={<ErrorBoundary fallbackMessage="Could not load backorders."><Backorders /></ErrorBoundary>} />
-        <Route path="/returns" element={<ErrorBoundary fallbackMessage="Could not load returns."><Returns /></ErrorBoundary>}>
+        <Route path="/change-password" element={<ErrorBoundary fallbackMessage={t('errors.changePasswordFailed')}><ChangePassword /></ErrorBoundary>} />
+        <Route path="/" element={<ErrorBoundary fallbackMessage={t('errors.couldNotLoad', { name: t('nav.dashboard') })}><Dashboard /></ErrorBoundary>} />
+        <Route path="/inventory" element={<ErrorBoundary fallbackMessage={t('errors.couldNotLoad', { name: t('nav.inventory') })}><Inventory /></ErrorBoundary>} />
+        <Route path="/cycle-counts" element={<ErrorBoundary fallbackMessage={t('errors.couldNotLoad', { name: t('nav.counts') })}><CycleCounts /></ErrorBoundary>} />
+        <Route path="/count-approvals" element={<ErrorBoundary fallbackMessage={t('errors.couldNotLoad', { name: t('nav.approvals') })}><CycleCountApproval /></ErrorBoundary>} />
+        <Route path="/receiving" element={<ErrorBoundary fallbackMessage={t('errors.couldNotLoad', { name: t('nav.receiving') })}><Receiving /></ErrorBoundary>} />
+        <Route path="/purchase-orders" element={<ErrorBoundary fallbackMessage={t('errors.couldNotLoad', { name: t('nav.purchaseOrders') })}><PurchaseOrders /></ErrorBoundary>} />
+        <Route path="/putaway" element={<ErrorBoundary fallbackMessage={t('errors.couldNotLoad', { name: t('nav.putaway') })}><PutAway /></ErrorBoundary>} />
+        <Route path="/sales-orders" element={<ErrorBoundary fallbackMessage={t('errors.couldNotLoad', { name: t('nav.salesOrders') })}><SalesOrders /></ErrorBoundary>} />
+        <Route path="/pos-activity" element={<ErrorBoundary fallbackMessage={t('errors.couldNotLoad', { name: t('nav.posActivity') })}><POSActivity /></ErrorBoundary>} />
+        <Route path="/fraud" element={<ErrorBoundary fallbackMessage={t('errors.couldNotLoad', { name: t('nav.fraud') })}><Fraud /></ErrorBoundary>} />
+        <Route path="/backorders" element={<ErrorBoundary fallbackMessage={t('errors.couldNotLoad', { name: t('nav.backorders') })}><Backorders /></ErrorBoundary>} />
+        <Route path="/returns" element={<ErrorBoundary fallbackMessage={t('errors.couldNotLoad', { name: t('nav.returns') })}><Returns /></ErrorBoundary>}>
           <Route path="rma" element={<RMA />} />
           <Route path="refunds" element={<Refunds />} />
         </Route>
         <Route path="/rma" element={<Navigate to="/returns/rma" replace />} />
-        <Route path="/picking-tickets" element={<ErrorBoundary fallbackMessage="Could not load picking tickets."><PickingTickets /></ErrorBoundary>} />
+        <Route path="/picking-tickets" element={<ErrorBoundary fallbackMessage={t('errors.couldNotLoad', { name: t('nav.pickingTickets') })}><PickingTickets /></ErrorBoundary>} />
         {/* The /picking, /packing, /shipping admin pages were retired:
             the workflow lives on the handheld scanners, and the
             admin-side mirrors duplicated state without adding any
             control surface. Sales Orders + Picking Tickets cover the
             supervisor view; Dashboard counts still surface throughput. */}
-        <Route path="/picking-batches" element={<ErrorBoundary fallbackMessage="Could not load picking batches."><PickingBatches /></ErrorBoundary>} />
-        <Route path="/items" element={<ErrorBoundary fallbackMessage="Could not load items."><Items /></ErrorBoundary>} />
-        <Route path="/vendors" element={<ErrorBoundary fallbackMessage="Could not load vendors."><Vendors /></ErrorBoundary>} />
+        <Route path="/picking-batches" element={<ErrorBoundary fallbackMessage={t('errors.couldNotLoad', { name: t('nav.pickingBatches') })}><PickingBatches /></ErrorBoundary>} />
+        <Route path="/items" element={<ErrorBoundary fallbackMessage={t('errors.couldNotLoad', { name: t('nav.items') })}><Items /></ErrorBoundary>} />
+        <Route path="/vendors" element={<ErrorBoundary fallbackMessage={t('errors.couldNotLoad', { name: t('nav.vendors') })}><Vendors /></ErrorBoundary>} />
         {/* Warehouse-layout pages consolidated under a single /data
             parent with a tab strip. The four old top-level paths
             redirect so existing bookmarks still land in the right tab. */}
-        <Route path="/data" element={<ErrorBoundary fallbackMessage="Could not load warehouse data."><Data /></ErrorBoundary>}>
+        <Route path="/data" element={<ErrorBoundary fallbackMessage={t('errors.couldNotLoad', { name: t('nav.data') })}><Data /></ErrorBoundary>}>
           <Route path="warehouses" element={<Warehouses />} />
           <Route path="bins" element={<Bins />} />
           <Route path="zones" element={<Zones />} />
@@ -131,20 +133,20 @@ export default function App() {
         <Route path="/bins" element={<Navigate to="/data/bins" replace />} />
         <Route path="/zones" element={<Navigate to="/data/zones" replace />} />
         <Route path="/preferred-bins" element={<Navigate to="/data/preferred-bins" replace />} />
-        <Route path="/users" element={<ErrorBoundary fallbackMessage="Could not load users."><Users /></ErrorBoundary>} />
-        <Route path="/api-tokens" element={<ErrorBoundary fallbackMessage="Could not load API tokens."><Tokens /></ErrorBoundary>} />
-        <Route path="/inbound" element={<ErrorBoundary fallbackMessage="Could not load Inbound activity."><InboundActivity /></ErrorBoundary>} />
-        <Route path="/consumer-groups" element={<ErrorBoundary fallbackMessage="Could not load consumer groups."><ConsumerGroups /></ErrorBoundary>} />
-        <Route path="/webhooks" element={<ErrorBoundary fallbackMessage="Could not load webhooks."><Webhooks /></ErrorBoundary>} />
-        <Route path="/channels" element={<ErrorBoundary fallbackMessage="Could not load channels."><Channels /></ErrorBoundary>} />
-        <Route path="/notifications" element={<ErrorBoundary fallbackMessage="Could not load notifications."><Notifications /></ErrorBoundary>} />
-        <Route path="/audit-log" element={<ErrorBoundary fallbackMessage="Could not load audit log."><AuditLog /></ErrorBoundary>} />
-        <Route path="/settings" element={<ErrorBoundary fallbackMessage="Could not load settings."><Settings /></ErrorBoundary>} />
-        <Route path="/imports" element={<ErrorBoundary fallbackMessage="Could not load imports."><Imports /></ErrorBoundary>} />
-        <Route path="/integrations" element={<ErrorBoundary fallbackMessage="Could not load integrations."><Integrations /></ErrorBoundary>} />
-        <Route path="/adjustments" element={<ErrorBoundary fallbackMessage="Could not load adjustments."><Adjustments /></ErrorBoundary>} />
-        <Route path="/inter-warehouse-transfers" element={<ErrorBoundary fallbackMessage="Could not load transfers."><InterWarehouseTransfers /></ErrorBoundary>} />
-        <Route path="/transfer-orders" element={<ErrorBoundary fallbackMessage="Could not load transfer orders."><TransferOrders /></ErrorBoundary>} />
+        <Route path="/users" element={<ErrorBoundary fallbackMessage={t('errors.couldNotLoad', { name: t('nav.users') })}><Users /></ErrorBoundary>} />
+        <Route path="/api-tokens" element={<ErrorBoundary fallbackMessage={t('errors.couldNotLoad', { name: t('nav.apiTokens') })}><Tokens /></ErrorBoundary>} />
+        <Route path="/inbound" element={<ErrorBoundary fallbackMessage={t('errors.couldNotLoad', { name: t('nav.inboundActivity') })}><InboundActivity /></ErrorBoundary>} />
+        <Route path="/consumer-groups" element={<ErrorBoundary fallbackMessage={t('errors.couldNotLoad', { name: t('nav.consumerGroups') })}><ConsumerGroups /></ErrorBoundary>} />
+        <Route path="/webhooks" element={<ErrorBoundary fallbackMessage={t('errors.couldNotLoad', { name: t('nav.webhooks') })}><Webhooks /></ErrorBoundary>} />
+        <Route path="/channels" element={<ErrorBoundary fallbackMessage={t('errors.couldNotLoad', { name: t('nav.channels') })}><Channels /></ErrorBoundary>} />
+        <Route path="/notifications" element={<ErrorBoundary fallbackMessage={t('errors.couldNotLoad', { name: t('nav.notifications') })}><Notifications /></ErrorBoundary>} />
+        <Route path="/audit-log" element={<ErrorBoundary fallbackMessage={t('errors.couldNotLoad', { name: t('nav.auditLog') })}><AuditLog /></ErrorBoundary>} />
+        <Route path="/settings" element={<ErrorBoundary fallbackMessage={t('errors.couldNotLoad', { name: t('nav.settings') })}><Settings /></ErrorBoundary>} />
+        <Route path="/imports" element={<ErrorBoundary fallbackMessage={t('errors.couldNotLoad', { name: t('nav.import') })}><Imports /></ErrorBoundary>} />
+        <Route path="/integrations" element={<ErrorBoundary fallbackMessage={t('errors.couldNotLoad', { name: t('nav.integrations') })}><Integrations /></ErrorBoundary>} />
+        <Route path="/adjustments" element={<ErrorBoundary fallbackMessage={t('errors.couldNotLoad', { name: t('nav.adjustments') })}><Adjustments /></ErrorBoundary>} />
+        <Route path="/inter-warehouse-transfers" element={<ErrorBoundary fallbackMessage={t('errors.couldNotLoad', { name: t('nav.transfers') })}><InterWarehouseTransfers /></ErrorBoundary>} />
+        <Route path="/transfer-orders" element={<ErrorBoundary fallbackMessage={t('errors.couldNotLoad', { name: t('nav.transferOrders') })}><TransferOrders /></ErrorBoundary>} />
       </Route>
     </Routes>
   );

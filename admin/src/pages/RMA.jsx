@@ -4,11 +4,12 @@ import DataTable from '../components/DataTable.jsx';
 import PageHeader from '../components/PageHeader.jsx';
 import StatusTag from '../components/StatusTag.jsx';
 import Modal from '../components/Modal.jsx';
+import { useLocale } from '../i18n/locale.jsx';
 import { useAuth } from '../auth.jsx';
 
 // A return SO (the <orig>-RMA) is received one item at a time into a chosen
 // disposition: the warehouse + bin decide whether the goods go back as
-// sellable stock or are held as defective / open-box. Sentry carries that
+// sellable stock or are held as defective / open-box. Sơn Lộc WMS carries that
 // location on the return.received event for a downstream ledger's GL.
 // CANCELLED is intentionally absent: there is no RMA-cancel action yet, and the
 // generic sales-order cancel unwinds allocation/picking, which is wrong for a
@@ -17,6 +18,7 @@ import { useAuth } from '../auth.jsx';
 const RMA_STATUS_OPTIONS = ['All', 'OPEN', 'PARTIALLY_RECEIVED', 'RECEIVED'];
 
 export default function RMA() {
+  const { t } = useLocale();
   const { user } = useAuth();
   const isAdmin = user?.role === 'ADMIN';
   const [rmas, setRmas] = useState([]);
@@ -167,7 +169,7 @@ export default function RMA() {
       loadRmas();
     } else {
       const data = await res?.json().catch(() => ({}));
-      setVoidError(data?.error || 'Failed to void this RMA');
+      setVoidError(data?.error || t('rma.voidFailed'));
     }
   }
 
@@ -209,11 +211,11 @@ export default function RMA() {
     const warehouseId = parseInt(dispWarehouseId, 10);
     const binId = parseInt(dispBinId, 10);
     if (isNaN(qty) || qty <= 0) {
-      updateDraft(line.item_id, { error: 'Enter a positive quantity' });
+      updateDraft(line.item_id, { error: t('salesOrders.enterQty') });
       return;
     }
     if (!warehouseId || !binId) {
-      updateDraft(line.item_id, { error: 'Pick a disposition warehouse + bin' });
+      updateDraft(line.item_id, { error: t('rma.pickDisposition') });
       return;
     }
     updateDraft(line.item_id, { saving: true, error: '' });
@@ -239,11 +241,11 @@ export default function RMA() {
   }
 
   const columns = [
-    { key: 'so_number', label: 'RMA', mono: true },
-    { key: 'customer_name', label: 'Customer', render: (r) => r.customer_name || '-' },
-    { key: 'status', label: 'Status', render: (r) => <StatusTag status={r.status} /> },
+    { key: 'so_number', labelKey: 'rma.number', mono: true },
+    { key: 'customer_name', labelKey: 'common.customer', render: (r) => r.customer_name || '-' },
+    { key: 'status', labelKey: 'common.status', render: (r) => <StatusTag status={r.status} /> },
     {
-      key: 'created_at', label: 'Created', mono: true,
+      key: 'created_at', labelKey: 'salesOrders.created', mono: true,
       render: (r) => (r.created_at ? r.created_at.slice(0, 10) : '-'),
     },
   ];
@@ -253,7 +255,7 @@ export default function RMA() {
 
   return (
     <div>
-      <PageHeader title="RMA" />
+      <PageHeader title={t('nav.returns')} />
       <div className="filter-bar">
         <select
           className="form-select"
@@ -262,13 +264,15 @@ export default function RMA() {
           onChange={(e) => setStatusFilter(e.target.value)}
         >
           {RMA_STATUS_OPTIONS.map((s) => (
-            <option key={s} value={s}>{s === 'All' ? 'All statuses' : s}</option>
+            <option key={s} value={s}>
+              {s === 'All' ? t('dashboard.allStatuses') : t(`status.${s}`)}
+            </option>
           ))}
         </select>
         <input
           className="form-input"
           style={{ width: 260 }}
-          placeholder="Search by RMA number"
+          placeholder={t('rma.searchPlaceholder')}
           value={search}
           onChange={(e) => setSearch(e.target.value)}
         />
@@ -279,12 +283,12 @@ export default function RMA() {
         data={rmas}
         onRowClick={openRma}
         clickColumn="so_number"
-        emptyMessage="No RMAs found"
+        emptyMessageKey="rma.empty"
       />
 
       {selected && detail && (
         <Modal
-          title={`RMA ${detail.so_number}`}
+          title={t('rma.title', { number: detail.so_number })}
           onClose={closeDetail}
           footer={
             <div style={{ display: 'flex', justifyContent: 'space-between', width: '100%' }}>
@@ -294,32 +298,32 @@ export default function RMA() {
                   onClick={() => { setVoidError(''); setConfirmVoid(true); }}
                   data-testid="rma-void"
                 >
-                  Delete RMA
+                  {t('rma.deleteRma')}
                 </button>
               ) : <span />}
-              <button className="btn" onClick={closeDetail}>Close</button>
+              <button className="btn" onClick={closeDetail}>{t('common.close')}</button>
             </div>
           }
           size="wide"
         >
           <section className="section">
-            <div className="section-title">Summary</div>
+            <div className="section-title">{t('rma.summary')}</div>
             <div className="detail-grid detail-grid-2col" style={{ marginBottom: 0 }}>
-              <span className="detail-label">Status</span>
+              <span className="detail-label">{t('common.status')}</span>
               <span><StatusTag status={detail.status} /></span>
-              <span className="detail-label">Customer</span>
+              <span className="detail-label">{t('common.customer')}</span>
               <span>{detail.customer_name || '-'}</span>
-              <span className="detail-label">Warehouse</span>
+              <span className="detail-label">{t('common.warehouse')}</span>
               <span className="mono">{detail.warehouse_id ?? '-'}</span>
             </div>
           </section>
 
           <section className="section">
-            <div className="section-title">Note</div>
+            <div className="section-title">{t('common.notes')}</div>
             <textarea
               className="form-input"
               rows={2}
-              placeholder="Operator note on this RMA"
+              placeholder={t('rma.notePlaceholder')}
               value={memoDraft}
               data-testid="rma-memo"
               onChange={(e) => { setMemoDraft(e.target.value); setMemoMsg(''); }}
@@ -331,7 +335,7 @@ export default function RMA() {
                 disabled={memoSaving || memoDraft.trim() === (detail.memo || '').trim()}
                 data-testid="rma-memo-save"
               >
-                {memoSaving ? 'Saving...' : 'Save note'}
+                {t(memoSaving ? 'common.saving' : 'rma.saveNote')}
               </button>
               {memoMsg && (
                 <span style={{ fontSize: 12, color: 'var(--text-secondary)' }}>{memoMsg}</span>
@@ -341,21 +345,21 @@ export default function RMA() {
 
           {canReceive && (
             <section className="section">
-              <div className="section-title">Disposition</div>
+              <div className="section-title">{t('rma.disposition')}</div>
               <p style={{ fontSize: 12, color: 'var(--text-secondary)', marginBottom: 8 }}>
                 Where the returned goods land: pick the sellable or
                 defective / open-box warehouse + bin before receiving.
               </p>
               <div className="form-row">
                 <div className="form-group">
-                  <label>Warehouse</label>
+                  <label>{t('common.warehouse')}</label>
                   <select
                     className="form-select"
                     value={dispWarehouseId}
                     onChange={onWarehouseChange}
                     data-testid="rma-disposition-warehouse"
                   >
-                    <option value="">Select warehouse</option>
+                    <option value="">{t('rma.selectWarehouse')}</option>
                     {warehouses.map((w) => (
                       <option key={w.warehouse_id} value={w.warehouse_id}>
                         {w.warehouse_code} - {w.warehouse_name}
@@ -365,16 +369,16 @@ export default function RMA() {
                 </div>
                 <div className="form-group" ref={binRef} style={{ position: 'relative' }}>
                   <label>
-                    Bin{' '}
+                    {t('common.bin')}{' '}
                     {binSearching && (
                       <span style={{ fontSize: 11, color: 'var(--text-secondary)' }}>
-                        (searching...)
+                        {t('rma.searching')}
                       </span>
                     )}
                   </label>
                   <input
                     className="form-input mono"
-                    placeholder="Type bin code to search"
+                    placeholder={t('rma.binPlaceholder')}
                     value={binSearch}
                     data-testid="rma-disposition-bin"
                     onChange={(e) => { setBinSearch(e.target.value); setDispBinId(''); setBinOpen(true); }}
@@ -397,7 +401,7 @@ export default function RMA() {
                   )}
                   {binOpen && !binSearching && binSearch.trim().length >= 1 && !dispBinId && binResults.length === 0 && (
                     <div style={{ ...dropdownStyle, padding: 12, fontSize: 12, color: 'var(--text-secondary)' }}>
-                      No bins match "{binSearch.trim()}" in this warehouse.
+                      {t('rma.noBinsMatch', { query: binSearch.trim() })}
                     </div>
                   )}
                 </div>
@@ -406,27 +410,27 @@ export default function RMA() {
           )}
 
           <section className="section" style={{ marginBottom: 0 }}>
-            <div className="section-title">Return Lines</div>
+            <div className="section-title">{t('rma.returnLines')}</div>
             {!canReceive && (
               <p style={{
                 fontSize: 12, color: 'var(--text-secondary)',
                 marginBottom: 8, fontStyle: 'italic',
               }}>
-                RMA status is {detail.status}; receiving is closed.
+                {t('rma.receivingClosed', { status: detail.status })}
               </p>
             )}
             {lines.length > 0 ? (
               <table className="lines-table">
                 <thead>
                   <tr>
-                    <th>SKU</th>
-                    <th>Item</th>
-                    <th style={{ textAlign: 'right' }}>To Return</th>
-                    <th style={{ textAlign: 'right' }}>Received</th>
-                    <th style={{ textAlign: 'right' }}>Remaining</th>
+                    <th>{t('common.sku')}</th>
+                    <th>{t('common.item')}</th>
+                    <th style={{ textAlign: 'right' }}>{t('rma.toReturn')}</th>
+                    <th style={{ textAlign: 'right' }}>{t('purchaseOrders.received')}</th>
+                    <th style={{ textAlign: 'right' }}>{t('purchaseOrders.remaining')}</th>
                     {canReceive && (
                       <>
-                        <th style={{ width: 90, textAlign: 'right' }}>Qty</th>
+                        <th style={{ width: 90, textAlign: 'right' }}>{t('common.qty')}</th>
                         <th style={{ width: 110 }}></th>
                       </>
                     )}
@@ -470,7 +474,7 @@ export default function RMA() {
                                 data-testid={`rma-receive-${l.sku}`}
                                 onClick={() => receiveLine(l)}
                               >
-                                {draft.saving ? 'Receiving...' : 'Receive'}
+                                {t(draft.saving ? 'receiving.receiving' : 'receiving.receive')}
                               </button>
                             </td>
                           </>
@@ -490,7 +494,7 @@ export default function RMA() {
                 </tbody>
               </table>
             ) : (
-              <p style={{ fontSize: 13, color: 'var(--text-secondary)' }}>No return lines</p>
+              <p style={{ fontSize: 13, color: 'var(--text-secondary)' }}>{t('rma.noReturnLines')}</p>
             )}
           </section>
         </Modal>
@@ -498,12 +502,12 @@ export default function RMA() {
 
       {confirmVoid && detail && (
         <Modal
-          title="Delete RMA?"
+          title={t('rma.deleteTitle')}
           onClose={() => { if (!voiding) setConfirmVoid(false); }}
           footer={
             <>
               <button className="btn" onClick={() => setConfirmVoid(false)} disabled={voiding}>
-                Cancel
+                {t('common.cancel')}
               </button>
               <button
                 className="btn btn-danger"
@@ -511,16 +515,13 @@ export default function RMA() {
                 disabled={voiding}
                 data-testid="rma-void-confirm"
               >
-                {voiding ? 'Deleting...' : 'Delete RMA'}
+                {t(voiding ? 'rma.deleting' : 'rma.deleteRma')}
               </button>
             </>
           }
         >
           <p style={{ marginTop: 0 }}>
-            Remove RMA <span className="mono">{detail.so_number}</span> from the RMA
-            list? It is hidden rather than erased (an admin can restore it), and
-            only an un-received return can be deleted -- received goods or a linked
-            refund will block it.
+            {t('rma.deleteBefore')} <span className="mono">{detail.so_number}</span> {t('rma.deleteAfter')}
           </p>
           {voidError && (
             <div className="form-error" data-testid="rma-void-error" style={{ marginTop: 8 }}>

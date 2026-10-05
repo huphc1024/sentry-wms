@@ -2,16 +2,19 @@ import { useState, useRef, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../auth.jsx';
 import { useWarehouse } from '../warehouse.jsx';
+import { useLocale } from '../i18n/locale.jsx';
+import { useTheme } from '../theme/theme.jsx';
 import { api } from '../api.js';
+import { BRAND_NAME } from '../brand.js';
 
 const SEARCH_DEBOUNCE_MS = 250;
 
-const RESULT_TYPE_LABEL = {
-  item: 'Item',
-  bin: 'Bin',
-  po: 'PO',
-  so: 'SO',
-  customer: 'Customer',
+const RESULT_TYPE_KEYS = {
+  item: 'topbar.type.item',
+  bin: 'topbar.type.bin',
+  po: 'topbar.type.po',
+  so: 'topbar.type.so',
+  customer: 'topbar.type.customer',
 };
 
 function resultRoute(r) {
@@ -33,6 +36,8 @@ function resultRoute(r) {
 export default function TopBar({ forced = false }) {
   const { user, logout } = useAuth();
   const { warehouses, warehouseId, warehouse, setWarehouseId } = useWarehouse();
+  const { locale, setLocale, t } = useLocale();
+  const { isDark, toggleMode } = useTheme();
   const navigate = useNavigate();
   const [showMenu, setShowMenu] = useState(false);
   const [showWhPicker, setShowWhPicker] = useState(false);
@@ -161,11 +166,11 @@ export default function TopBar({ forced = false }) {
           <line x1="19" y1="16" x2="23.5" y2="16" stroke="#FCF4E3" strokeWidth="1" opacity="0.4"/>
           <line x1="19" y1="20" x2="23.5" y2="20" stroke="#FCF4E3" strokeWidth="1" opacity="0.4"/>
         </svg>
-        Sentry WMS
+        {BRAND_NAME}
         {serverVersion && (
           <span
             className="topbar-version"
-            title={`API version ${serverVersion}`}
+            title={t('topbar.apiVersion', { version: serverVersion })}
             style={{
               marginLeft: 10,
               fontSize: 13,
@@ -210,7 +215,7 @@ export default function TopBar({ forced = false }) {
       {!forced && <div className="topbar-search" ref={searchRef} style={{ position: 'relative' }}>
         <input
           type="text"
-          placeholder="Search items, bins, orders..."
+          placeholder={t('topbar.searchPlaceholder')}
           value={searchQuery}
           onChange={(e) => { setSearchQuery(e.target.value); setSearchOpen(true); }}
           onFocus={() => { if (searchQuery.trim().length >= 2) setSearchOpen(true); }}
@@ -219,18 +224,21 @@ export default function TopBar({ forced = false }) {
         {searchOpen && searchQuery.trim().length >= 2 && (
           <div className="topbar-wh-dropdown" style={{ minWidth: 320, maxHeight: 360, overflowY: 'auto' }}>
             {searchLoading && (
-              <div className="topbar-wh-option" style={{ color: 'rgba(255,255,255,0.5)', cursor: 'default' }}>
-                Searching…
+              <div className="topbar-wh-option" style={{ color: 'var(--chrome-text-muted)', cursor: 'default' }}>
+                {t('common.searching')}
               </div>
             )}
             {!searchLoading && searchResults.length === 0 && (
-              <div className="topbar-wh-option" style={{ color: 'rgba(255,255,255,0.5)', cursor: 'default' }}>
-                No matches
+              <div className="topbar-wh-option" style={{ color: 'var(--chrome-text-muted)', cursor: 'default' }}>
+                {t('topbar.noMatches')}
               </div>
             )}
             {!searchLoading && searchResults.map((r, idx) => {
               const key = `${r.type}-${r.id}`;
               const isActive = idx === searchHighlight;
+              const typeLabel = RESULT_TYPE_KEYS[r.type]
+                ? t(RESULT_TYPE_KEYS[r.type])
+                : r.type;
               return (
                 <div
                   key={key}
@@ -238,7 +246,7 @@ export default function TopBar({ forced = false }) {
                   onMouseEnter={() => setSearchHighlight(idx)}
                   onClick={() => selectSearchResult(r)}
                 >
-                  <span className="topbar-wh-code">[{RESULT_TYPE_LABEL[r.type] || r.type}] {r.label}</span>
+                  <span className="topbar-wh-code">[{typeLabel}] {r.label}</span>
                   {r.sublabel && <span className="topbar-wh-name">{r.sublabel}</span>}
                 </div>
               );
@@ -246,6 +254,34 @@ export default function TopBar({ forced = false }) {
           </div>
         )}
       </div>}
+      {!forced && (
+        <div className="topbar-lang" role="group" aria-label={t('lang.label')}>
+          <button
+            type="button"
+            className={`topbar-lang-btn${locale === 'vi' ? ' active' : ''}`}
+            onClick={() => setLocale('vi')}
+          >
+            {t('lang.vi')}
+          </button>
+          <button
+            type="button"
+            className={`topbar-lang-btn${locale === 'en' ? ' active' : ''}`}
+            onClick={() => setLocale('en')}
+          >
+            {t('lang.en')}
+          </button>
+          <button
+            type="button"
+            className="topbar-theme-btn"
+            onClick={toggleMode}
+            aria-pressed={isDark}
+            title={t(isDark ? 'theme.toLight' : 'theme.toDark')}
+            aria-label={t(isDark ? 'theme.toLight' : 'theme.toDark')}
+          >
+            {isDark ? '☀' : '☽'}
+          </button>
+        </div>
+      )}
       <div className="topbar-user" ref={menuRef} style={{ position: 'relative' }}>
         <div className="topbar-avatar" onClick={() => setShowMenu(!showMenu)} title={user?.full_name || user?.username}>
           {initials}
@@ -253,12 +289,12 @@ export default function TopBar({ forced = false }) {
         {showMenu && (
           <div className="topbar-dropdown">
             <div className="topbar-dropdown-header">
-              <div style={{ fontWeight: 600, fontSize: 13, color: '#fdf4e3' }}>{user?.full_name || user?.username}</div>
-              <div style={{ fontSize: 11, color: 'rgba(255,255,255,0.5)' }}>{user?.role}</div>
+              <div style={{ fontWeight: 600, fontSize: 13, color: 'var(--chrome-text)' }}>{user?.full_name || user?.username}</div>
+              <div style={{ fontSize: 11, color: 'var(--chrome-text-muted)' }}>{user?.role}</div>
             </div>
             <div className="topbar-dropdown-divider" />
             <button className="topbar-dropdown-item" onClick={logout}>
-              Logout
+              {t('auth.logout')}
             </button>
           </div>
         )}

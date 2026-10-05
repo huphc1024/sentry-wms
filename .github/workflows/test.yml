@@ -222,3 +222,41 @@ jobs:
           # mutate the env at the test level.
           SENTRY_PUBSUB_HMAC_KEY: 0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef
         run: cd api && python -m pytest tests/ -v
+
+  # The three JavaScript workspaces had no CI coverage at all until now:
+  # `audit.yml` runs `npm audit` against them, and nothing ran their
+  # tests. That is fine right up until a test is written to guard
+  # something -- a guard nobody runs is a guard that goes red on main and
+  # then gets ignored. The i18n migration adds exactly that kind of
+  # guard, so the job comes first.
+  #
+  # Split per workspace rather than one matrix step so a failure names
+  # the app, and so the admin suite's longer runtime does not hide
+  # behind the other two.
+  js-tests:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        app: [admin]
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+          cache-dependency-path: ${{ matrix.app }}/package-lock.json
+
+      - name: Install
+        working-directory: ${{ matrix.app }}
+        run: npm ci
+
+      - name: Test
+        working-directory: ${{ matrix.app }}
+        # Rendering an antd page is slow enough that the admin suite
+        # already carries testTimeout: 20000, and a shared CI runner is
+        # slower still. --pool=forks keeps workers from starving each
+        # other on a 2-core box.
+        run: npx vitest run --pool=forks

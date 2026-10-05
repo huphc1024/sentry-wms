@@ -4,11 +4,13 @@ import TopBar from './TopBar.jsx';
 import Sidebar from './Sidebar.jsx';
 import Modal from './Modal.jsx';
 import { useAuth } from '../auth.jsx';
+import { useLocale } from '../i18n/locale.jsx';
 
 const PERM_POPUP_COOLDOWN_MS = 5000;
 
 export default function Layout() {
   const { user } = useAuth();
+  const { t } = useLocale();
   // Page permissions (mig 061): catch global permission-denied events from
   // api.js and surface a "Permissions Error" modal. Lives on Layout so
   // it covers every page reached through the admin shell.
@@ -32,8 +34,8 @@ export default function Layout() {
       // every render).
       setPermError((current) => current || (evt.detail || { page_key: null }));
     }
-    window.addEventListener('sentry:permission-denied', onPermDenied);
-    return () => window.removeEventListener('sentry:permission-denied', onPermDenied);
+    window.addEventListener('sonloc:permission-denied', onPermDenied);
+    return () => window.removeEventListener('sonloc:permission-denied', onPermDenied);
   }, []);
 
   function dismissPermError() {
@@ -54,24 +56,24 @@ export default function Layout() {
       </main>
       {permError && (
         <Modal
-          title="Permissions Error"
+          title={t('errors.permissionsTitle')}
           onClose={dismissPermError}
           footer={
             <button className="btn btn-primary" onClick={dismissPermError}>
-              OK
+              {t('common.ok')}
             </button>
           }
         >
           <p style={{ fontSize: 14, marginBottom: 12 }}>
-            You do not have permission to access this resource.
+            {t('errors.noPermission')}
           </p>
           {permError.page_key && (
             <p style={{ fontSize: 12, color: 'var(--text-secondary)', marginBottom: 12 }}>
-              Page: <span className="mono">{permError.page_key}</span>
+              {t('errors.page', { page: permError.page_key })}
             </p>
           )}
           <p style={{ fontSize: 13 }}>
-            Contact an administrator if you need access.
+            {t('errors.contactAdmin')}
           </p>
         </Modal>
       )}
