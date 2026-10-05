@@ -6,6 +6,7 @@ route and the bearer-token /api/v1/dockd/* surface share one transaction body
 (fulfillment insert + line writes + SO update + audit + outbox emit).
 """
 
+import logging
 import uuid
 from datetime import timezone
 
@@ -24,6 +25,8 @@ from constants import (
     TASK_SHORT,
     order_type_allows_fulfillment_ops,
 )
+
+logger = logging.getLogger(__name__)
 
 
 def require_packing_before_shipping(db) -> bool:

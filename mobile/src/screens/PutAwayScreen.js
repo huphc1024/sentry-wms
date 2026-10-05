@@ -10,8 +10,9 @@ import client from '../api/client';
 import ScreenHeader from '../components/ScreenHeader';
 import { colors, fonts, radii, screenStyles, buttonStyles, modalStyles, listStyles, doneStyles } from '../theme/styles';
 import { useLocale } from '../i18n/locale.js';
+import { getExpiryStatus } from '../utils/expiryStatus';
 
-export default function PutAwayScreen({ navigation }) {
+export default function PutAwayScreen({ navigation, route }) {
   const { warehouseId } = useAuth();
   const { t } = useLocale();
   const scrollRef = React.useRef(null);
@@ -29,7 +30,8 @@ export default function PutAwayScreen({ navigation }) {
   const [preferredBin, setPreferredBin] = useState(null);
   const [scannedBin, setScannedBin] = useState(null);
   const [putQty, setPutQty] = useState('');
-  const [processPhase, setProcessPhase] = useState('scan_bin'); // scan_bin | enter_qty
+  const [processPhase, setProcessPhase] = useState('scan_pallet'); // scan_pallet | scan_bin | enter_qty
+  const [scannedPalletCode, setScannedPalletCode] = useState('');
 
   // Track qty field focus to suppress scan input auto-refocus (#13)
   const [qtyFocused, setQtyFocused] = useState(false);
@@ -69,6 +71,9 @@ export default function PutAwayScreen({ navigation }) {
               from_bin_code: bin.bin_code,
               quantity: it.quantity_on_hand,
               lot_number: it.lot_number || null,
+              expiry_date: it.expiry_date || null,
+              pallet_id: it.pallet_id || null,
+              pallet_code: it.pallet_code || null,
             }));
           if (newEntries.length === 0) {
             showError(t('putaway.err.allLoaded'));
@@ -116,6 +121,9 @@ export default function PutAwayScreen({ navigation }) {
         from_bin_code: stagingLoc.bin_code,
         quantity: stagingLoc.quantity_on_hand,
         lot_number: stagingLoc.lot_number || null,
+        expiry_date: stagingLoc.expiry_date || null,
+        pallet_id: stagingLoc.pallet_id || null,
+        pallet_code: stagingLoc.pallet_code || null,
       }]);
     } catch {
       showError(t('putaway.err.itemNotFound'));
@@ -136,8 +144,15 @@ export default function PutAwayScreen({ navigation }) {
   const selectItem = async (entry) => {
     setActiveItem(entry);
     setScannedBin(null);
+    setScannedPalletCode('');
     setPutQty(String(entry.quantity));
-    setProcessPhase('scan_bin');
+    setProcessPhase(entry.pallet_id ? 'scan_pallet' : 'scan_bin');
+    const expiryStatus = getExpiryStatus(entry.expiry_date);
+    if (expiryStatus?.level === 'expired') {
+      showError(t('putaway.err.palletExpired', { label: expiryStatus.label }));
+    } else if (expiryStatus?.level === 'near') {
+      showError(t('putaway.err.expiryWarning', { date: entry.expiry_date, label: expiryStatus.label }));
+    }
 
     // Get preferred bin suggestion
     try {
@@ -160,8 +175,26 @@ export default function PutAwayScreen({ navigation }) {
       showError(t('putaway.err.scanFromList'));
       return;
     }
-    // Active item selected  -  this scan is a bin
+    // Active item selected — route scan by phase
+    if (processPhase === 'scan_pallet') {
+      await handleScanPallet(barcode);
+      return;
+    }
     await handleScanBin(barcode);
+  };
+
+  const handleScanPallet = async (barcode) => {
+    const expected = (activeItem.pallet_code || '').trim();
+    if (!expected) {
+      setProcessPhase('scan_bin');
+      return;
+    }
+    if (barcode.trim().toUpperCase() !== expected.toUpperCase()) {
+      showError(t('putaway.err.palletMismatch', { code: expected }));
+      return;
+    }
+    setScannedPalletCode(barcode.trim());
+    setProcessPhase('scan_bin');
   };
 
   const handleScanBin = async (barcode) => {
@@ -189,6 +222,8 @@ export default function PutAwayScreen({ navigation }) {
         to_bin_id: scannedBin.bin_id,
         quantity: qty,
         lot_number: activeItem.lot_number,
+        pallet_id: activeItem.pallet_id,
+        pallet_code: activeItem.pallet_code || scannedPalletCode || null,
         warehouse_id: warehouseId,
       });
 
@@ -230,7 +265,8 @@ export default function PutAwayScreen({ navigation }) {
     setActiveItem(null);
     setPreferredBin(null);
     setScannedBin(null);
-    setProcessPhase('scan_bin');
+    setScannedPalletCode('');
+    setProcessPhase('scan_pallet');
   };
 
   const handleUpdatePreferred = async () => {
@@ -309,7 +345,16 @@ export default function PutAwayScreen({ navigation }) {
                       <Text style={styles.queueSku}>{entry.sku}</Text>
                       <Text style={styles.queueDetail}>
                         {t('putaway.queueDetail', { name: entry.item_name, qty: entry.quantity, bin: entry.from_bin_code })}
+                        {entry.pallet_code ? ` · ${entry.pallet_code}` : ''}
                       </Text>
+                      {entry.expiry_date && getExpiryStatus(entry.expiry_date)?.level !== 'ok' ? (
+                        <Text style={[
+                          styles.expiryWarning,
+                          getExpiryStatus(entry.expiry_date)?.level === 'expired' && styles.expiryDanger,
+                        ]}>
+                          {t('putaway.expiryLine', { date: entry.expiry_date, label: getExpiryStatus(entry.expiry_date)?.label })}
+                        </Text>
+                      ) : null}
                     </View>
                     <TouchableOpacity style={listStyles.removeBtn} onPress={() => removeFromQueue(index)}>
                       <Text style={listStyles.removeText}>X</Text>
@@ -339,7 +384,13 @@ export default function PutAwayScreen({ navigation }) {
           {activeItem ? (
             <ScrollView ref={scrollRef} style={screenStyles.content} contentContainerStyle={screenStyles.contentInner} keyboardShouldPersistTaps="handled">
               <ScanInput
-                placeholder={t('putaway.scan.destBin')}
+                placeholder={
+                  processPhase === 'scan_pallet'
+                    ? t('putaway.scan.pallet')
+                    : processPhase === 'scan_bin'
+                      ? t('putaway.scan.destBin')
+                      : t('putaway.scan.bin')
+                }
                 onScan={handleProcessScan}
                 disabled={scanDisabled}
                 suppressRefocus={qtyFocused}
@@ -349,6 +400,25 @@ export default function PutAwayScreen({ navigation }) {
                 <Text style={styles.itemName}>{activeItem.item_name}</Text>
                 <Text style={styles.sku}>{activeItem.sku}</Text>
                 <Text style={styles.fromBin}>{t('putaway.fromLine', { bin: activeItem.from_bin_code, qty: activeItem.quantity })}</Text>
+                {activeItem.pallet_code ? (
+                  <Text style={styles.fromBin}>
+                    {t('putaway.palletLine', { code: activeItem.pallet_code })}
+                    {scannedPalletCode ? ' ✓' : processPhase === 'scan_pallet' ? ` ${t('putaway.scanToConfirm')}` : ''}
+                  </Text>
+                ) : null}
+                {activeItem.expiry_date && getExpiryStatus(activeItem.expiry_date)?.level !== 'ok' ? (
+                  <View style={[
+                    styles.expiryBanner,
+                    getExpiryStatus(activeItem.expiry_date)?.level === 'expired' && styles.expiryBannerDanger,
+                  ]}>
+                    <Text style={[
+                      styles.expiryBannerText,
+                      getExpiryStatus(activeItem.expiry_date)?.level === 'expired' && styles.expiryDanger,
+                    ]}>
+                      {t('putaway.expiryLine', { date: activeItem.expiry_date, label: getExpiryStatus(activeItem.expiry_date)?.label })}
+                    </Text>
+                  </View>
+                ) : null}
               </View>
 
               {preferredBin ? (
@@ -556,6 +626,12 @@ const styles = StyleSheet.create({
   // Load phase
   queueSku: { fontFamily: fonts.mono, fontSize: 14, fontWeight: '700', color: colors.textPrimary },
   queueDetail: { fontSize: 12, color: colors.textMuted, marginTop: 2 },
+  expiryWarning: {
+    fontFamily: fonts.mono, fontSize: 10, fontWeight: '700',
+    color: colors.warning, marginTop: 5,
+  },
+  expiryDanger: { color: colors.danger },
+
   // Process phase
   itemCard: {
     backgroundColor: colors.cardBg, borderWidth: 1, borderColor: colors.cardBorder, borderRadius: radii.card,
@@ -564,6 +640,16 @@ const styles = StyleSheet.create({
   itemName: { fontSize: 14, fontWeight: '600', color: colors.textPrimary },
   sku: { fontFamily: fonts.mono, fontSize: 13, fontWeight: '600', color: colors.textMuted, marginTop: 1 },
   fromBin: { fontFamily: fonts.mono, fontSize: 11, color: colors.textMuted, marginTop: 2 },
+  expiryBanner: {
+    alignSelf: 'flex-start', marginTop: 7, paddingHorizontal: 8, paddingVertical: 5,
+    borderRadius: radii.badge, borderWidth: 1, borderColor: colors.warning,
+    backgroundColor: colors.warningBg,
+  },
+  expiryBannerDanger: { borderColor: colors.danger, backgroundColor: colors.accentBg },
+  expiryBannerText: {
+    fontFamily: fonts.mono, fontSize: 10, fontWeight: '700', color: colors.accent,
+  },
+
   suggestCard: {
     borderWidth: 2, borderStyle: 'dashed', borderColor: colors.copper, borderRadius: 0,
     padding: 6, marginBottom: 6, alignItems: 'center',

@@ -63,4 +63,5 @@ from routes.admin import (  # noqa: E402, F401
     admin_vendors,
     admin_warehouse,
     admin_webhooks,
+    admin_pallets,
 )

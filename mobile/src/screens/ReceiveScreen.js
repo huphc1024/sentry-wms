@@ -12,6 +12,10 @@ import { useAuth } from '../auth/AuthContext';
 import { useLocale } from '../i18n/locale.js';
 import client from '../api/client';
 import ScreenHeader from '../components/ScreenHeader';
+import BarcodeScannerModal from '../components/BarcodeScannerModal';
+import ExpiryOcrModal from '../components/ExpiryOcrModal';
+import { isValidExpiryDate, parseExpiryFromScan } from '../utils/expiryParser';
+import { getExpiryStatus } from '../utils/expiryStatus';
 import { colors, fonts, radii, screenStyles, buttonStyles, listStyles, doneStyles } from '../theme/styles';
 
 const MODE_KEY = 'sentry_receive_mode';
@@ -40,6 +44,12 @@ export default function ReceiveScreen({ navigation, route }) {
   const [linePage, setLinePage] = useState(0);
   const [activeItem, setActiveItem] = useState(null);
   const [quantity, setQuantity] = useState('');
+  const [palletCode, setPalletCode] = useState('');
+  const [creatingPallet, setCreatingPallet] = useState(false);
+  const [expiryDate, setExpiryDate] = useState('');
+  const [expirySource, setExpirySource] = useState('');
+  const [showExpiryScanner, setShowExpiryScanner] = useState(false);
+  const [showExpiryOcr, setShowExpiryOcr] = useState(false);
   const [mode, setMode] = useState('standard');
   const [showModeMenu, setShowModeMenu] = useState(false);
   const [turboStatus, setTurboStatus] = useState('');
@@ -260,11 +270,50 @@ export default function ReceiveScreen({ navigation, route }) {
     setQuantity(String(remaining));
   };
 
+  const createFloorPallet = async () => {
+    if (!warehouseId) {
+      showError(t('receive.noWarehouse'));
+      return;
+    }
+    setCreatingPallet(true);
+    try {
+      const resp = await client.post('/api/pallets', { warehouse_id: Number(warehouseId) });
+      const code = resp.data?.pallet_code;
+      if (!code) {
+        showError(t('receive.palletCreateFailed'));
+        return;
+      }
+      setPalletCode(code);
+    } catch (err) {
+      showError(err.response?.data?.error || t('receive.palletCreateFailed'));
+    } finally {
+      setCreatingPallet(false);
+    }
+  };
+
   const doReceiveStandard = async (qty) => {
     try {
+      if (!palletCode.trim()) {
+        showError(t('receive.scanPalletFirst'));
+        return;
+      }
+      if (expiryDate && !isValidExpiryDate(expiryDate)) {
+        showError(t('receive.expiryFormat'));
+        return;
+      }
+      if (getExpiryStatus(expiryDate)?.level === 'expired') {
+        showError(t('receive.expiredBlocked'));
+        return;
+      }
       const resp = await client.post('/api/receiving/receive', {
         po_id: po.po_id,
-        items: [{ item_id: activeItem.item_id, quantity: qty, bin_id: receivingBinId || activeItem.staging_bin_id || 1 }],
+        items: [{
+          item_id: activeItem.item_id,
+          quantity: qty,
+          bin_id: receivingBinId || activeItem.staging_bin_id || 1,
+          pallet_code: palletCode.trim(),
+          expiry_date: expiryDate || null,
+        }],
         warehouse_id: warehouseId,
       });
 
@@ -276,9 +325,32 @@ export default function ReceiveScreen({ navigation, route }) {
       await refreshPO();
       setActiveItem(null);
       setQuantity('');
+      setPalletCode('');
+      setExpiryDate('');
+      setExpirySource('');
     } catch (err) {
       showError(err.response?.data?.error || t('receive.receiveFailed'));
     }
+  };
+
+  const applyDetectedExpiry = (date, source) => {
+    setExpiryDate(date);
+    setExpirySource(source);
+    setQtyFocused(false);
+    const status = getExpiryStatus(date);
+    if (status?.level === 'expired') {
+      showError(t('receive.expiredItem', { date, label: status.label }));
+    } else if (status?.level === 'near') {
+      showError(t('receive.expiryWarning', { date, label: status.label }));
+    }
+  };
+
+  const handleExpiryScan = (code) => {
+    const detected = parseExpiryFromScan(code);
+    if (!detected) {
+      throw new Error(t('receive.expiryScanInvalid'));
+    }
+    applyDetectedExpiry(detected, 'scan');
   };
 
   const handleConfirmStandard = async () => {
@@ -366,6 +438,10 @@ export default function ReceiveScreen({ navigation, route }) {
   } = paginate(orderedLines, linePage, LINE_PAGE_SIZE);
 
   const processTurboScan = useCallback((barcode) => {
+    if (!palletCode.trim()) {
+      showError(t('receive.scanOrCreatePalletFirst'));
+      return;
+    }
     const match = lines.find(
       (l) => l.upc === barcode || l.sku === barcode || l.item_barcode === barcode
     );
@@ -379,12 +455,16 @@ export default function ReceiveScreen({ navigation, route }) {
       return;
     }
     const binId = receivingBinId || match.staging_bin_id || 1;
-    enqueueReceive(match.item_id, { item_id: match.item_id, bin_id: binId });
+    enqueueReceive(match.item_id, {
+      item_id: match.item_id,
+      bin_id: binId,
+      pallet_code: palletCode.trim(),
+    });
     setTurboStatus(`${match.item_name}: ${projected} / ${match.quantity_ordered}`);
     if (projected >= match.quantity_ordered) {
       try { Vibration.vibrate(200); } catch {}
     }
-  }, [lines, allowOverReceiving, receivingBinId, enqueueReceive, getPending, showError, t]);
+  }, [lines, allowOverReceiving, receivingBinId, enqueueReceive, getPending, showError, palletCode, t]);
 
   const handleScanItem = mode === 'turbo' ? processTurboScan : handleScanItemStandard;
 
@@ -544,6 +624,34 @@ export default function ReceiveScreen({ navigation, route }) {
               </View>
             ) : (
               <>
+                {mode === 'turbo' && (
+                  <View style={styles.palletSessionCard}>
+                    <Text style={[listStyles.label, { marginBottom: 6 }]}>{t('receive.palletSession')}</Text>
+                    <ScanInput
+                      placeholder={t('receive.scanPallet')}
+                      onScan={(code) => setPalletCode(code)}
+                      autoFocus={!palletCode}
+                      suppressRefocus={qtyFocused}
+                    />
+                    <View style={styles.palletActions}>
+                      {palletCode ? (
+                        <Text style={styles.palletSelected}>{t('receive.palletLabel', { code: palletCode })}</Text>
+                      ) : (
+                        <Text style={styles.palletHint}>{t('receive.palletHint')}</Text>
+                      )}
+                      <TouchableOpacity
+                        style={[buttonStyles.buttonSecondary, styles.createPalletBtn]}
+                        onPress={createFloorPallet}
+                        disabled={creatingPallet}
+                      >
+                        <Text style={buttonStyles.buttonSecondaryText}>
+                          {creatingPallet ? t('receive.creating') : t('receive.createPallet')}
+                        </Text>
+                      </TouchableOpacity>
+                    </View>
+                  </View>
+                )}
+
                 <ScanInput
                   placeholder={t('receive.scanItem')}
                   onScan={handleScanItem}
@@ -567,6 +675,65 @@ export default function ReceiveScreen({ navigation, route }) {
                     <Text style={styles.expectedText}>
                       {t('receive.expected', { ordered: activeItem.quantity_ordered, received: activeItem.quantity_received })}
                     </Text>
+                    <Text style={[listStyles.label, { marginTop: 12, marginBottom: 6 }]}>{t('receive.palletQr')}</Text>
+                    <ScanInput
+                      placeholder={t('receive.scanPallet')}
+                      onScan={(code) => setPalletCode(code)}
+                      autoFocus
+                      suppressRefocus={qtyFocused}
+                    />
+                    <View style={styles.palletActions}>
+                      {palletCode ? <Text style={styles.palletSelected}>{t('receive.palletLabel', { code: palletCode })}</Text> : null}
+                      <TouchableOpacity
+                        style={[buttonStyles.buttonSecondary, styles.createPalletBtn]}
+                        onPress={createFloorPallet}
+                        disabled={creatingPallet}
+                      >
+                        <Text style={buttonStyles.buttonSecondaryText}>
+                          {creatingPallet ? t('receive.creating') : t('receive.createPallet')}
+                        </Text>
+                      </TouchableOpacity>
+                    </View>
+                    <Text style={[listStyles.label, { marginTop: 8, marginBottom: 6 }]}>{t('receive.expiryDate')}</Text>
+                    <View style={styles.expiryActions}>
+                      <TouchableOpacity style={styles.expiryActionButton} onPress={() => setShowExpiryScanner(true)}>
+                        <Text style={styles.expiryActionText}>{t('receive.scanGs1')}</Text>
+                      </TouchableOpacity>
+                      <TouchableOpacity style={styles.expiryActionButton} onPress={() => setShowExpiryOcr(true)}>
+                        <Text style={styles.expiryActionText}>{t('receive.ocr')}</Text>
+                      </TouchableOpacity>
+                    </View>
+                    <TextInput
+                      style={styles.expiryInput}
+                      value={expiryDate}
+                      onChangeText={(value) => {
+                        setExpiryDate(value);
+                        setExpirySource(value ? 'manual' : '');
+                      }}
+                      placeholder={t('receive.expiryPlaceholder')}
+                      placeholderTextColor={colors.textPlaceholder}
+                      onFocus={() => setQtyFocused(true)}
+                      onBlur={() => setQtyFocused(false)}
+                    />
+                    {expirySource ? (
+                      <Text style={styles.expiryDetected}>
+                        {expirySource === 'scan' ? t('receive.expirySource.scan') : expirySource === 'ocr' ? t('receive.expirySource.ocr') : t('receive.expirySource.manual')}
+                      </Text>
+                    ) : null}
+                    {expiryDate && getExpiryStatus(expiryDate)?.level !== 'ok' ? (
+                      <View style={[
+                        styles.expiryBanner,
+                        getExpiryStatus(expiryDate)?.level === 'expired' && styles.expiryBannerDanger,
+                      ]}>
+                        <Text style={[
+                          styles.expiryBannerText,
+                          getExpiryStatus(expiryDate)?.level === 'expired' && styles.expiryBannerDangerText,
+                        ]}>
+                          {getExpiryStatus(expiryDate)?.level === 'expired' ? t('receive.bannerExpired') : t('receive.bannerNear')}
+                          {' · '}{getExpiryStatus(expiryDate)?.label}
+                        </Text>
+                      </View>
+                    ) : null}
                     <View style={styles.qtyRow}>
                       <Text style={listStyles.label}>{t('receive.quantity')}</Text>
                       <TextInput
@@ -726,6 +893,17 @@ export default function ReceiveScreen({ navigation, route }) {
         </View>
       </Modal>
 
+      <BarcodeScannerModal
+        visible={showExpiryScanner}
+        onClose={() => setShowExpiryScanner(false)}
+        onScan={handleExpiryScan}
+      />
+      <ExpiryOcrModal
+        visible={showExpiryOcr}
+        onClose={() => setShowExpiryOcr(false)}
+        onExpiryDetected={(date) => applyDetectedExpiry(date, 'ocr')}
+      />
+
       {/* Confirm modal (replaces Alert.alert) */}
       <Modal visible={confirmModal.visible} transparent animationType="fade">
         <Pressable style={styles.confirmOverlay} onPress={() => setConfirmModal((p) => ({ ...p, visible: false }))}>
@@ -794,6 +972,40 @@ const styles = StyleSheet.create({
     padding: 12, marginBottom: 10,
   },
   expectedText: { fontFamily: fonts.mono, fontSize: 12, color: colors.textMuted, marginTop: 6 },
+  palletSessionCard: {
+    borderWidth: 1, borderColor: colors.cardBorder, borderRadius: radii.card,
+    padding: 12, marginBottom: 12,
+  },
+  palletActions: { marginTop: 8, gap: 8 },
+  createPalletBtn: { alignSelf: 'flex-start' },
+  palletHint: { fontFamily: fonts.mono, fontSize: 11, color: colors.textMuted },
+  palletSelected: { fontFamily: fonts.mono, fontSize: 12, fontWeight: '700', color: colors.success, marginTop: -8, marginBottom: 8 },
+  expiryActions: {
+    flexDirection: 'row', gap: 8, marginBottom: 8,
+  },
+  expiryActionButton: {
+    flex: 1, alignItems: 'center', backgroundColor: colors.cardBorder,
+    borderRadius: radii.small, paddingHorizontal: 8, paddingVertical: 10,
+  },
+  expiryActionText: {
+    color: colors.textPrimary, fontFamily: fonts.mono, fontSize: 10, fontWeight: '700',
+  },
+  expiryInput: {
+    borderWidth: 1, borderColor: colors.cardBorder, borderRadius: radii.small,
+    paddingHorizontal: 10, paddingVertical: 9, color: colors.textPrimary,
+    fontFamily: fonts.mono,
+  },
+  expiryDetected: { fontFamily: fonts.mono, fontSize: 10, color: colors.success, marginTop: 5, marginBottom: 8 },
+  expiryBanner: {
+    alignSelf: 'flex-start', marginTop: 7, marginBottom: 8,
+    paddingHorizontal: 8, paddingVertical: 5, borderRadius: radii.badge,
+    borderWidth: 1, borderColor: colors.warning, backgroundColor: colors.warningBg,
+  },
+  expiryBannerDanger: { borderColor: colors.danger, backgroundColor: colors.accentBg },
+  expiryBannerText: {
+    fontFamily: fonts.mono, fontSize: 10, fontWeight: '700', color: colors.accent,
+  },
+  expiryBannerDangerText: { color: colors.danger },
   qtyRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginVertical: 12 },
   lineQty: { fontFamily: fonts.mono, fontSize: 14, fontWeight: '700', color: colors.textPrimary },
   lineQtyPending: { color: colors.copper },

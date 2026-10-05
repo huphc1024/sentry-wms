@@ -51,10 +51,12 @@ def lookup_item(barcode):
             SELECT i.bin_id, b.bin_code, b.bin_type, z.zone_name,
                    i.quantity_on_hand, i.quantity_allocated,
                    (i.quantity_on_hand - i.quantity_allocated) AS quantity_available,
-                   i.lot_number, i.warehouse_id
+                   i.lot_number, i.expiry_date, i.pallet_id, p.pallet_code,
+                   i.warehouse_id
             FROM inventory i
             JOIN bins b ON b.bin_id = i.bin_id
             LEFT JOIN zones z ON z.zone_id = b.zone_id
+            LEFT JOIN pallets p ON p.pallet_id = i.pallet_id
             WHERE i.item_id = :item_id
             """
         ),
@@ -76,6 +78,9 @@ def lookup_item(barcode):
             "quantity_allocated": r.quantity_allocated,
             "quantity_available": r.quantity_available,
             "lot_number": r.lot_number,
+            "expiry_date": r.expiry_date.isoformat() if r.expiry_date else None,
+            "pallet_id": r.pallet_id,
+            "pallet_code": r.pallet_code,
         }
         for r in location_rows
     ]
@@ -127,9 +132,10 @@ def lookup_bin(barcode):
             SELECT it.item_id, it.sku, it.item_name, it.upc,
                    inv.quantity_on_hand, inv.quantity_allocated,
                    (inv.quantity_on_hand - inv.quantity_allocated) AS quantity_available,
-                   inv.lot_number
+                   inv.lot_number, inv.expiry_date, inv.pallet_id, p.pallet_code
             FROM inventory inv
             JOIN items it ON it.item_id = inv.item_id
+            LEFT JOIN pallets p ON p.pallet_id = inv.pallet_id
             WHERE inv.bin_id = :bin_id
             """
         ),
@@ -146,6 +152,9 @@ def lookup_bin(barcode):
             "quantity_allocated": r.quantity_allocated,
             "quantity_available": r.quantity_available,
             "lot_number": r.lot_number,
+            "expiry_date": r.expiry_date.isoformat() if r.expiry_date else None,
+            "pallet_id": r.pallet_id,
+            "pallet_code": r.pallet_code,
         }
         for r in item_rows
     ]

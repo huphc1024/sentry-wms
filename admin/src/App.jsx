@@ -44,6 +44,8 @@ import InterWarehouseTransfers from './pages/InterWarehouseTransfers.jsx';
 import TransferOrders from './pages/TransferOrders.jsx';
 import POSActivity from './pages/POSActivity.jsx';
 import Fraud from './pages/Fraud.jsx';
+import Pallets from './pages/Pallets.jsx';
+import Expiry from './pages/Expiry.jsx';
 
 function ProtectedRoute({ children }) {
   const { user, loading } = useAuth();
@@ -147,6 +149,8 @@ export default function App() {
         <Route path="/adjustments" element={<ErrorBoundary fallbackMessage={t('errors.couldNotLoad', { name: t('nav.adjustments') })}><Adjustments /></ErrorBoundary>} />
         <Route path="/inter-warehouse-transfers" element={<ErrorBoundary fallbackMessage={t('errors.couldNotLoad', { name: t('nav.transfers') })}><InterWarehouseTransfers /></ErrorBoundary>} />
         <Route path="/transfer-orders" element={<ErrorBoundary fallbackMessage={t('errors.couldNotLoad', { name: t('nav.transferOrders') })}><TransferOrders /></ErrorBoundary>} />
+        <Route path="/pallets" element={<ErrorBoundary fallbackMessage={t('errors.couldNotLoad', { name: t('nav.pallets') })}><Pallets /></ErrorBoundary>} />
+        <Route path="/expiry" element={<ErrorBoundary fallbackMessage={t('errors.couldNotLoad', { name: t('nav.expiry') })}><Expiry /></ErrorBoundary>} />
       </Route>
     </Routes>
   );

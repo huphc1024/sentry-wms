@@ -66,7 +66,7 @@ describe('screens take their colours from the palette', () => {
   // A camera viewfinder is black whatever the theme, and the floor plan
   // keeps its own blue-grey ramp -- which styles.js now also supplies in
   // two versions, so the plan reads mapColors rather than literals.
-  const ALLOWED = new Set(['styles.js', 'BarcodeScannerModal.js']);
+  const ALLOWED = new Set(['styles.js', 'BarcodeScannerModal.js', 'ExpiryOcrModal.js']);
 
   it('leaves no literal colour in a screen or component', () => {
     const offenders = [];
@@ -90,10 +90,10 @@ describe('screens take their colours from the palette', () => {
   });
 
   it('keeps the viewfinder chrome out of the palette on purpose', () => {
-    // Not an oversight: this draws over a live camera feed, where
+    // Not an oversight: these two draw over a live camera feed, where
     // black is the right background in either theme. Asserted so that
     // removing the exemption is a decision rather than a surprise.
-    for (const name of ['BarcodeScannerModal.js']) {
+    for (const name of ['BarcodeScannerModal.js', 'ExpiryOcrModal.js']) {
       const file = walk(ROOT).find((p) => p.endsWith(name));
       expect(readFileSync(file, 'utf8')).toMatch(/#000|#111/);
     }

@@ -229,7 +229,7 @@ def create_purchase_order(validated):
             RETURNING po_id
         """),
         {
-            "pn": data["po_number"], "pb": data.get("po_barcode", data["po_number"]),
+            "pn": data["po_number"], "pb": data.get("po_barcode") or data["po_number"],
             "vendor": data.get("vendor_name"), "exp_date": data.get("expected_date"),
             "wid": data["warehouse_id"], "notes": data.get("notes"),
             "created_by": g.current_user["username"], "status": PO_OPEN,
@@ -1559,7 +1559,7 @@ def create_sales_order(validated):
             RETURNING so_id
         """),
         {
-            "sn": data["so_number"], "sb": data.get("so_barcode", data["so_number"]),
+            "sn": data["so_number"], "sb": data.get("so_barcode") or data["so_number"],
             "cust": data.get("customer_name"), "phone": data.get("customer_phone"),
             "cemail": data.get("customer_email"),
             "caddr": data.get("customer_address"),

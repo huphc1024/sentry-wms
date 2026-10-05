@@ -50,6 +50,183 @@
   outline-offset: 2px;
 }
 
+/* ── Expiry operations ─────────────────────────── */
+.expiry-page {
+  display: grid;
+  gap: 16px;
+}
+
+.expiry-summary {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.expiry-stat {
+  display: grid;
+  gap: 7px;
+  min-height: 92px;
+  padding: 16px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: var(--panel);
+}
+
+.expiry-stat span {
+  color: var(--text-secondary);
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.expiry-stat strong {
+  color: var(--text-primary);
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 24px;
+}
+
+.expiry-stat-warning {
+  border-left: 4px solid var(--copper);
+}
+
+.expiry-stat-danger {
+  border-left: 4px solid var(--danger);
+}
+
+.expiry-toolbar {
+  display: grid;
+  grid-template-columns: minmax(220px, 1fr) minmax(180px, 220px) auto auto;
+  align-items: end;
+  gap: 12px;
+  padding: 14px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: var(--surface);
+}
+
+.expiry-toolbar > div,
+.expiry-date-field {
+  display: grid;
+  gap: 4px;
+}
+
+.expiry-toolbar > div span,
+.expiry-date-field span {
+  color: var(--text-secondary);
+  font-size: 12px;
+}
+
+.expiry-table-card {
+  overflow: hidden;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: var(--panel);
+}
+
+.expiry-table-heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 16px;
+  border-bottom: 1px solid var(--border);
+}
+
+.expiry-table-heading h2 {
+  margin: 0 0 3px;
+  font-size: 17px;
+}
+
+.expiry-table-heading p,
+.expiry-table-heading > span {
+  color: var(--text-secondary);
+  font-size: 12px;
+}
+
+.expiry-table-scroll {
+  overflow-x: auto;
+}
+
+.expiry-table {
+  min-width: 760px;
+}
+
+.expiry-table tr.selected td {
+  background: rgba(184, 115, 51, 0.08);
+}
+
+.expiry-check-cell {
+  width: 44px;
+  text-align: center;
+}
+
+.expiry-check-cell input {
+  width: 16px;
+  height: 16px;
+  cursor: pointer;
+}
+
+.expiry-badge {
+  display: inline-flex;
+  align-items: center;
+  min-height: 24px;
+  padding: 3px 9px;
+  border: 1px solid transparent;
+  border-radius: 999px;
+  font-size: 11px;
+  font-weight: 700;
+  white-space: nowrap;
+}
+
+.expiry-badge-warning {
+  border-color: rgba(184, 115, 51, 0.35);
+  background: rgba(184, 115, 51, 0.12);
+  color: var(--accent);
+}
+
+.expiry-badge-danger {
+  border-color: rgba(142, 39, 22, 0.35);
+  background: rgba(142, 39, 22, 0.11);
+  color: var(--danger);
+}
+
+.expiry-notice,
+.expiry-empty {
+  padding: 14px 16px;
+  border: 1px solid var(--border);
+  border-radius: 9px;
+  background: var(--panel);
+  color: var(--text-secondary);
+}
+
+.expiry-notice-success {
+  border-color: rgba(52, 168, 83, 0.35);
+  color: var(--success);
+}
+
+.expiry-notice-error {
+  border-color: rgba(142, 39, 22, 0.35);
+  color: var(--danger);
+}
+
+@media (max-width: 900px) {
+  .expiry-summary {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .expiry-toolbar {
+    grid-template-columns: 1fr 1fr;
+  }
+}
+
+@media (max-width: 560px) {
+  .expiry-summary,
+  .expiry-toolbar {
+    grid-template-columns: 1fr;
+  }
+}
+
 /* ── Fonts (V-110: self-hosted, OFL) ─────────────── */
 /* Instrument Sans covers the 400/500/600/700 weights the admin panel
    renders. The single variable woff2 (wght + wdth axes) is smaller than

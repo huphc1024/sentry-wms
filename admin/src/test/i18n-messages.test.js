@@ -114,7 +114,10 @@ describe('message tables', () => {
     // strings that genuinely do not change.
     const SAME_ON_PURPOSE = new Set([
       'lang.en', 'lang.vi', 'settings.section.pos',
-      // Borrowed into Vietnamese unchanged.
+      // Vietnamese warehouses say "pallet"; there is no other word
+      // for it on the floor.
+      'warehouseSimulation.pallet',
+      // Borrowed into Vietnamese unchanged, like "pallet".
       'customers.email',
       // A marketplace's own name; placeholders that show one.
       'channels.nameExample',

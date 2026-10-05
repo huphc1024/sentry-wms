@@ -1,6 +1,7 @@
 """Items, Preferred Bins, CSV Import, and Inventory Overview endpoints."""
 
 import math
+import json
 import uuid
 
 from flask import g, jsonify, request
@@ -81,7 +82,8 @@ def list_items():
     params["offset"] = (page - 1) * per_page
     rows = g.db.execute(
         text(f"""
-            SELECT i.item_id, i.sku, i.item_name, i.upc, i.mpn, i.category, i.weight_lbs,
+            SELECT i.item_id, i.sku, i.item_name, i.upc, i.mpn, i.category, i.storage_profile,
+                   i.weight_lbs, i.is_lot_tracked,
                    i.default_bin_id, i.is_active, i.created_at,
                    b.bin_code AS default_bin_code
             FROM items i
@@ -110,7 +112,9 @@ def list_items():
         "items": [
             {"item_id": r.item_id, "sku": r.sku, "item_name": r.item_name, "upc": r.upc,
              "mpn": r.mpn,
-             "category": r.category, "weight_lbs": float(r.weight_lbs) if r.weight_lbs else None,
+             "category": r.category, "storage_profile": r.storage_profile,
+             "weight_lbs": float(r.weight_lbs) if r.weight_lbs is not None else None,
+             "is_lot_tracked": r.is_lot_tracked,
              "default_bin_id": r.default_bin_id, "default_bin_code": r.default_bin_code,
              "is_active": r.is_active,
              "created_at": r.created_at.isoformat() if r.created_at else None}
@@ -126,7 +130,7 @@ def list_items():
 @with_db
 def get_item(item_id):
     item = g.db.execute(
-        text("SELECT item_id, sku, item_name, description, upc, mpn, barcode_aliases, category, weight_lbs, length_in, width_in, height_in, default_bin_id, reorder_point, reorder_qty, is_lot_tracked, is_serial_tracked, is_active, created_at, updated_at FROM items WHERE item_id = :iid"),
+        text("SELECT item_id, sku, item_name, description, upc, mpn, barcode_aliases, category, storage_profile, weight_lbs, length_in, width_in, height_in, default_bin_id, reorder_point, reorder_qty, is_lot_tracked, is_serial_tracked, is_active, created_at, updated_at FROM items WHERE item_id = :iid"),
         {"iid": item_id},
     ).fetchone()
     if not item:
@@ -155,10 +159,11 @@ def get_item(item_id):
         "item": {
             "item_id": item.item_id, "sku": item.sku, "item_name": item.item_name,
             "description": item.description, "upc": item.upc, "mpn": item.mpn, "barcode_aliases": item.barcode_aliases,
-            "category": item.category, "weight_lbs": float(item.weight_lbs) if item.weight_lbs else None,
-            "length_in": float(item.length_in) if item.length_in else None,
-            "width_in": float(item.width_in) if item.width_in else None,
-            "height_in": float(item.height_in) if item.height_in else None,
+            "category": item.category, "storage_profile": item.storage_profile,
+            "weight_lbs": float(item.weight_lbs) if item.weight_lbs is not None else None,
+            "length_in": float(item.length_in) if item.length_in is not None else None,
+            "width_in": float(item.width_in) if item.width_in is not None else None,
+            "height_in": float(item.height_in) if item.height_in is not None else None,
             "default_bin_id": item.default_bin_id, "reorder_point": item.reorder_point,
             "reorder_qty": item.reorder_qty, "is_lot_tracked": item.is_lot_tracked,
             "is_serial_tracked": item.is_serial_tracked, "is_active": item.is_active,
@@ -202,15 +207,36 @@ def create_item(validated):
 
     result = g.db.execute(
         text("""
-            INSERT INTO items (sku, item_name, description, upc, mpn, category, weight_lbs, default_bin_id, external_id)
-            VALUES (:sku, :name, :desc, :upc, :mpn, :cat, :weight, :bin, :ext_id)
-            RETURNING item_id, sku, item_name, description, upc, mpn, category, weight_lbs, default_bin_id, is_active, created_at
+            INSERT INTO items (
+                sku, item_name, description, upc, mpn, barcode_aliases, category,
+                storage_profile, weight_lbs, length_in, width_in, height_in,
+                default_bin_id, reorder_point, reorder_qty, is_lot_tracked,
+                is_serial_tracked, external_id
+            )
+            VALUES (
+                :sku, :name, :desc, :upc, :mpn, CAST(:aliases AS JSONB), :cat,
+                :profile, :weight, :length, :width, :height, :bin,
+                :reorder_point, :reorder_qty, :lot_tracked, :serial_tracked,
+                :ext_id
+            )
+            RETURNING item_id, sku, item_name, description, upc, mpn, barcode_aliases,
+                      category, storage_profile, weight_lbs, length_in, width_in,
+                      height_in, default_bin_id, reorder_point, reorder_qty,
+                      is_lot_tracked, is_serial_tracked, is_active, created_at
         """),
         {
             "sku": data["sku"], "name": data["item_name"], "desc": data.get("description"),
-            "upc": data.get("upc"), "mpn": data.get("mpn"), "cat": data.get("category"),
+            "upc": data.get("upc"), "mpn": data.get("mpn"), "aliases": json.dumps(data.get("barcode_aliases") or []),
+            "cat": data.get("category"), "profile": data.get("storage_profile"),
             "weight": float(data["weight_lbs"]) if data.get("weight_lbs") is not None else None,
+            "length": float(data["length_in"]) if data.get("length_in") is not None else None,
+            "width": float(data["width_in"]) if data.get("width_in") is not None else None,
+            "height": float(data["height_in"]) if data.get("height_in") is not None else None,
             "bin": data.get("default_bin_id"),
+            "reorder_point": data.get("reorder_point") or 0,
+            "reorder_qty": data.get("reorder_qty") or 0,
+            "lot_tracked": bool(data.get("is_lot_tracked")),
+            "serial_tracked": bool(data.get("is_serial_tracked")),
             "ext_id": str(uuid.uuid4()),
         },
     )
@@ -219,8 +245,14 @@ def create_item(validated):
     return jsonify({
         "item_id": row.item_id, "sku": row.sku, "item_name": row.item_name,
         "description": row.description, "upc": row.upc, "mpn": row.mpn, "category": row.category,
-        "weight_lbs": float(row.weight_lbs) if row.weight_lbs else None,
+        "barcode_aliases": row.barcode_aliases, "storage_profile": row.storage_profile,
+        "weight_lbs": float(row.weight_lbs) if row.weight_lbs is not None else None,
+        "length_in": float(row.length_in) if row.length_in is not None else None,
+        "width_in": float(row.width_in) if row.width_in is not None else None,
+        "height_in": float(row.height_in) if row.height_in is not None else None,
         "default_bin_id": row.default_bin_id, "is_active": row.is_active,
+        "reorder_point": row.reorder_point, "reorder_qty": row.reorder_qty,
+        "is_lot_tracked": row.is_lot_tracked, "is_serial_tracked": row.is_serial_tracked,
         "created_at": row.created_at.isoformat() if row.created_at else None,
     }), 201
 
@@ -237,12 +269,21 @@ def update_item(item_id, validated):
     if not existing:
         return jsonify({"error": "Item not found"}), 404
 
-    ALLOWED_FIELDS = {"sku", "item_name", "description", "upc", "mpn", "category", "weight_lbs", "default_bin_id", "reorder_point", "reorder_qty", "is_active"}
+    ALLOWED_FIELDS = {
+        "sku", "item_name", "description", "upc", "mpn", "barcode_aliases",
+        "category", "storage_profile", "weight_lbs", "length_in", "width_in",
+        "height_in", "default_bin_id", "reorder_point", "reorder_qty",
+        "is_lot_tracked", "is_serial_tracked", "is_active",
+    }
     fields, params = [], {"iid": item_id}
     for col in ALLOWED_FIELDS:
         if col in data:
-            fields.append(f"{col} = :{col}")
-            params[col] = data[col]
+            if col == "barcode_aliases":
+                fields.append("barcode_aliases = CAST(:barcode_aliases AS JSONB)")
+                params[col] = json.dumps(data[col] or [])
+            else:
+                fields.append(f"{col} = :{col}")
+                params[col] = data[col]
 
     if not fields:
         return jsonify({"error": "No valid fields provided"}), 400
@@ -252,13 +293,20 @@ def update_item(item_id, validated):
     g.db.commit()
 
     row = g.db.execute(
-        text("SELECT item_id, sku, item_name, upc, mpn, category, weight_lbs, default_bin_id, is_active, created_at, updated_at FROM items WHERE item_id = :iid"),
+        text("SELECT item_id, sku, item_name, description, upc, mpn, barcode_aliases, category, storage_profile, weight_lbs, length_in, width_in, height_in, default_bin_id, reorder_point, reorder_qty, is_lot_tracked, is_serial_tracked, is_active, created_at, updated_at FROM items WHERE item_id = :iid"),
         {"iid": item_id},
     ).fetchone()
     return jsonify({
-        "item_id": row.item_id, "sku": row.sku, "item_name": row.item_name, "upc": row.upc,
-        "mpn": row.mpn, "category": row.category, "weight_lbs": float(row.weight_lbs) if row.weight_lbs else None,
+        "item_id": row.item_id, "sku": row.sku, "item_name": row.item_name,
+        "description": row.description, "upc": row.upc, "mpn": row.mpn, "barcode_aliases": row.barcode_aliases,
+        "category": row.category, "storage_profile": row.storage_profile,
+        "weight_lbs": float(row.weight_lbs) if row.weight_lbs is not None else None,
+        "length_in": float(row.length_in) if row.length_in is not None else None,
+        "width_in": float(row.width_in) if row.width_in is not None else None,
+        "height_in": float(row.height_in) if row.height_in is not None else None,
         "default_bin_id": row.default_bin_id, "is_active": row.is_active,
+        "reorder_point": row.reorder_point, "reorder_qty": row.reorder_qty,
+        "is_lot_tracked": row.is_lot_tracked, "is_serial_tracked": row.is_serial_tracked,
         "created_at": row.created_at.isoformat() if row.created_at else None,
         "updated_at": row.updated_at.isoformat() if row.updated_at else None,
     })
@@ -543,10 +591,27 @@ def _import_item(db, row: ItemImportRow):
 
     weight = row.resolved_weight()
     result = db.execute(
-        text("INSERT INTO items (sku, item_name, description, upc, mpn, category, weight_lbs, default_bin_id, external_id) VALUES (:sku, :name, :desc, :upc, :mpn, :cat, :weight, :bin, :ext_id) RETURNING item_id"),
+        text("""
+            INSERT INTO items (
+                sku, item_name, description, upc, mpn, category, storage_profile,
+                weight_lbs, length_in, width_in, height_in, is_lot_tracked,
+                is_serial_tracked, default_bin_id, external_id
+            )
+            VALUES (
+                :sku, :name, :desc, :upc, :mpn, :cat, :profile, :weight,
+                :length, :width, :height, :lot_tracked, :serial_tracked,
+                :bin, :ext_id
+            )
+            RETURNING item_id
+        """),
         {"sku": sku, "name": name, "desc": row.description,
-         "upc": row.upc, "mpn": row.mpn, "cat": row.category,
+         "upc": row.upc, "mpn": row.mpn, "cat": row.category, "profile": row.storage_profile,
          "weight": float(weight) if weight is not None else None,
+         "length": float(row.length_in) if row.length_in is not None else None,
+         "width": float(row.width_in) if row.width_in is not None else None,
+         "height": float(row.height_in) if row.height_in is not None else None,
+         "lot_tracked": bool(row.is_lot_tracked),
+         "serial_tracked": bool(row.is_serial_tracked),
          "bin": default_bin_id, "ext_id": str(uuid.uuid4())},
     )
 
@@ -598,14 +663,25 @@ def _import_bin(db, row: BinImportRow, raw_rec: dict):
 
     db.execute(
         text("""
-            INSERT INTO bins (zone_id, warehouse_id, bin_code, bin_barcode, bin_type, aisle, row_num, level_num, pick_sequence, putaway_sequence, description, external_id)
-            VALUES (:zid, :wid, :code, :barcode, :type, :aisle, :row, :level, :pick_seq, :put_seq, :desc, :ext_id)
+            INSERT INTO bins (
+                zone_id, warehouse_id, bin_code, bin_barcode, bin_type,
+                aisle, row_num, level_num, position_num, pick_sequence,
+                putaway_sequence, max_weight_lbs, max_volume_cuft,
+                description, external_id
+            )
+            VALUES (
+                :zid, :wid, :code, :barcode, :type, :aisle, :row,
+                :level, :position, :pick_seq, :put_seq, :max_weight,
+                :max_volume, :desc, :ext_id
+            )
         """),
         {
             "zid": zone_id, "wid": warehouse_id, "code": bin_code,
             "barcode": bin_barcode, "type": bin_type,
             "aisle": row.aisle, "row": row.row_num, "level": row.level_num,
+            "position": row.position_num,
             "pick_seq": row.pick_sequence or 0, "put_seq": row.putaway_sequence or 0,
+            "max_weight": row.max_weight_lbs, "max_volume": row.max_volume_cuft,
             "desc": row.description,
             "ext_id": str(uuid.uuid4()),
         },

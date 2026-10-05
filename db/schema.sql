@@ -75,6 +75,10 @@ CREATE TABLE items (
     mpn VARCHAR(64),                        -- manufacturer part number (mig 079)
     barcode_aliases JSONB,                 -- array of alternate barcodes
     category VARCHAR(100),
+    storage_profile VARCHAR(20) CHECK (
+        storage_profile IS NULL
+        OR storage_profile IN ('HEAVY', 'FMCG', 'FULFILLMENT', 'PROJECT')
+    ),
     weight_lbs DECIMAL(10,4),
     length_in DECIMAL(10,2),
     width_in DECIMAL(10,2),
@@ -96,10 +100,36 @@ CREATE TABLE items (
 CREATE INDEX ix_items_upc ON items(upc);
 CREATE INDEX ix_items_mpn ON items(mpn);
 CREATE INDEX ix_items_sku ON items(sku);
+CREATE INDEX ix_items_storage_profile ON items(storage_profile);
 
 -- ============================================================
 -- INVENTORY (Current stock by bin)
 -- ============================================================
+
+CREATE TABLE pallets (
+    pallet_id BIGSERIAL PRIMARY KEY,
+    pallet_code VARCHAR(100) NOT NULL UNIQUE,
+    pallet_barcode VARCHAR(200),
+    item_id INT REFERENCES items(item_id),
+    warehouse_id INT NOT NULL REFERENCES warehouses(warehouse_id),
+    bin_id INT REFERENCES bins(bin_id),
+    quantity INT NOT NULL DEFAULT 0,
+    weight_kg DECIMAL(10,3),
+    lot_code VARCHAR(100),
+    expiry_date DATE,
+    status VARCHAR(32) NOT NULL DEFAULT 'STORED',
+    created_by VARCHAR(100),
+    created_at TIMESTAMPTZ DEFAULT NOW(),
+    updated_at TIMESTAMPTZ DEFAULT NOW(),
+    external_id UUID UNIQUE NOT NULL
+);
+
+CREATE INDEX ix_pallets_item ON pallets(item_id);
+CREATE INDEX ix_pallets_bin ON pallets(bin_id);
+CREATE UNIQUE INDEX ux_pallets_barcode ON pallets(pallet_barcode)
+    WHERE pallet_barcode IS NOT NULL;
+CREATE INDEX ix_pallets_expiry ON pallets(expiry_date)
+    WHERE status = 'STORED';
 
 CREATE TABLE inventory (
     inventory_id SERIAL PRIMARY KEY,
@@ -113,12 +143,16 @@ CREATE TABLE inventory (
     expiry_date DATE,
     last_counted_at TIMESTAMPTZ,
     updated_at TIMESTAMPTZ DEFAULT NOW(),
-    UNIQUE(item_id, bin_id, lot_number)
+    pallet_id BIGINT REFERENCES pallets(pallet_id)
 );
 
 CREATE INDEX ix_inventory_item ON inventory(item_id);
 CREATE INDEX ix_inventory_bin ON inventory(bin_id);
 CREATE INDEX ix_inventory_warehouse ON inventory(warehouse_id);
+CREATE INDEX ix_inventory_expiry ON inventory(expiry_date)
+    WHERE quantity_on_hand > 0;
+CREATE UNIQUE INDEX ux_inventory_item_bin_lot_pallet
+    ON inventory (item_id, bin_id, COALESCE(lot_number, ''), COALESCE(pallet_id, 0));
 
 -- ============================================================
 -- PURCHASE ORDERS (Inbound / Receiving)
@@ -174,6 +208,8 @@ CREATE TABLE item_receipts (
     bin_id INT NOT NULL REFERENCES bins(bin_id),  -- staging bin on receipt
     warehouse_id INT NOT NULL REFERENCES warehouses(warehouse_id),
     lot_number VARCHAR(50),
+    expiry_date DATE,
+    pallet_id BIGINT REFERENCES pallets(pallet_id),
     serial_number VARCHAR(100),
     received_by VARCHAR(100) NOT NULL,
     received_at TIMESTAMPTZ DEFAULT NOW(),
@@ -390,6 +426,7 @@ CREATE TABLE pick_tasks (
     so_line_id INT REFERENCES sales_order_lines(so_line_id) ON DELETE SET NULL,
     item_id INT NOT NULL REFERENCES items(item_id),
     bin_id INT NOT NULL REFERENCES bins(bin_id),
+    pallet_id BIGINT REFERENCES pallets(pallet_id),
     quantity_to_pick INT NOT NULL,
     quantity_picked INT NOT NULL DEFAULT 0,
     pick_sequence INT NOT NULL,            -- ORDER BY this for optimized walk path
@@ -401,6 +438,7 @@ CREATE TABLE pick_tasks (
 );
 
 CREATE INDEX ix_pick_tasks_batch_sequence ON pick_tasks(batch_id, pick_sequence);
+CREATE INDEX ix_pick_tasks_pallet ON pick_tasks(pallet_id);
 
 -- Wave picking: links SOs to wave batches
 CREATE TABLE wave_pick_orders (
@@ -1302,6 +1340,10 @@ CREATE TABLE customers (
     updated_at        TIMESTAMPTZ  NOT NULL DEFAULT NOW(),
     latest_inbound_id BIGINT       NOT NULL DEFAULT 0
 );
+
+ALTER TABLE pallets
+    ADD COLUMN customer_id UUID REFERENCES customers(canonical_id);
+CREATE INDEX ix_pallets_customer ON pallets(customer_id);
 
 CREATE TABLE inbound_customers (
     inbound_id            BIGSERIAL    PRIMARY KEY,

@@ -72,14 +72,18 @@ export default function PickWalkScreen({ navigation, route }) {
   const handleScan = async (barcode) => {
     if (!task) return;
 
-    const expectedUpc = task.upc || '';
-    const expectedSku = task.sku || '';
-    if (barcode !== expectedUpc && barcode !== expectedSku) {
-      showError(t('pick.wrongItem', { sku: task.sku }));
+    const expected = task.pallet_code || task.pallet_barcode;
+    const valid = expected
+      ? barcode === task.pallet_code || barcode === task.pallet_barcode
+      : barcode === (task.upc || '') || barcode === (task.sku || '');
+    if (!valid) {
+      showError(expected
+        ? t('pick.wrongPallet', { code: task.pallet_code })
+        : t('pick.wrongItem', { sku: task.sku }));
       return;
     }
 
-    const newCount = scannedCount + 1;
+    const newCount = expected ? task.quantity_to_pick : scannedCount + 1;
     const qtyNeeded = task.quantity_to_pick;
 
     if (newCount >= qtyNeeded) {
@@ -229,6 +233,18 @@ export default function PickWalkScreen({ navigation, route }) {
                 {task.zone_name}{task.aisle ? t('pick.aisleSuffix', { aisle: task.aisle }) : ''}
               </Text>
             )}
+            <Text style={styles.binLocation}>
+              {task.rack_label || task.bin_code} · {task.slot_label || 'L1-P1'}
+            </Text>
+            {task.pallet_code ? (
+              <>
+                <Text style={styles.palletCode}>{t('pick.palletLabel', { code: task.pallet_code })}</Text>
+                <Text style={styles.palletMeta}>
+                  {task.lot_code ? t('pick.lotLabel', { code: task.lot_code }) : t('pick.noLot')}
+                  {task.expiry_date ? t('pick.expirySuffix', { date: task.expiry_date }) : ''}
+                </Text>
+              </>
+            ) : null}
           </View>
 
           {/* Item card */}
@@ -289,7 +305,7 @@ export default function PickWalkScreen({ navigation, route }) {
 
           {/* Scan input */}
           <ScanInput
-            placeholder={t('pick.scanItem')}
+            placeholder={task.pallet_code ? t('pick.scanPalletQr') : t('pick.scanItem')}
             onScan={handleScan}
             disabled={scanDisabled}
           />
@@ -509,6 +525,26 @@ const styles = StyleSheet.create({
   header: {
     flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
     paddingHorizontal: 16, paddingTop: 52, paddingBottom: 12,
+  },
+  palletCode: {
+    fontFamily: fonts.mono,
+    fontSize: 13,
+    fontWeight: '700',
+    color: colors.success,
+    marginTop: 8,
+  },
+  palletMeta: {
+    fontFamily: fonts.mono,
+    fontSize: 10,
+    color: colors.textMuted,
+    marginTop: 2,
+  },
+  binLocation: {
+    fontFamily: fonts.mono,
+    fontSize: 11,
+    fontWeight: '700',
+    color: colors.textSecondary,
+    marginTop: 4,
   },
   headerLeft: {},
   headerTitle: { fontFamily: fonts.mono, fontSize: 15, fontWeight: '700', color: colors.textPrimary },

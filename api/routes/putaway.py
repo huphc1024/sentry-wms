@@ -13,6 +13,7 @@ from middleware.db import with_db
 from schemas.putaway import ConfirmPutawayRequest, UpdatePreferredRequest
 from services.audit_service import write_audit_log
 from services.inventory_service import move_inventory
+from services.pallet_service import lookup_pallet_by_code
 from constants import ACTION_PUTAWAY, BIN_PICKABLE, BIN_STAGING, BIN_PICKABLE_STAGING
 from utils.validation import validate_body
 
@@ -42,7 +43,7 @@ def pending_putaway(warehouse_id):
             """
             SELECT inv.inventory_id, inv.item_id, i.sku, i.item_name, i.upc,
                    inv.quantity_on_hand AS quantity, inv.bin_id, b.bin_code,
-                   inv.lot_number,
+                   inv.lot_number, inv.expiry_date, inv.pallet_id, p.pallet_code,
                    COALESCE(
                        (SELECT pbb.bin_code
                         FROM preferred_bins pb
@@ -59,6 +60,7 @@ def pending_putaway(warehouse_id):
             FROM inventory inv
             JOIN items i ON i.item_id = inv.item_id
             JOIN bins b ON b.bin_id = inv.bin_id
+            LEFT JOIN pallets p ON p.pallet_id = inv.pallet_id
             WHERE b.bin_type IN (:bin_staging, :bin_pickable_staging)
               AND inv.quantity_on_hand > 0
               AND inv.warehouse_id = :warehouse_id
@@ -83,6 +85,9 @@ def pending_putaway(warehouse_id):
                 "bin_id": r.bin_id,
                 "bin_code": r.bin_code,
                 "lot_number": r.lot_number,
+                "expiry_date": r.expiry_date.isoformat() if r.expiry_date else None,
+                "pallet_id": r.pallet_id,
+                "pallet_code": r.pallet_code,
                 "suggested_bin": r.suggested_bin,
             }
             for r in rows
@@ -139,7 +144,7 @@ def staging_summary(warehouse_id):
                    inv.inventory_id, inv.item_id,
                    i.sku, i.item_name, i.upc,
                    inv.quantity_on_hand,
-                   inv.lot_number,
+                   inv.lot_number, inv.expiry_date, inv.pallet_id, p.pallet_code,
                    COALESCE(
                        (SELECT pbb.bin_code
                         FROM preferred_bins pb
@@ -156,6 +161,7 @@ def staging_summary(warehouse_id):
               FROM bins b
               JOIN inventory inv ON inv.bin_id = b.bin_id
               JOIN items i ON i.item_id = inv.item_id
+              LEFT JOIN pallets p ON p.pallet_id = inv.pallet_id
              WHERE b.warehouse_id = :warehouse_id
                AND b.bin_type IN (:bin_staging, :bin_pickable_staging)
                AND inv.quantity_on_hand > 0
@@ -194,6 +200,9 @@ def staging_summary(warehouse_id):
             "upc": r.upc,
             "quantity_on_hand": r.quantity_on_hand,
             "lot_number": r.lot_number,
+            "expiry_date": r.expiry_date.isoformat() if r.expiry_date else None,
+            "pallet_id": r.pallet_id,
+            "pallet_code": r.pallet_code,
             "suggested_bin": r.suggested_bin,
         })
 
@@ -323,6 +332,17 @@ def confirm_putaway(validated):
     to_bin_id = validated.to_bin_id
     quantity = validated.quantity
     lot_number = validated.lot_number
+    pallet_id = validated.pallet_id
+    pallet_code = (validated.pallet_code or "").strip()
+
+    if pallet_id:
+        if not pallet_code:
+            return jsonify({"error": "pallet_code is required when moving pallet inventory"}), 400
+        scanned_pallet = lookup_pallet_by_code(g.db, pallet_code)
+        if not scanned_pallet or scanned_pallet.pallet_id != pallet_id:
+            return jsonify({"error": "Scanned pallet does not match the staged inventory"}), 400
+        if scanned_pallet.status != "STORED":
+            return jsonify({"error": f"Pallet status is {scanned_pallet.status}"}), 400
 
     item = g.db.execute(
         text("SELECT item_id, sku FROM items WHERE item_id = :item_id"),
@@ -354,7 +374,10 @@ def confirm_putaway(validated):
 
     # 1 & 2. Move inventory (decrement source, upsert destination)
     try:
-        move_inventory(g.db, item_id, from_bin_id, to_bin_id, warehouse_id, quantity, lot_number)
+        move_inventory(
+            g.db, item_id, from_bin_id, to_bin_id, warehouse_id, quantity,
+            lot_number, pallet_id=pallet_id,
+        )
     except ValueError as e:
         return jsonify({"error": str(e)}), 400
 
@@ -381,6 +404,15 @@ def confirm_putaway(validated):
         },
     )
     transfer_id = result.fetchone()[0]
+    if pallet_id:
+        g.db.execute(
+            text("""
+                UPDATE pallets
+                SET bin_id = :bin_id, updated_at = NOW()
+                WHERE pallet_id = :pallet_id
+            """),
+            {"bin_id": to_bin_id, "pallet_id": pallet_id},
+        )
 
     # 4. Audit
     write_audit_log(

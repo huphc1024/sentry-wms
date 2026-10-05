@@ -461,7 +461,9 @@ def create_app():
     from routes.inbound import inbound_bp
     from routes.dashboard import dashboard_bp
     from routes.dockd import dockd_bp
+    from routes.expiry import expiry_bp
     from routes.pos import pos_bp
+    from routes.pallets import pallets_bp
 
     app.register_blueprint(auth_bp, url_prefix="/api/auth")
     app.register_blueprint(lookup_bp, url_prefix="/api/lookup")
@@ -472,6 +474,8 @@ def create_app():
     app.register_blueprint(shipping_bp, url_prefix="/api/shipping")
     app.register_blueprint(inventory_bp, url_prefix="/api/inventory")
     app.register_blueprint(transfers_bp, url_prefix="/api/transfers")
+    app.register_blueprint(expiry_bp, url_prefix="/api/expiry")
+    app.register_blueprint(pallets_bp, url_prefix="/api/pallets")
     app.register_blueprint(admin_bp, url_prefix="/api/admin")
     app.register_blueprint(warehouses_bp, url_prefix="/api/warehouses")
     # v1.5.0 #122: first /api/v1/* surface. Gated by @require_wms_token

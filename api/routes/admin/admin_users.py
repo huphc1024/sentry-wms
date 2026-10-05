@@ -1116,6 +1116,8 @@ def direct_adjustment(validated):
     adjustment_type = validated.adjustment_type
     quantity = validated.quantity
     reason = validated.reason
+    pallet_id = validated.pallet_id
+    lot_number = validated.lot_number
 
     # Validate item exists
     item = g.db.execute(
@@ -1133,6 +1135,21 @@ def direct_adjustment(validated):
     if not bin_row:
         return jsonify({"error": "Bin not found in the specified warehouse"}), 404
 
+    if pallet_id:
+        pallet_row = g.db.execute(
+            text("""
+                SELECT pallet_id, bin_id, warehouse_id, status
+                FROM pallets WHERE pallet_id = :pid AND warehouse_id = :wid
+            """),
+            {"pid": pallet_id, "wid": warehouse_id},
+        ).fetchone()
+        if not pallet_row:
+            return jsonify({"error": "Pallet not found in warehouse"}), 404
+        if pallet_row.bin_id and pallet_row.bin_id != bin_id:
+            return jsonify({"error": "Pallet is not in this bin"}), 400
+        if pallet_row.status and pallet_row.status not in ("STORED",):
+            return jsonify({"error": f"Pallet status {pallet_row.status} cannot be adjusted"}), 400
+
     # a direct ADD is how a found-in-the-warehouse unit gets onto the
     # books, and it used to leave a backorder waiting on that exact SKU stuck
     # in WAITING_STOCK. Collected here, drained after the commit below so the
@@ -1141,7 +1158,17 @@ def direct_adjustment(validated):
 
     if adjustment_type == "ADD":
         quantity_change = quantity
-        add_inventory(g.db, item_id, bin_id, warehouse_id, quantity)
+        add_inventory(
+            g.db, item_id, bin_id, warehouse_id, quantity,
+            lot_number=lot_number, pallet_id=pallet_id,
+        )
+        if pallet_id:
+            g.db.execute(
+                text("UPDATE pallets SET bin_id = :bid, updated_at = NOW() WHERE pallet_id = :pid"),
+                {"bid": bin_id, "pid": pallet_id},
+            )
+            from services.pallet_service import sync_pallet_quantity
+            sync_pallet_quantity(g.db, pallet_id)
         release_satisfiable_backorders(
             g.db,
             warehouse_id=warehouse_id,
@@ -1152,14 +1179,15 @@ def direct_adjustment(validated):
         )
     else:
         # REMOVE  -  validate sufficient stock
-        # v1.5.0 #119: FOR UPDATE on the inventory row is the
-        # serialisation point for concurrent direct-adjustment REMOVEs
-        # against the same item+bin. The ADD branch goes through
-        # add_inventory() which already locks the target row (V-030);
-        # this branch does its own SELECT so it needs its own lock.
         inv = g.db.execute(
-            text("SELECT inventory_id, quantity_on_hand FROM inventory WHERE item_id = :iid AND bin_id = :bid FOR UPDATE"),
-            {"iid": item_id, "bid": bin_id},
+            text("""
+                SELECT inventory_id, quantity_on_hand FROM inventory
+                WHERE item_id = :iid AND bin_id = :bid
+                  AND lot_number IS NOT DISTINCT FROM :lot
+                  AND pallet_id IS NOT DISTINCT FROM :pid
+                FOR UPDATE
+            """),
+            {"iid": item_id, "bid": bin_id, "lot": lot_number, "pid": pallet_id},
         ).fetchone()
         available = inv.quantity_on_hand if inv else 0
         if available < quantity:
@@ -1168,6 +1196,9 @@ def direct_adjustment(validated):
         quantity_change = -quantity
         new_qty = available - quantity
         set_inventory_quantity(g.db, inv.inventory_id, new_qty)
+        if pallet_id:
+            from services.pallet_service import sync_pallet_quantity
+            sync_pallet_quantity(g.db, pallet_id)
 
     # Create adjustment record as APPROVED
     adj = g.db.execute(

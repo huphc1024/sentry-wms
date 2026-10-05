@@ -1,5 +1,6 @@
 """Receiving request schemas."""
 
+from datetime import date
 from typing import List, Optional
 
 from pydantic import BaseModel, Field
@@ -10,6 +11,8 @@ class ReceiveItemEntry(BaseModel):
     quantity: int = Field(..., gt=0, le=100000)
     bin_id: int = Field(..., gt=0)
     lot_number: Optional[str] = Field(None, max_length=100)
+    pallet_code: Optional[str] = Field(None, max_length=100)
+    expiry_date: Optional[date] = None
     serial_number: Optional[str] = Field(None, max_length=100)
     notes: Optional[str] = Field(None, max_length=1000)
 
@@ -17,6 +20,7 @@ class ReceiveItemEntry(BaseModel):
 class ReceiveItemsRequest(BaseModel):
     po_id: int = Field(..., gt=0)
     items: List[ReceiveItemEntry] = Field(..., min_length=1)
+    customer_id: Optional[str] = Field(None, max_length=64)
 
 
 class CancelReceivingRequest(BaseModel):

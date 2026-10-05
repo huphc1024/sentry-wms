@@ -1,5 +1,6 @@
 """Bin request schemas."""
 
+from decimal import Decimal
 from typing import Optional
 
 from pydantic import BaseModel, Field, field_validator
@@ -19,6 +20,9 @@ class CreateBinRequest(BaseModel):
     position_num: Optional[int] = Field(None, ge=0)
     pick_sequence: int = Field(0, ge=0)
     putaway_sequence: int = Field(0, ge=0)
+    max_weight_lbs: Optional[Decimal] = Field(None, ge=0, le=999999)
+    max_volume_cuft: Optional[Decimal] = Field(None, ge=0, le=999999)
+    description: Optional[str] = Field(None, max_length=200)
 
     @field_validator("bin_type")
     @classmethod
@@ -38,6 +42,9 @@ class UpdateBinRequest(BaseModel):
     position_num: Optional[int] = Field(None, ge=0)
     pick_sequence: Optional[int] = Field(None, ge=0)
     putaway_sequence: Optional[int] = Field(None, ge=0)
+    max_weight_lbs: Optional[Decimal] = Field(None, ge=0, le=999999)
+    max_volume_cuft: Optional[Decimal] = Field(None, ge=0, le=999999)
+    description: Optional[str] = Field(None, max_length=200)
     is_active: Optional[bool] = None
     zone_id: Optional[int] = Field(None, gt=0)
 

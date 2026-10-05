@@ -19,27 +19,42 @@ import { aggregateReceiveBatch } from '../useBatchedReceive';
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const HOOK_PATH = resolve(__dirname, '..', 'useBatchedReceive.js');
 
-const entry = (item_id, bin_id) => ({ key: item_id, payload: { item_id, bin_id } });
+const entry = (item_id, bin_id, pallet_code = null) => ({
+  key: item_id,
+  payload: { item_id, bin_id, pallet_code },
+});
 
 describe('aggregateReceiveBatch', () => {
   it('collapses repeated scans of one item into a single line with a count', () => {
     const items = aggregateReceiveBatch([entry(7, 3), entry(7, 3), entry(7, 3)]);
-    expect(items).toEqual([{ item_id: 7, bin_id: 3, quantity: 3 }]);
+    expect(items).toEqual([{ item_id: 7, bin_id: 3, quantity: 3, pallet_code: null, expiry_date: null }]);
   });
 
   it('keeps the same item in different bins as separate lines', () => {
     const items = aggregateReceiveBatch([entry(7, 3), entry(7, 4), entry(7, 3)]);
     expect(items).toEqual([
-      { item_id: 7, bin_id: 3, quantity: 2 },
-      { item_id: 7, bin_id: 4, quantity: 1 },
+      { item_id: 7, bin_id: 3, quantity: 2, pallet_code: null, expiry_date: null },
+      { item_id: 7, bin_id: 4, quantity: 1, pallet_code: null, expiry_date: null },
     ]);
   });
 
   it('groups distinct items and preserves first-seen order', () => {
     const items = aggregateReceiveBatch([entry(2, 1), entry(9, 1), entry(2, 1)]);
     expect(items).toEqual([
-      { item_id: 2, bin_id: 1, quantity: 2 },
-      { item_id: 9, bin_id: 1, quantity: 1 },
+      { item_id: 2, bin_id: 1, quantity: 2, pallet_code: null, expiry_date: null },
+      { item_id: 9, bin_id: 1, quantity: 1, pallet_code: null, expiry_date: null },
+    ]);
+  });
+
+  it('splits batches by pallet_code within the same bin', () => {
+    const items = aggregateReceiveBatch([
+      entry(7, 3, 'PLT-A'),
+      entry(7, 3, 'PLT-A'),
+      entry(7, 3, 'PLT-B'),
+    ]);
+    expect(items).toEqual([
+      { item_id: 7, bin_id: 3, quantity: 2, pallet_code: 'PLT-A', expiry_date: null },
+      { item_id: 7, bin_id: 3, quantity: 1, pallet_code: 'PLT-B', expiry_date: null },
     ]);
   });
 

@@ -41,6 +41,7 @@ const ROLE_PRESETS = [
       'sales-orders', 'backorders', 'fraud', 'picking-tickets', 'picking-batches',
       'items', 'vendors', 'adjustments',
       'warehouses', 'bins', 'zones', 'preferred-bins',
+      'pallets', 'expiry',
       'notifications', 'audit-log',
     ],
   },
@@ -58,6 +59,7 @@ const ROLE_PRESETS = [
     allowed_functions: ['receive', 'putaway'],
     page_keys: [
       'dashboard', 'inventory', 'purchase-orders', 'receiving', 'putaway',
+      'pallets',
     ],
   },
 ];
@@ -103,6 +105,8 @@ const PAGE_GROUPS = [
       { key: 'bins', labelKey: 'nav.bins' },
       { key: 'zones', labelKey: 'nav.zones' },
       { key: 'preferred-bins', labelKey: 'nav.preferredBins' },
+      { key: 'pallets', labelKey: 'nav.pallets' },
+      { key: 'expiry', labelKey: 'nav.expiry' },
     ],
   },
   {

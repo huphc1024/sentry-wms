@@ -12,7 +12,14 @@ const FILTER_OPTIONS = [
   { labelKey: 'common.all', value: 'all' },
 ];
 
+const STORAGE_PROFILES = [
+  { value: 'HEAVY', labelKey: 'items.profileHeavy' },
+  { value: 'FMCG', labelKey: 'items.profileFmcg' },
+  { value: 'FULFILLMENT', labelKey: 'items.profileFulfillment' },
+  { value: 'PROJECT', labelKey: 'items.profileProject' },
+];
 const KG_TO_LB = 2.2046226218;
+const CM_TO_IN = 0.3937007874;
 
 function numberOrNull(value) {
   return value === '' || value == null ? null : Number(value);
@@ -22,6 +29,9 @@ function itemToForm(item) {
   return {
     ...item,
     weight_kg: item.weight_lbs != null ? (Number(item.weight_lbs) / KG_TO_LB).toFixed(3) : '',
+    length_cm: item.length_in != null ? (Number(item.length_in) / CM_TO_IN).toFixed(1) : '',
+    width_cm: item.width_in != null ? (Number(item.width_in) / CM_TO_IN).toFixed(1) : '',
+    height_cm: item.height_in != null ? (Number(item.height_in) / CM_TO_IN).toFixed(1) : '',
     barcode_aliases_text: (item.barcode_aliases || []).join('\n'),
   };
 }
@@ -98,6 +108,8 @@ export default function Items() {
     setEditId(null);
     setForm({
       is_active: true,
+      is_lot_tracked: false,
+      is_serial_tracked: false,
       reorder_point: 0,
       reorder_qty: 0,
     });
@@ -129,12 +141,24 @@ export default function Items() {
         .map((value) => value.trim())
         .filter(Boolean),
       category: form.category || null,
+      storage_profile: form.storage_profile || null,
       weight_lbs: form.weight_kg === '' || form.weight_kg == null
         ? null
         : Number(form.weight_kg) * KG_TO_LB,
+      length_in: form.length_cm === '' || form.length_cm == null
+        ? null
+        : Number(form.length_cm) * CM_TO_IN,
+      width_in: form.width_cm === '' || form.width_cm == null
+        ? null
+        : Number(form.width_cm) * CM_TO_IN,
+      height_in: form.height_cm === '' || form.height_cm == null
+        ? null
+        : Number(form.height_cm) * CM_TO_IN,
       default_bin_id: form.default_bin_id ? Number(form.default_bin_id) : null,
       reorder_point: numberOrNull(form.reorder_point) ?? 0,
       reorder_qty: numberOrNull(form.reorder_qty) ?? 0,
+      is_lot_tracked: !!form.is_lot_tracked,
+      is_serial_tracked: !!form.is_serial_tracked,
     };
     const res = editId
       ? await api.put(`/admin/items/${editId}`, body)
@@ -186,6 +210,7 @@ export default function Items() {
     { key: 'upc', labelKey: 'common.upc', mono: true, render: (r) => r.upc || '-' },
     { key: 'mpn', labelKey: 'items.mpn', mono: true, render: (r) => r.mpn || '-' },
     { key: 'default_bin_code', labelKey: 'items.defaultBin', mono: true, render: (r) => r.default_bin_code || '\u2013' },
+    { key: 'storage_profile', labelKey: 'items.zone3pl', render: (r) => r.storage_profile || '-' },
     { key: 'category', labelKey: 'items.category', render: (r) => r.category || '-' },
     { key: 'weight_lbs', labelKey: 'items.weight', render: (r) => r.weight_lbs != null ? `${(r.weight_lbs / KG_TO_LB).toFixed(2)} kg` : '-' },
     {
@@ -236,7 +261,18 @@ export default function Items() {
             <span className="detail-label">{t('common.upc')}</span><span className="mono">{detail.upc || '-'}</span>
             <span className="detail-label">{t('items.mpn')}</span><span className="mono">{detail.mpn || '-'}</span>
             <span className="detail-label">{t('items.category')}</span><span>{detail.category || '-'}</span>
+            <span className="detail-label">{t('items.zone3pl')}</span><span>{detail.storage_profile || '-'}</span>
             <span className="detail-label">{t('items.weight')}</span><span>{detail.weight_lbs != null ? `${(detail.weight_lbs / KG_TO_LB).toFixed(3)} kg` : '-'}</span>
+            <span className="detail-label">{t('items.dimensions')}</span>
+            <span>
+              {[detail.length_in, detail.width_in, detail.height_in].every((v) => v != null)
+                ? `${(detail.length_in / CM_TO_IN).toFixed(1)} × ${(detail.width_in / CM_TO_IN).toFixed(1)} × ${(detail.height_in / CM_TO_IN).toFixed(1)} cm`
+                : '-'}
+            </span>
+            <span className="detail-label">{t('items.lotExpiry')}</span>
+            <span>{t(detail.is_lot_tracked ? 'items.tracked' : 'items.notTracked')}</span>
+            <span className="detail-label">{t('items.serial')}</span>
+            <span>{t(detail.is_serial_tracked ? 'items.tracked' : 'items.notTracked')}</span>
             <span className="detail-label">{t('items.reorder')}</span>
             <span>
               {t('items.reorderValue', {
@@ -310,6 +346,15 @@ export default function Items() {
               <label>{t('items.category')}</label>
               <input className="form-input" value={form.category || ''} onChange={(e) => setForm({ ...form, category: e.target.value })} />
             </div>
+            <div className="form-group">
+              <label>{t('items.storageProfile')}</label>
+              <select className="form-select" value={form.storage_profile || ''} onChange={(e) => setForm({ ...form, storage_profile: e.target.value })}>
+                <option value="">{t('items.unclassified')}</option>
+                {STORAGE_PROFILES.map((profile) => (
+                  <option key={profile.value} value={profile.value}>{t(profile.labelKey)}</option>
+                ))}
+              </select>
+            </div>
           </div>
           <div className="form-row">
             <div className="form-group">
@@ -323,6 +368,28 @@ export default function Items() {
           </div>
           <div className="form-row">
             <div className="form-group">
+              <label>{t('items.lengthCm')}</label>
+              <input className="form-input" type="number" min="0" step="0.1" value={form.length_cm ?? ''} onChange={(e) => setForm({ ...form, length_cm: e.target.value })} />
+            </div>
+            <div className="form-group">
+              <label>{t('items.widthCm')}</label>
+              <input className="form-input" type="number" min="0" step="0.1" value={form.width_cm ?? ''} onChange={(e) => setForm({ ...form, width_cm: e.target.value })} />
+            </div>
+            <div className="form-group">
+              <label>{t('items.heightCm')}</label>
+              <input className="form-input" type="number" min="0" step="0.1" value={form.height_cm ?? ''} onChange={(e) => setForm({ ...form, height_cm: e.target.value })} />
+            </div>
+          </div>
+          {form.length_cm && form.width_cm && form.height_cm && (
+            <div className="settings-note" style={{ marginTop: -4, marginBottom: 12 }}>
+              {t('items.cbm', {
+                value: (Number(form.length_cm) * Number(form.width_cm)
+                  * Number(form.height_cm) / 1000000).toFixed(4),
+              })}
+            </div>
+          )}
+          <div className="form-row">
+            <div className="form-group">
               <label>{t('items.reorderPoint')}</label>
               <input className="form-input" type="number" min="0" value={form.reorder_point ?? 0} onChange={(e) => setForm({ ...form, reorder_point: e.target.value })} />
             </div>
@@ -330,6 +397,16 @@ export default function Items() {
               <label>{t('items.reorderQty')}</label>
               <input className="form-input" type="number" min="0" value={form.reorder_qty ?? 0} onChange={(e) => setForm({ ...form, reorder_qty: e.target.value })} />
             </div>
+          </div>
+          <div className="form-row">
+            <label className="checkbox-label">
+              <input type="checkbox" checked={!!form.is_lot_tracked} onChange={(e) => setForm({ ...form, is_lot_tracked: e.target.checked })} />
+              {t('items.trackLot')}
+            </label>
+            <label className="checkbox-label">
+              <input type="checkbox" checked={!!form.is_serial_tracked} onChange={(e) => setForm({ ...form, is_serial_tracked: e.target.checked })} />
+              {t('items.trackSerial')}
+            </label>
           </div>
           <div className="form-group">
             <label>

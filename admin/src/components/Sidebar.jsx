@@ -51,6 +51,8 @@ const NAV = [
       { to: '/inter-warehouse-transfers', labelKey: 'nav.transfers', pageKey: 'inter-warehouse-transfers' },
       { to: '/transfer-orders', labelKey: 'nav.transferOrders', pageKey: 'transfer-orders' },
         { to: '/data', labelKey: 'nav.data', pageKeys: ['warehouses', 'bins', 'zones', 'preferred-bins'] },
+        { to: '/pallets', labelKey: 'nav.pallets', pageKey: 'pallets' },
+        { to: '/expiry', labelKey: 'nav.expiry', pageKey: 'expiry' },
     ],
   },
   {

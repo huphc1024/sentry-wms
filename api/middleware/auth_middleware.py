@@ -102,10 +102,21 @@ def require_auth(f):
         if not row or not row.is_active:
             return jsonify({"error": "Unauthorized"}), 401
 
-        # Reject tokens issued before the last password change
+        # Reject tokens issued before the last password change.
+        #
+        # `<=`, not `<`: iat is whole seconds (int(now.timestamp())) while
+        # password_changed_at carries microseconds, so a token minted in
+        # the same second as the change compares equal and would survive
+        # it. That one-second window is exactly the wrong second to leave
+        # open -- an operator resetting a compromised password expects the
+        # attacker's session to die immediately. The cost of `<=` is that
+        # a login landing in the very same second as its own password
+        # change has to authenticate again, which is both harmless and
+        # the safe direction. No token is minted by the change-password
+        # flow itself, so nothing legitimate is invalidated here.
         if row.password_changed_at and payload.get("iat"):
             changed_ts = int(row.password_changed_at.timestamp())
-            if payload["iat"] < changed_ts:
+            if payload["iat"] <= changed_ts:
                 return jsonify({"error": "Token invalidated by password change"}), 401
 
         # Overwrite JWT claims with live DB values so downstream role/warehouse
@@ -257,11 +268,11 @@ def has_override(override_key: str) -> bool:
     return override_key in allowed
 
 
-def require_admin_or_page_permission(page_key):
+def require_admin_or_page_permission(*page_keys):
     """Web-admin permission gate (mig 061).
 
     ADMIN bypasses the check (g.current_user["allowed_pages"] is None).
-    Any other role must carry the page_key in their allowed_pages
+    Any other role must carry at least one page_key in their allowed_pages
     list (populated at auth time from user_page_permissions),
     otherwise the request is rejected with 403 + {error:
     "Permission denied", page_key: "..."} so the frontend can
@@ -270,6 +281,9 @@ def require_admin_or_page_permission(page_key):
     Drop-in replacement for @require_role("ADMIN") - applied in the
     same decorator slot (after @require_auth, before @validate_body
     / @with_db).
+
+    Accepts one or more page keys, e.g.
+    @require_admin_or_page_permission("bins")
     """
     def decorator(f):
         @wraps(f)
@@ -277,12 +291,12 @@ def require_admin_or_page_permission(page_key):
             user = g.current_user
             allowed = user.get("allowed_pages")
             # ADMIN: allowed is None (sentinel) -> pass.
-            # USER:  allowed is a list; page_key must be in it.
-            if allowed is None or page_key in allowed:
+            # USER:  allowed is a list; any page_key must be in it.
+            if allowed is None or any(k in allowed for k in page_keys):
                 return f(*args, **kwargs)
             return jsonify({
                 "error": "Permission denied",
-                "page_key": page_key,
+                "page_key": page_keys[0],
             }), 403
 
         return decorated

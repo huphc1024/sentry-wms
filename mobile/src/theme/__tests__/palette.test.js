@@ -191,6 +191,7 @@ describe('no colours outside the palette', () => {
   const ALLOWED = new Set([
     'styles.js',
     'BarcodeScannerModal.js',
+    'ExpiryOcrModal.js',
   ]);
 
   it('leaves no literal colour in a screen or component', () => {

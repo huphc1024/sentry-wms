@@ -1,5 +1,5 @@
 """
-Status constants used across the Sentry WMS API.
+Status constants used across the Sơn Lộc WMS API.
 """
 
 import os
@@ -251,6 +251,7 @@ ACTION_WEBHOOK_DELIVERY_REPLAY_BATCH = "WEBHOOK_DELIVERY_REPLAY_BATCH"
 ACTION_CHANNEL_CREATE = "CHANNEL_CREATE"
 ACTION_CHANNEL_UPDATE = "CHANNEL_UPDATE"
 ACTION_CHANNEL_DELETE = "CHANNEL_DELETE"
+ACTION_WAREHOUSE_LAYOUT_UPDATED = "WAREHOUSE_LAYOUT_UPDATED"
 # #232: dispatcher auto-pause when subscription_filter fails
 # Pydantic validation. user_id is the daemon's identity ("system");
 # details.subscription_id + details.parse_error capture the
@@ -344,7 +345,12 @@ ALL_PAGE_KEYS = (
     "items", "vendors",
     "adjustments", "inter-warehouse-transfers", "transfer-orders",
     "warehouses", "bins", "zones", "preferred-bins",
-    "users", "api-tokens", "inbound", "consumer-groups",
+    # Pallet LPN tracking, QR labels, and expiry/disposal supervision.
+    "pallets", "expiry",
+    # POS Activity dashboard (opt-in via pos_activity_enabled setting).
+    "pos-activity",
+    "users",
+    "api-tokens", "inbound", "consumer-groups",
     # Channels (Pipe C): per-channel availability config + the publish
     # health view. Holders see the /channels page and can CRUD channels,
     # pause/resume, and inspect the DLQ.

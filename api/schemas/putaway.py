@@ -11,6 +11,8 @@ class ConfirmPutawayRequest(BaseModel):
     to_bin_id: int = Field(..., gt=0)
     quantity: int = Field(..., gt=0, le=100000)
     lot_number: Optional[str] = Field(None, max_length=100)
+    pallet_id: Optional[int] = Field(None, gt=0)
+    pallet_code: Optional[str] = Field(None, max_length=100)
 
     @model_validator(mode="after")
     def bins_must_differ(self):

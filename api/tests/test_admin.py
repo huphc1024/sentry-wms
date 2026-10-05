@@ -218,6 +218,20 @@ class TestBins:
         assert resp.get_json()["pick_sequence"] == 999
 
 
+# ── Pallet page permissions ───────────────────────────────────────────────────
+
+class TestPalletPagePermission:
+    def test_pallets_denied_without_grant(self, client):
+        _, headers = _web_user_with_pages(client, ["inventory"], username="nopallets")
+        resp = client.get("/api/admin/pallets", headers=headers)
+        assert resp.status_code == 403
+
+    def test_pallets_granted_user(self, client):
+        _, headers = _web_user_with_pages(client, ["pallets"], username="palletsuser")
+        resp = client.get("/api/admin/pallets", headers=headers)
+        assert resp.status_code == 200
+
+
 # ── Items ─────────────────────────────────────────────────────────────────────
 
 class TestItems:
@@ -235,7 +249,6 @@ class TestItems:
         data = resp.get_json()
         assert data["total"] == 9
         assert all(i["category"] == "Flies" for i in data["items"])
-
     def test_get_item_with_inventory(self, client, auth_headers):
         resp = client.get("/api/admin/items/1", headers=auth_headers)
         assert resp.status_code == 200
@@ -382,6 +395,22 @@ class TestPurchaseOrders:
         data = resp.get_json()
         assert data["purchase_order"]["po_number"] == "PO-2026-006"
         assert len(data["lines"]) == 2
+
+    def test_create_purchase_order_defaults_barcode_to_number(self, client, auth_headers):
+        """A PO created without po_barcode must still be scannable.
+
+        The handler intends the number as the fallback, but Pydantic's
+        model_dump() always includes the key -- with None -- so the old
+        dict.get(key, default) never reached its default and every PO
+        created without an explicit barcode landed with NULL. The admin
+        Create PO modal sends no barcode, so this is its normal path.
+        """
+        resp = client.post("/api/admin/purchase-orders", json={
+            "po_number": "PO-2026-007", "warehouse_id": 1,
+            "lines": [{"item_id": 1, "quantity_ordered": 5}],
+        }, headers=auth_headers)
+        assert resp.status_code == 200, resp.get_json()
+        assert resp.get_json()["purchase_order"]["po_barcode"] == "PO-2026-007"
 
     def test_create_purchase_order_duplicate(self, client, auth_headers):
         resp = client.post("/api/admin/purchase-orders", json={
@@ -920,6 +949,17 @@ class TestSalesOrdersPrimaryBin:
         assert resp.status_code == 200
         data = resp.get_json()
         assert data["sales_order"]["so_number"] == "SO-2026-021"
+
+    def test_create_sales_order_defaults_barcode_to_number(self, client, auth_headers):
+        """Same defaulting bug as the PO side: the picking ticket prints
+        so_barcode, so an SO created from the admin modal (which sends
+        none) would have printed a blank barcode."""
+        resp = client.post("/api/admin/sales-orders", json={
+            "so_number": "SO-2026-022", "warehouse_id": 1,
+            "lines": [{"item_id": 1, "quantity_ordered": 1}],
+        }, headers=auth_headers)
+        assert resp.status_code == 200, resp.get_json()
+        assert resp.get_json()["sales_order"]["so_barcode"] == "SO-2026-022"
 
     def test_create_sales_order_reserves_inventory_at_insert(self, client, auth_headers):
         # Closes the structural oversell hole: prior to this change the SO
@@ -2242,7 +2282,6 @@ class TestInventorySearchQ:
         data = resp.get_json()
         assert data["total"] >= 1
         assert all("fly line" in r["item_name"].lower() for r in data["inventory"])
-
     def test_q_with_no_matches_returns_empty(self, client, auth_headers):
         resp = client.get("/api/admin/inventory?warehouse_id=1&q=no-such-item-zzz", headers=auth_headers)
         assert resp.status_code == 200

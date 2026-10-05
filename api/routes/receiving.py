@@ -5,7 +5,7 @@ Receiving endpoints: PO lookup and item receipt submission.
 import uuid
 from datetime import datetime, timezone
 
-from flask import Blueprint, g, jsonify, request
+from flask import Blueprint, current_app, g, jsonify, request
 from sqlalchemy import text
 
 from constants import (
@@ -23,6 +23,7 @@ from services.inventory_service import (
     release_satisfiable_backorders,
     RELEASE_SOURCE_RECEIPT,
 )
+from services.pallet_service import lookup_pallet_by_code
 from services.webhook_dispatcher.backorder_notifier import (
     dispatch_backorder_notification,
 )
@@ -116,6 +117,12 @@ def lookup_po(barcode):
 def receive_items(validated):
     po_id = validated.po_id
     items = validated.items
+    request_customer_id = (validated.customer_id or "").strip() or None
+
+    require_row = g.db.execute(
+        text("SELECT value FROM app_settings WHERE key = 'require_pallet_on_receive'")
+    ).fetchone()
+    require_pallet = bool(require_row and require_row.value == "true")
 
     # Validate PO with warehouse scope at SELECT time (V-026).
     # v1.5.0 #119: FOR UPDATE holds a row lock on the purchase_orders
@@ -185,8 +192,13 @@ def receive_items(validated):
         quantity = item_entry.quantity
         bin_id = item_entry.bin_id
         lot_number = item_entry.lot_number
+        pallet_code = (item_entry.pallet_code or "").strip()
+        expiry_date = item_entry.expiry_date
         serial_number = item_entry.serial_number
         notes = item_entry.notes
+
+        if require_pallet and not pallet_code:
+            return jsonify({"error": "pallet_code is required for receiving"}), 400
 
         # Validate bin exists and belongs to PO warehouse. Memoized per
         # request (_validated_bin_warehouse): a repeated bin_id -- the turbo
@@ -203,6 +215,25 @@ def receive_items(validated):
             if bin_row.warehouse_id != warehouse_id:
                 return jsonify({"error": f"Bin {bin_id} does not belong to this PO's warehouse"}), 400
             _validated_bin_warehouse[bin_id] = bin_row.warehouse_id
+
+        pallet = None
+        if pallet_code:
+            pallet = lookup_pallet_by_code(g.db, pallet_code, for_update=True)
+            if not pallet:
+                return jsonify({"error": f"Pallet {pallet_code} not found"}), 404
+            if pallet.warehouse_id != warehouse_id:
+                return jsonify({"error": f"Pallet {pallet_code} belongs to another warehouse"}), 400
+            if pallet.item_id is not None and pallet.item_id != item_id:
+                return jsonify({"error": f"Pallet {pallet_code} is assigned to another SKU"}), 400
+            if pallet.status != "STORED":
+                return jsonify({"error": f"Pallet {pallet_code} status is {pallet.status}"}), 400
+            if request_customer_id and pallet.customer_id and pallet.customer_id != request_customer_id:
+                return jsonify({"error": f"Pallet {pallet_code} belongs to another customer"}), 400
+            if request_customer_id and not pallet.customer_id:
+                g.db.execute(
+                    text("UPDATE pallets SET customer_id = :cid, updated_at = NOW() WHERE pallet_id = :pid"),
+                    {"cid": request_customer_id, "pid": pallet.pallet_id},
+                )
 
         # Find matching PO line. V-029: SELECT ... FOR UPDATE holds a
         # row lock for the remainder of this transaction so two
@@ -247,9 +278,11 @@ def receive_items(validated):
             text(
                 """
                 INSERT INTO item_receipts (po_id, po_line_id, item_id, quantity_received, bin_id,
-                                           warehouse_id, lot_number, serial_number, received_by, notes, external_id)
+                                           warehouse_id, lot_number, serial_number, pallet_id,
+                                           expiry_date, received_by, notes, external_id)
                 VALUES (:po_id, :po_line_id, :item_id, :quantity, :bin_id,
-                        :warehouse_id, :lot_number, :serial_number, :received_by, :notes, :ext_id)
+                        :warehouse_id, :lot_number, :serial_number, :pallet_id,
+                        :expiry_date, :received_by, :notes, :ext_id)
                 RETURNING receipt_id, external_id, received_at
                 """
             ),
@@ -262,6 +295,8 @@ def receive_items(validated):
                 "warehouse_id": warehouse_id,
                 "lot_number": lot_number,
                 "serial_number": serial_number,
+                "pallet_id": pallet.pallet_id if pallet else None,
+                "expiry_date": expiry_date,
                 "received_by": username,
                 "notes": notes,
                 "ext_id": str(uuid.uuid4()),
@@ -307,7 +342,32 @@ def receive_items(validated):
         )
 
         # 4. Create or update inventory
-        add_inventory(g.db, item_id, bin_id, warehouse_id, quantity, lot_number)
+        add_inventory(
+            g.db, item_id, bin_id, warehouse_id, quantity, lot_number,
+            pallet_id=pallet.pallet_id if pallet else None,
+            expiry_date=expiry_date,
+        )
+        if pallet:
+            g.db.execute(
+                text("""
+                    UPDATE pallets
+                    SET item_id = COALESCE(item_id, :item_id),
+                        bin_id = :bin_id,
+                        quantity = quantity + :quantity,
+                        lot_code = COALESCE(:lot_number, lot_code),
+                        expiry_date = COALESCE(:expiry_date, expiry_date),
+                        updated_at = NOW()
+                    WHERE pallet_id = :pallet_id
+                """),
+                {
+                    "bin_id": bin_id,
+                    "item_id": item_id,
+                    "quantity": quantity,
+                    "lot_number": lot_number,
+                    "expiry_date": expiry_date,
+                    "pallet_id": pallet.pallet_id,
+                },
+            )
 
         # 5. Audit log (deferred)
         # quantity_ordered + quantity_received_before make the row
@@ -505,7 +565,7 @@ def cancel_receiving(validated):
             text(
                 f"""
                 SELECT receipt_id, po_id, po_line_id, item_id, quantity_received,
-                       bin_id, warehouse_id
+                       bin_id, warehouse_id, pallet_id
                 FROM item_receipts
                 WHERE receipt_id = :rid {scope_clause}
                 """
@@ -523,9 +583,23 @@ def cancel_receiving(validated):
             text("""
                 UPDATE inventory SET quantity_on_hand = GREATEST(0, quantity_on_hand - :qty)
                 WHERE item_id = :iid AND bin_id = :bid AND warehouse_id = :wid
+                  AND pallet_id IS NOT DISTINCT FROM :pallet_id
             """),
-            {"qty": receipt.quantity_received, "iid": receipt.item_id, "bid": receipt.bin_id, "wid": receipt.warehouse_id},
+            {
+                "qty": receipt.quantity_received, "iid": receipt.item_id,
+                "bid": receipt.bin_id, "wid": receipt.warehouse_id,
+                "pallet_id": receipt.pallet_id,
+            },
         )
+        if receipt.pallet_id:
+            g.db.execute(
+                text("""
+                    UPDATE pallets
+                    SET quantity = GREATEST(0, quantity - :qty), updated_at = NOW()
+                    WHERE pallet_id = :pallet_id
+                """),
+                {"qty": receipt.quantity_received, "pallet_id": receipt.pallet_id},
+            )
 
         # 2. Reverse PO line quantity
         g.db.execute(
