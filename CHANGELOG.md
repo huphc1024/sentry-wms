@@ -4,6 +4,8 @@ All notable changes to Sơn Lộc WMS will be documented in this file.
 
 ## [Unreleased]
 
+- Added read-only dashboard endpoints `GET /api/admin/dashboard/overview` and `/dashboard/sales` (KPIs, gap-filled daily series, status/zone/channel breakdowns).
+
 "Customer portal" arc. A 3PL customer can now see its own stock, inbound
 and invoices, and submit outbound requests, through a portal of its own -
 and a customer's ERP can be given an API token confined to that same
@@ -34,6 +36,8 @@ until a mobile release is made from it.
 - **Customer portal SPA** (`sentry-wms/portal`): a third Vite workspace with its own image, origin and nginx hardening, published on host port 8081, rather than a route inside the admin panel - a customer-facing bundle sharing an origin with the operator panel shares its cookie jar and its CSP, and every admin page added later becomes a surface a tenant could reach. Pages: sign-in, dashboard, inventory, orders (with submission), inbound, invoices, change password. Dev overlay runs it on port 3100; `PORTAL_BIND_HOST` (loopback by default) controls the published bind.
 - **Customer-bound API tokens**: enforcement for `wms_tokens.customer_id`, which migration 095 added and nothing read. A bound token's inbound writes are stamped with the owning customer and refused when they name another or when the record they address already belongs to someone else; `snapshot.inventory` filters to that customer's items; `inventory_update` answers 404 for an item owned by another customer. Surfaces with no owning-customer dimension - the event feed, dockd, POS - and the shared `customers` / `vendors` inbound resources are refused outright rather than served unscoped. Issued from the API tokens page via a new **Customer binding** field, which will not issue a binding the enforcement layer cannot honour.
 - **Docs**: [customer-api.md](docs/customer-api.md) (both customer surfaces, the scoping rules and the operator checklist), [portal-openapi.yaml](docs/api/portal-openapi.yaml) with a route-parity test, a *Customer tenancy* pattern in [patterns.md](docs/patterns.md), and a Customer persona in [role-matrix.md](docs/role-matrix.md).
+- **AI suggestions, phase 1** (`/api/admin/ai/*`, migration 097): replenishment, near-expiry and cycle-count-review suggestions for operators. Free rules mode (deterministic, bilingual vi/en) by default; set `ANTHROPIC_API_KEY` to have Claude rank and rewrite the same candidates, with any AI error falling back to rules. Read-only (never writes inventory), allow-listed/redacted context, `ai_suggestions_enabled` flag and `ai_daily_call_limit` cap in `app_settings`, one `AI_SUGGESTION` audit row per request. See `docs/ai-suggestions.md`.
+- **AI suggestions, phase 2**: `POST /api/admin/ai/putaway` (destination bin per staged line: bins already holding the item, then preferred, then empty bins in the item's zone, capacity-checked; the LLM may only choose among the computed bins) and `POST /api/admin/ai/backorders` (per WAITING_STOCK order, by order number only: release, wait for open PO, transfer from another accessible warehouse, partial ship or create PO, with stock allocated oldest order first). Panels on Put Away, Backorders (Waiting tab) and the dashboard Overview. No migration.
 
 ### Changed
 
@@ -94,6 +98,7 @@ until a mobile release is made from it.
 - **094** - `customer_users` + `customer_user_permissions`. `must_change_password` defaults TRUE, so every provisioned login starts behind a forced change.
 - **095** - `wms_tokens.customer_id`. NULL = operator token, unscoped; every token issued before this keeps working unchanged.
 - **096** - `portal_order_seq`, the sequence backing portal-submitted SO numbers. A timestamp or a `COUNT(*)` would collide under concurrent submissions from the same customer.
+- **097** - `ai_suggestion_feedback` (thumbs up/down on AI suggestions; no free text, no PII).
 
 ## [v1.37.0] - 2026-08-20
 

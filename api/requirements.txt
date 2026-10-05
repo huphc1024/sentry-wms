@@ -19,3 +19,4 @@ simpleeval==1.0.5
 xhtml2pdf==0.2.17
 pytest==9.0.3
 pytest-cov==7.1.0
+anthropic==1.11.0
