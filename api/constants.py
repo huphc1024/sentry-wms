@@ -351,6 +351,8 @@ ALL_PAGE_KEYS = (
     "vehicle-movements",
     # Warehouse Simulation: 2D floor plan with bin positions and item categories.
     "warehouse-simulation",
+    # Commercial operations: customers, contracts, rate cards and invoices.
+    "billing",
     # POS Activity dashboard (opt-in via pos_activity_enabled setting).
     "pos-activity",
     "users",

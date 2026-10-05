@@ -1,0 +1,303 @@
+<!doctype html>
+<html lang="vi">
+<head>
+  <meta charset="utf-8" />
+  <title>{{ contract.contract_number }} - {{ contract.contract_name }}</title>
+  <style>
+    @page {
+      size: A4;
+      margin: 18mm 17mm 20mm;
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      color: #172033;
+      font-family: "DejaVu Sans", Arial, sans-serif;
+      font-size: 10.5px;
+      line-height: 1.55;
+    }
+    .national-header { text-align: center; margin-bottom: 22px; }
+    .national-header strong { display: block; font-size: 12px; letter-spacing: .2px; }
+    .national-header span {
+      display: inline-block;
+      border-bottom: 1px solid #172033;
+      padding: 0 18px 3px;
+      font-weight: 600;
+    }
+    .document-title { text-align: center; margin: 0 0 20px; }
+    .document-title h1 {
+      color: #8e2716;
+      font-size: 21px;
+      letter-spacing: .6px;
+      margin: 0 0 3px;
+    }
+    .document-title h2 { font-size: 12px; margin: 0; }
+    .legal-basis { color: #475569; font-style: italic; margin-bottom: 16px; }
+    /* xhtml2pdf ignores display:grid, so the two-column blocks are tables. */
+    table.party-grid {
+      border: 1px solid #cbd5e1;
+      font-size: 10.5px;
+      margin: 10px 0 18px;
+      page-break-inside: avoid;
+      width: 100%;
+    }
+    table.party-grid td.party {
+      border: 0;
+      padding: 12px 14px;
+      vertical-align: top;
+      width: 50%;
+    }
+    table.party-grid td.party-b { border-left: 1px solid #cbd5e1; }
+    .party-label {
+      color: #8e2716;
+      font-size: 11px;
+      font-weight: 700;
+      margin-bottom: 7px;
+      text-transform: uppercase;
+    }
+    .party-name { font-size: 12px; font-weight: 700; margin-bottom: 5px; }
+    .field { margin: 2px 0; }
+    .field-label { color: #64748b; }
+    .article { margin-top: 13px; }
+    .article h3 {
+      border-left: 3px solid #8e2716;
+      color: #8e2716;
+      font-size: 11px;
+      margin: 0 0 5px;
+      padding-left: 7px;
+      text-transform: uppercase;
+    }
+    .article p { margin: 3px 0; text-align: justify; }
+    .article ol { margin: 4px 0; padding-left: 20px; }
+    .article li { margin: 3px 0; text-align: justify; }
+    .service-box {
+      background: #f8fafc;
+      border: 1px solid #e2e8f0;
+      margin: 7px 0;
+      padding: 8px 10px;
+    }
+    table {
+      border-collapse: collapse;
+      font-size: 9.5px;
+      margin: 8px 0;
+      width: 100%;
+    }
+    th, td { border: 1px solid #cbd5e1; padding: 6px; vertical-align: top; }
+    th { background: #f1f5f9; color: #334155; text-align: left; }
+    .right { text-align: right; }
+    .muted { color: #64748b; }
+    .special-terms {
+      border: 1px dashed #94a3b8;
+      margin-top: 7px;
+      padding: 8px 10px;
+      white-space: pre-wrap;
+    }
+    table.signatures {
+      font-size: 10.5px;
+      margin-top: 24px;
+      page-break-inside: avoid;
+      text-align: center;
+      width: 100%;
+    }
+    table.signatures td.signature {
+      border: 0;
+      height: 125px;
+      padding: 0 25px;
+      text-align: center;
+      vertical-align: top;
+      width: 50%;
+    }
+    .signature strong { display: block; font-size: 11px; }
+    .signature span { color: #64748b; font-style: italic; }
+    .footer-note {
+      border-top: 1px solid #cbd5e1;
+      color: #64748b;
+      font-size: 8.5px;
+      margin-top: 22px;
+      padding-top: 7px;
+    }
+  </style>
+</head>
+<body>
+  <div class="national-header">
+    <strong>CỘNG HÒA XÃ HỘI CHỦ NGHĨA VIỆT NAM</strong>
+    <span>Độc lập – Tự do – Hạnh phúc</span>
+  </div>
+
+  <div class="document-title">
+    <h1>HỢP ĐỒNG DỊCH VỤ LOGISTICS VÀ KHO BÃI</h1>
+    <h2>Số: {{ contract.contract_number }}</h2>
+  </div>
+
+  <div class="legal-basis">
+    Căn cứ Bộ luật Dân sự năm 2015, Luật Thương mại năm 2005, Nghị định
+    163/2017/NĐ-CP về kinh doanh dịch vụ logistics và nhu cầu của hai bên.
+  </div>
+  <p>Hôm nay, các bên thống nhất giao kết hợp đồng với các nội dung sau:</p>
+
+  <table class="party-grid">
+    <tr>
+    <td class="party">
+      <div class="party-label">Bên cung cấp dịch vụ (Bên A)</div>
+      <div class="party-name">{{ provider.name }}</div>
+      <div class="field"><span class="field-label">Địa chỉ:</span> {{ provider.address or '........................................................' }}</div>
+      <div class="field"><span class="field-label">Mã số thuế:</span> ........................................................</div>
+      <div class="field"><span class="field-label">Đại diện:</span> ........................................................</div>
+      <div class="field"><span class="field-label">Chức vụ:</span> ........................................................</div>
+      <div class="field"><span class="field-label">Điện thoại:</span> ........................................................</div>
+    </td>
+    <td class="party party-b">
+      <div class="party-label">Khách hàng (Bên B)</div>
+      <div class="party-name">{{ contract.customer_name }}</div>
+      <div class="field"><span class="field-label">Mã khách hàng:</span> {{ contract.customer_code }}</div>
+      <div class="field"><span class="field-label">Địa chỉ:</span> {{ contract.billing_address or contract.shipping_address or '........................................................' }}</div>
+      <div class="field"><span class="field-label">Mã số thuế:</span> {{ contract.tax_id or '........................................................' }}</div>
+      <div class="field"><span class="field-label">Đại diện:</span> {{ contract.contact_person or '........................................................' }}</div>
+      <div class="field"><span class="field-label">Điện thoại/Email:</span> {{ contract.phone or '-' }}{% if contract.email %} · {{ contract.email }}{% endif %}</div>
+    </td>
+    </tr>
+  </table>
+
+  <section class="article">
+    <h3>Điều 1. Phạm vi dịch vụ</h3>
+    <p>1.1. Bên A cung cấp cho Bên B các dịch vụ logistics gồm tiếp nhận, lưu kho,
+      bảo quản, quản lý tồn kho, soạn hàng, đóng gói, xuất hàng và các dịch vụ giá
+      trị gia tăng khác được hai bên xác nhận.</p>
+    <div class="service-box">
+      <strong>{{ contract.contract_name }}</strong><br />
+      Kho áp dụng:
+      {% if contract.warehouse_name %}
+        {{ contract.warehouse_name }} ({{ contract.warehouse_code }}){% if contract.warehouse_address %} – {{ contract.warehouse_address }}{% endif %}
+      {% else %}
+        Các kho do Bên A quản lý và được hai bên thống nhất theo từng yêu cầu.
+      {% endif %}
+    </div>
+    <p>1.2. Hàng hóa phải có nguồn gốc hợp pháp, thông tin nhận diện và điều kiện
+      bảo quản đầy đủ. Hàng cấm, nguy hiểm hoặc cần điều kiện đặc biệt chỉ được
+      tiếp nhận khi có thỏa thuận bằng văn bản.</p>
+  </section>
+
+  <section class="article">
+    <h3>Điều 2. Thời hạn và hiệu lực</h3>
+    <p>2.1. Hợp đồng có hiệu lực từ ngày <strong>{{ contract.start_date.strftime('%d/%m/%Y') }}</strong>
+      {% if contract.end_date %}
+        đến hết ngày <strong>{{ contract.end_date.strftime('%d/%m/%Y') }}</strong>.
+      {% else %}
+        và không xác định ngày kết thúc cho đến khi một bên chấm dứt theo hợp đồng.
+      {% endif %}
+    </p>
+    <p>2.2. Trạng thái tại thời điểm in: <strong>{{ contract.status }}</strong>. Mọi
+      gia hạn, tạm ngừng hoặc chấm dứt phải được xác nhận bằng văn bản.</p>
+  </section>
+
+  <section class="article">
+    <h3>Điều 3. Phí dịch vụ và thanh toán</h3>
+    <p>3.1. Chu kỳ đối soát: <strong>
+      {% if contract.billing_cycle == 'MONTHLY' %}Hàng tháng{% elif contract.billing_cycle == 'WEEKLY' %}Hàng tuần{% else %}Theo phát sinh{% endif %}
+    </strong>. Đồng tiền thanh toán: <strong>{{ contract.currency }}</strong>. Bên B
+      thanh toán trong vòng <strong>{{ contract.payment_terms_days }} ngày</strong>
+      kể từ ngày nhận chứng từ hợp lệ.</p>
+    {% if rates %}
+    <table>
+      <thead>
+        <tr>
+          <th>Dịch vụ</th>
+          <th>Loại phí</th>
+          <th>Đơn vị</th>
+          <th class="right">Đơn giá</th>
+          <th>Hiệu lực</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for rate in rates %}
+        <tr>
+          <td>{{ rate.rate_name or rate.service_type }}</td>
+          <td>{{ rate.service_type }}</td>
+          <td>{{ rate.unit }}</td>
+          <td class="right">{{ '{:,.2f}'.format(rate.unit_price) }} {{ rate.currency }}</td>
+          <td>
+            {{ rate.effective_from.strftime('%d/%m/%Y') if rate.effective_from else 'Theo hợp đồng' }}
+            {% if rate.effective_to %} – {{ rate.effective_to.strftime('%d/%m/%Y') }}{% endif %}
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+    {% else %}
+    <p class="muted">3.2. Bảng giá chi tiết được lập thành phụ lục hoặc xác nhận
+      riêng và là bộ phận không tách rời của hợp đồng.</p>
+    {% endif %}
+    <p>3.3. Thuế, phụ phí và các dịch vụ ngoài phạm vi chỉ được tính theo quy định
+      pháp luật và thỏa thuận/đề nghị dịch vụ đã được Bên B chấp thuận.</p>
+  </section>
+
+  <section class="article">
+    <h3>Điều 4. Quyền và nghĩa vụ của Bên A</h3>
+    <ol>
+      <li>Tổ chức cung cấp dịch vụ an toàn, đúng quy trình và lưu vết nghiệp vụ trên hệ thống quản lý kho.</li>
+      <li>Bảo quản hàng hóa theo thông tin, chỉ dẫn hợp lệ do Bên B cung cấp; thông báo kịp thời khi phát hiện sai lệch hoặc rủi ro.</li>
+      <li>Cung cấp báo cáo nhập, xuất, tồn và chứng từ đối soát theo chu kỳ đã thống nhất.</li>
+      <li>Được yêu cầu Bên B thanh toán phí dịch vụ và chi phí hợp lý, đúng hạn.</li>
+    </ol>
+  </section>
+
+  <section class="article">
+    <h3>Điều 5. Quyền và nghĩa vụ của Bên B</h3>
+    <ol>
+      <li>Cung cấp chính xác thông tin hàng hóa, lô, hạn sử dụng, điều kiện bảo quản và các chứng từ pháp lý liên quan.</li>
+      <li>Gửi yêu cầu nhập/xuất trong thời gian xử lý đã thống nhất và phối hợp kiểm đếm, đối soát chênh lệch.</li>
+      <li>Thanh toán đầy đủ, đúng hạn; chịu trách nhiệm về tính hợp pháp và chất lượng nội tại của hàng hóa.</li>
+      <li>Kiểm tra báo cáo và thông báo khiếu nại bằng văn bản trong thời hạn hợp lý kể từ khi nhận báo cáo/chứng từ.</li>
+    </ol>
+  </section>
+
+  <section class="article">
+    <h3>Điều 6. Trách nhiệm, bồi thường và bất khả kháng</h3>
+    <p>6.1. Bên vi phạm phải khắc phục thiệt hại trực tiếp, thực tế do lỗi của mình
+      gây ra. Phạm vi và giới hạn bồi thường được xác định theo hồ sơ hàng hóa,
+      mức độ lỗi, thỏa thuận giữa hai bên và pháp luật hiện hành.</p>
+    <p>6.2. Một bên không chịu trách nhiệm cho việc chậm hoặc không thực hiện nghĩa
+      vụ do sự kiện bất khả kháng nếu đã thông báo kịp thời và áp dụng biện pháp
+      hợp lý để giảm thiểu thiệt hại.</p>
+  </section>
+
+  <section class="article">
+    <h3>Điều 7. Bảo mật và dữ liệu</h3>
+    <p>Hai bên bảo mật thông tin thương mại, bảng giá, dữ liệu hàng hóa và dữ liệu
+      vận hành; chỉ sử dụng cho việc thực hiện hợp đồng hoặc theo yêu cầu hợp pháp
+      của cơ quan có thẩm quyền.</p>
+  </section>
+
+  <section class="article">
+    <h3>Điều 8. Giải quyết tranh chấp và điều khoản chung</h3>
+    <p>8.1. Tranh chấp được ưu tiên giải quyết bằng thương lượng. Nếu không đạt
+      thỏa thuận, tranh chấp được giải quyết tại cơ quan tài phán có thẩm quyền
+      theo pháp luật Việt Nam.</p>
+    <p>8.2. Hợp đồng, phụ lục, bảng giá và các xác nhận dịch vụ hợp lệ tạo thành
+      toàn bộ thỏa thuận giữa hai bên. Hợp đồng được lập thành 02 bản có giá trị
+      pháp lý như nhau, mỗi bên giữ 01 bản.</p>
+    {% if contract.notes %}
+    <div class="special-terms"><strong>Điều khoản bổ sung:</strong>
+{{ contract.notes }}</div>
+    {% endif %}
+  </section>
+
+  <table class="signatures">
+    <tr>
+      <td class="signature">
+        <strong>ĐẠI DIỆN BÊN A</strong>
+        <span>(Ký, ghi rõ họ tên và đóng dấu)</span>
+      </td>
+      <td class="signature">
+        <strong>ĐẠI DIỆN BÊN B</strong>
+        <span>(Ký, ghi rõ họ tên và đóng dấu)</span>
+      </td>
+    </tr>
+  </table>
+
+  <div class="footer-note">
+    Mẫu hợp đồng được hệ thống tạo tự động từ dữ liệu đã khai báo. Các bên cần rà
+    soát thông tin pháp nhân, phạm vi trách nhiệm và điều khoản chuyên biệt trước khi ký.
+  </div>
+</body>
+</html>

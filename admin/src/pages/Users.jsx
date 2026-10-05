@@ -54,6 +54,13 @@ const ROLE_PRESETS = [
     page_keys: ['dashboard', 'inventory', 'warehouse-simulation'],
   },
   {
+    id: 'billing_clerk',
+    labelKey: 'users.presetBillingClerk',
+    role: 'USER',
+    allowed_functions: [],
+    page_keys: ['dashboard', 'billing'],
+  },
+  {
     id: 'receiver',
     labelKey: 'users.presetReceiver',
     role: 'USER',
@@ -110,6 +117,12 @@ const PAGE_GROUPS = [
       { key: 'pallets', labelKey: 'nav.pallets' },
       { key: 'expiry', labelKey: 'nav.expiry' },
       { key: 'vehicle-movements', labelKey: 'nav.vehicleMovements' },
+    ],
+  },
+  {
+    labelKey: 'nav.billing',
+    pages: [
+      { key: 'billing', labelKey: 'users.pageBilling' },
     ],
   },
   {

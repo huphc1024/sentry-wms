@@ -1,0 +1,27 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://sentry-wms.example/events/invoice.issued/1.json",
+  "title": "invoice.issued v1",
+  "description": "A billing invoice has been issued (status SENT) to a 3PL customer.",
+  "type": "object",
+  "required": [
+    "invoice_id",
+    "invoice_number",
+    "customer_id",
+    "total_amount",
+    "currency",
+    "issued_at"
+  ],
+  "additionalProperties": false,
+  "properties": {
+    "invoice_id": { "type": "integer", "minimum": 1 },
+    "invoice_number": { "type": ["string", "null"] },
+    "customer_id": { "type": "string" },
+    "contract_id": { "type": ["integer", "null"] },
+    "total_amount": { "type": "number" },
+    "currency": { "type": "string" },
+    "period_start": { "type": ["string", "null"], "format": "date" },
+    "period_end": { "type": ["string", "null"], "format": "date" },
+    "issued_at": { "type": "string", "format": "date-time" }
+  }
+}

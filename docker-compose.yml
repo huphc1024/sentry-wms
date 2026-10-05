@@ -298,7 +298,7 @@ services:
       - ./api:/app
       - ./db:/db
 
-  # Schedules beat_schedule in jobs/__init__.py (expiry,
+  # Schedules beat_schedule in jobs/__init__.py (storage billing, expiry,
   # cleanup). Worker alone does not fire periodic tasks.
   celery-beat:
     build: ./api

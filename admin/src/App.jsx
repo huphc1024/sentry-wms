@@ -48,6 +48,9 @@ import WarehouseSimulation from './pages/WarehouseSimulation.jsx';
 import Pallets from './pages/Pallets.jsx';
 import Expiry from './pages/Expiry.jsx';
 import VehicleMovements from './pages/VehicleMovements.jsx';
+import RateCards from './pages/RateCards.jsx';
+import Invoices from './pages/Invoices.jsx';
+import Customers from './pages/Customers.jsx';
 
 function ProtectedRoute({ children }) {
   const { user, loading } = useAuth();
@@ -155,6 +158,9 @@ export default function App() {
         <Route path="/pallets" element={<ErrorBoundary fallbackMessage={t('errors.couldNotLoad', { name: t('nav.pallets') })}><Pallets /></ErrorBoundary>} />
         <Route path="/expiry" element={<ErrorBoundary fallbackMessage={t('errors.couldNotLoad', { name: t('nav.expiry') })}><Expiry /></ErrorBoundary>} />
         <Route path="/vehicle-movements" element={<ErrorBoundary fallbackMessage={t('errors.couldNotLoad', { name: t('nav.vehicleMovements') })}><VehicleMovements /></ErrorBoundary>} />
+        <Route path="/customers" element={<ErrorBoundary fallbackMessage={t('errors.couldNotLoad', { name: t('nav.customers') })}><Customers /></ErrorBoundary>} />
+        <Route path="/rate-cards" element={<ErrorBoundary fallbackMessage={t('errors.couldNotLoad', { name: t('nav.rateCards') })}><RateCards /></ErrorBoundary>} />
+        <Route path="/invoices" element={<ErrorBoundary fallbackMessage={t('errors.couldNotLoad', { name: t('nav.invoices') })}><Invoices /></ErrorBoundary>} />
       </Route>
     </Routes>
   );

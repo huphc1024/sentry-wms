@@ -49,6 +49,7 @@ V150_CATALOG: Tuple[Tuple[str, int, str], ...] = (
     # Phase 5 partner-facing gate / commercial events.
     ("inbound.completed", 1, "purchase_order"),
     ("outbound.shipped", 1, "sales_order"),
+    ("invoice.issued", 1, "billing_invoice"),
     ("pick.confirmed",       1, "sales_order"),
     ("pack.confirmed",       1, "sales_order"),
     ("ship.confirmed",       1, "sales_order"),

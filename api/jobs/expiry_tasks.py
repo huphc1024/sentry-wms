@@ -8,6 +8,7 @@ from celery import shared_task
 from sqlalchemy import text
 
 from services.events_service import emit_event
+from services.billing_service import create_billing_event
 
 logger = logging.getLogger(__name__)
 
@@ -177,6 +178,8 @@ def process_expiry(db, warehouse_id=None):
         disposal_delay = int(row.value) if row and row.value is not None else 7
     except Exception:
         disposal_delay = 7
+    charge_row = db.execute(text("SELECT value FROM app_settings WHERE key = 'charge_customer_on_dispose'")).fetchone()
+    charge_customer = bool(charge_row and charge_row.value == "true")
 
     if not auto_dispose:
         return
@@ -243,6 +246,15 @@ def process_expiry(db, warehouse_id=None):
                     source_txn_id=str(uuid.uuid4()),
                     payload=payload,
                 )
+
+                # optional billing: charge customer for disposal if pallet has customer_id
+                if charge_customer and pallet_id:
+                    cust = db.execute(text("SELECT customer_id, warehouse_id FROM pallets WHERE pallet_id = :pid"), {"pid": pallet_id}).fetchone()
+                    if cust and cust.customer_id:
+                        create_billing_event(
+                            db, cust.customer_id, wid,
+                            "DISPOSAL", "PALLET", pallet_id, 1,
+                        )
         except Exception:
             logger.exception("failed to dispose quarantine inventory_id=%s", qr.inventory_id)
 

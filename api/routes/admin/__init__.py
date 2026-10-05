@@ -50,6 +50,7 @@ from routes.admin import (  # noqa: E402, F401
     admin_channels,
     admin_connectors,
     admin_consumer_groups,
+    admin_customers,
     admin_inbound,
     admin_items,
     admin_notifications,
@@ -65,5 +66,7 @@ from routes.admin import (  # noqa: E402, F401
     admin_warehouse_map,
     admin_webhooks,
     admin_pallets,
+    admin_billing,
+    admin_rate_cards,
     admin_vehicle_movements,
 )

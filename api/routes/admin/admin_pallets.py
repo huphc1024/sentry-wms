@@ -203,6 +203,10 @@ def ship_pallet(pallet_id):
     # record vehicle movement if provided
     if vehicle_plate:
         g.db.execute(text('INSERT INTO vehicle_movements (movement_type, vehicle_plate, driver_name, reference_type, reference_id, related_pallet_id, recorded_by, recorded_at) VALUES (:mt, :plate, :driver, :rt, :rid, :pallet, :user, NOW())'), {'mt': 'OUTBOUND', 'plate': vehicle_plate, 'driver': driver_name, 'rt': 'PALLET', 'rid': pallet_id, 'pallet': pallet_id, 'user': g.current_user['username']})
+    # create billing event OUTBOUND if pallet has customer
+    if p.customer_id:
+        from services.billing_service import create_billing_event as svc_create_billing_event
+        svc_create_billing_event(g.db, p.customer_id, p.warehouse_id, 'OUTBOUND', 'PALLET', pallet_id, 1)
     g.db.commit()
     return jsonify({'message': 'shipped'}), 200
 

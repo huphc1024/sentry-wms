@@ -12,6 +12,7 @@ from middleware.auth_middleware import require_auth, check_warehouse_access
 from middleware.db import with_db
 from schemas.putaway import ConfirmPutawayRequest, UpdatePreferredRequest
 from services.audit_service import write_audit_log
+from services.billing_service import create_billing_event
 from services.inventory_service import move_inventory
 from services.pallet_service import lookup_pallet_by_code
 from constants import ACTION_PUTAWAY, BIN_PICKABLE, BIN_STAGING, BIN_PICKABLE_STAGING
@@ -413,6 +414,23 @@ def confirm_putaway(validated):
             """),
             {"bin_id": to_bin_id, "pallet_id": pallet_id},
         )
+        pallet_bill = g.db.execute(
+            text("""
+                SELECT customer_id, warehouse_id
+                FROM pallets WHERE pallet_id = :pallet_id
+            """),
+            {"pallet_id": pallet_id},
+        ).fetchone()
+        if pallet_bill and pallet_bill.customer_id:
+            create_billing_event(
+                g.db,
+                pallet_bill.customer_id,
+                pallet_bill.warehouse_id or warehouse_id,
+                "HANDLING",
+                "PALLET",
+                pallet_id,
+                1,
+            )
 
     # 4. Audit
     write_audit_log(

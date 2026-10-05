@@ -57,6 +57,14 @@ const NAV = [
         { to: '/vehicle-movements', labelKey: 'nav.vehicleMovements', pageKey: 'vehicle-movements' },
     ],
   },
+    {
+      labelKey: 'nav.billing',
+      items: [
+        { to: '/customers', labelKey: 'nav.customers', pageKey: 'billing' },
+        { to: '/rate-cards', labelKey: 'nav.rateCards', pageKey: 'billing' },
+        { to: '/invoices', labelKey: 'nav.invoices', pageKey: 'billing' },
+      ],
+    },
   {
     labelKey: 'nav.system',
     items: [

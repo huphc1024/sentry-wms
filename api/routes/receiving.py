@@ -17,6 +17,7 @@ from middleware.auth_middleware import require_auth, warehouse_scope_clause
 from middleware.db import with_db
 from schemas.receiving import CancelReceivingRequest, ReceiveItemsRequest
 from services.audit_service import write_audit_log
+from services.billing_service import create_billing_event
 from services.events_service import emit_event, get_user_external_id, resolve_source_external_id
 from services.inventory_service import (
     add_inventory,
@@ -368,6 +369,18 @@ def receive_items(validated):
                     "pallet_id": pallet.pallet_id,
                 },
             )
+            bill_customer = request_customer_id or pallet.customer_id
+            if bill_customer:
+                # One INBOUND charge per pallet per service day (unit = PALLET).
+                create_billing_event(
+                    g.db,
+                    bill_customer,
+                    warehouse_id,
+                    "INBOUND",
+                    "PALLET",
+                    pallet.pallet_id,
+                    1,
+                )
 
         # 5. Audit log (deferred)
         # quantity_ordered + quantity_received_before make the row

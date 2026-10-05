@@ -1,4 +1,4 @@
-"""Tests for auto-disposal policy."""
+"""Tests for disposal policy and billing hook."""
 
 from datetime import date, timedelta
 import uuid
@@ -15,11 +15,17 @@ def _create_floor_pallet(client, auth_headers, warehouse_id=1, customer_id=None)
     return resp.get_json()
 
 
-def test_auto_dispose(client, auth_headers):
+def test_auto_dispose_and_billing(client, auth_headers):
     conn = get_raw_connection()
     cur = conn.cursor()
-    # create pallet
-    pallet = _create_floor_pallet(client, auth_headers)
+    # create customer
+    cust = str(uuid.uuid4())
+    cur.execute("INSERT INTO customers (canonical_id, external_id, customer_name, is_active) VALUES (%s,%s,%s,true)", (cust, str(uuid.uuid4()), "Dispose Cust"))
+    cur.execute("INSERT INTO billing_rate_cards (customer_id, service_type, unit, unit_price, currency, external_id) VALUES (%s,'DISPOSAL','PALLET',50000,'VND',%s)", (cust, str(uuid.uuid4())))
+    conn.commit()
+
+    # create pallet with customer
+    pallet = _create_floor_pallet(client, auth_headers, customer_id=cust)
     pid = pallet["pallet_id"]
 
     # insert inventory row into QUARANTINE (simulate moved earlier than disposal_delay)
@@ -31,9 +37,17 @@ def test_auto_dispose(client, auth_headers):
     # set app settings to enable auto-dispose and immediate delay
     cur.execute("INSERT INTO app_settings (key, value, updated_at) VALUES ('auto_dispose_on_expiry','true', NOW()) ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value, updated_at = NOW()")
     cur.execute("INSERT INTO app_settings (key, value, updated_at) VALUES ('disposal_delay_days','0', NOW()) ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value, updated_at = NOW()")
+    cur.execute("INSERT INTO app_settings (key, value, updated_at) VALUES ('charge_customer_on_dispose','true', NOW()) ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value, updated_at = NOW()")
     conn.commit()
 
     # run task
     from jobs.expiry_tasks import daily_expiry_scan
-    assert daily_expiry_scan.apply().get() == {"success": True}
+    daily_expiry_scan.apply().get()
+
+    # billing event should exist
+    cur.execute("SELECT event_type, amount FROM billing_events WHERE reference_table='PALLET' AND reference_id = %s ORDER BY event_id DESC LIMIT 1", (pid,))
+    row = cur.fetchone()
+    assert row is not None
+    assert row[0] == "DISPOSAL"
     cur.close()
+

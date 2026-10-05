@@ -118,6 +118,48 @@ class TestPalletReceive:
         ok = _receive(client, auth_headers, pallet_code=pallet["pallet_code"], quantity=1)
         assert ok.status_code == 200
 
+    def test_inbound_billing_event_when_customer_on_pallet(self, client, auth_headers):
+        conn = get_raw_connection()
+        cur = conn.cursor()
+        cust_id = str(uuid.uuid4())
+        cur.execute(
+            """
+            INSERT INTO customers (canonical_id, external_id, customer_name, is_active)
+            VALUES (%s, %s, %s, true)
+            """,
+            (cust_id, str(uuid.uuid4()), "Pallet Receive Customer"),
+        )
+        cur.execute(
+            """
+            INSERT INTO billing_rate_cards (customer_id, service_type, unit, unit_price, currency, external_id)
+            VALUES (%s, 'INBOUND', 'UNIT', 10000, 'VND', %s)
+            """,
+            (cust_id, str(uuid.uuid4())),
+        )
+        cur.close()
+
+        pallet = _create_floor_pallet(client, auth_headers, customer_id=cust_id)
+        resp = _receive(client, auth_headers, pallet_code=pallet["pallet_code"], quantity=2)
+        assert resp.status_code == 200
+
+        cur = conn.cursor()
+        cur.execute(
+            """
+            SELECT event_type, reference_id, quantity, amount
+              FROM billing_events
+             WHERE customer_id = %s AND event_type = 'INBOUND'
+             ORDER BY event_id DESC LIMIT 1
+            """,
+            (cust_id,),
+        )
+        row = cur.fetchone()
+        cur.close()
+        assert row is not None
+        assert row[0] == "INBOUND"
+        assert row[1] == pallet["pallet_id"]
+        assert float(row[2]) == 2.0
+        assert float(row[3]) == 20000.0
+
 
 class TestPalletPutaway:
     def test_putaway_requires_matching_pallet_scan(self, client, auth_headers):

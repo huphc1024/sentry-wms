@@ -886,6 +886,18 @@ def confirm_pick(db, pick_task_id, scanned_barcode, quantity_picked, username):
                 "batch_id": task.batch_id,
             },
         )
+        # 3PL pick charge: one PICK event per pick_task when pallet has a customer.
+        if task.pallet_id and pallet and pallet.customer_id:
+            from services.billing_service import create_billing_event
+            create_billing_event(
+                db,
+                pallet.customer_id,
+                pallet.warehouse_id or batch.warehouse_id,
+                "PICK",
+                "PICK_TASK",
+                pick_task_id,
+                quantity_picked,
+            )
 
     db.commit()
 

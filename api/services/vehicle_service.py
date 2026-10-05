@@ -4,6 +4,7 @@ from datetime import datetime, timezone
 
 from sqlalchemy import text
 
+from services.billing_service import create_billing_event
 from services.events_service import emit_event
 
 
@@ -139,6 +140,22 @@ def check_in(
             "wid": warehouse_id,
         },
     ).fetchone()
+
+    if related_pallet_id:
+        pallet = db.execute(
+            text("SELECT customer_id, warehouse_id FROM pallets WHERE pallet_id = :pid"),
+            {"pid": related_pallet_id},
+        ).fetchone()
+        if pallet and pallet.customer_id:
+            create_billing_event(
+                db,
+                pallet.customer_id,
+                pallet.warehouse_id or warehouse_id,
+                "HANDLING",
+                "VEHICLE_MOVEMENT",
+                row.movement_id,
+                1,
+            )
 
     return {
         "movement_id": row.movement_id,
@@ -313,5 +330,53 @@ def emit_outbound_shipped(
             "carrier": carrier,
             "tracking_number": tracking_number,
             "completed_at": now,
+        },
+    )
+
+
+def emit_invoice_issued(db, *, invoice_id: int, warehouse_id: int | None, source_txn_id):
+    """Partner-facing invoice.issued when an invoice is SENT."""
+    inv = db.execute(
+        text("""
+            SELECT bi.invoice_id, bi.invoice_number, bi.customer_id,
+                   bi.contract_id, bi.total_amount, bi.currency,
+                   bi.period_start, bi.period_end, bi.external_id,
+                   cc.warehouse_id
+            FROM billing_invoices bi
+            LEFT JOIN customer_contracts cc ON cc.contract_id = bi.contract_id
+            WHERE bi.invoice_id = :iid
+        """),
+        {"iid": invoice_id},
+    ).fetchone()
+    if not inv:
+        return None
+
+    wid = warehouse_id or inv.warehouse_id
+    if not wid:
+        # integration_events.warehouse_id is NOT NULL in practice for scoped events;
+        # fall back to first warehouse if invoice has no contract warehouse.
+        fallback = db.execute(text("SELECT warehouse_id FROM warehouses ORDER BY warehouse_id LIMIT 1")).fetchone()
+        wid = fallback.warehouse_id if fallback else 1
+
+    now = datetime.now(timezone.utc).isoformat().replace("+00:00", "Z")
+    return emit_event(
+        db,
+        event_type="invoice.issued",
+        event_version=1,
+        aggregate_type="billing_invoice",
+        aggregate_id=invoice_id,
+        aggregate_external_id=inv.external_id,
+        warehouse_id=wid,
+        source_txn_id=source_txn_id,
+        payload={
+            "invoice_id": invoice_id,
+            "invoice_number": inv.invoice_number,
+            "customer_id": str(inv.customer_id),
+            "contract_id": inv.contract_id,
+            "total_amount": float(inv.total_amount or 0),
+            "currency": inv.currency,
+            "period_start": inv.period_start.isoformat() if inv.period_start else None,
+            "period_end": inv.period_end.isoformat() if inv.period_end else None,
+            "issued_at": now,
         },
     )

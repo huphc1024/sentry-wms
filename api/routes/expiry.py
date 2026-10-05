@@ -12,6 +12,7 @@ from middleware.auth_middleware import (
     require_auth,
 )
 from middleware.db import with_db
+from services.billing_service import create_billing_event
 from services.events_service import emit_event
 
 expiry_bp = Blueprint("expiry", __name__)
@@ -155,6 +156,10 @@ def dispose_now():
             if not ok:
                 return denied
 
+        charge_setting = g.db.execute(
+            text("SELECT value FROM app_settings WHERE key = 'charge_customer_on_dispose'")
+        ).fetchone()
+        charge_customer = bool(charge_setting and charge_setting.value == "true")
         disposed_count = 0
         for pallet in pallets:
             inventory_rows = g.db.execute(
@@ -204,6 +209,16 @@ def dispose_now():
                 ),
                 {"pid": pallet.pallet_id},
             )
+            if charge_customer and pallet.customer_id:
+                create_billing_event(
+                    g.db,
+                    pallet.customer_id,
+                    pallet.warehouse_id,
+                    "DISPOSAL",
+                    "PALLET",
+                    pallet.pallet_id,
+                    1,
+                )
 
         g.db.commit()
         return jsonify({

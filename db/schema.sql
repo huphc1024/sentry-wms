@@ -1452,12 +1452,17 @@ CREATE INDEX inbound_items_canonical
 CREATE TABLE customers (
     canonical_id      UUID         PRIMARY KEY DEFAULT gen_random_uuid(),
     external_id       UUID         UNIQUE NOT NULL DEFAULT gen_random_uuid(),
+    customer_code     VARCHAR(40)  UNIQUE,
     customer_name     VARCHAR(200),
+    contact_person    VARCHAR(120),
     email             VARCHAR(255),
     phone             VARCHAR(50),
     billing_address   TEXT,
     shipping_address  TEXT,
     tax_id            VARCHAR(64),
+    payment_terms_days INT         NOT NULL DEFAULT 30 CHECK (payment_terms_days BETWEEN 0 AND 365),
+    default_currency  VARCHAR(8)   NOT NULL DEFAULT 'VND',
+    notes             TEXT,
     is_active         BOOLEAN,
     created_at        TIMESTAMPTZ  NOT NULL DEFAULT NOW(),
     updated_at        TIMESTAMPTZ  NOT NULL DEFAULT NOW(),
@@ -1467,6 +1472,96 @@ CREATE TABLE customers (
 ALTER TABLE pallets
     ADD COLUMN customer_id UUID REFERENCES customers(canonical_id);
 CREATE INDEX ix_pallets_customer ON pallets(customer_id);
+
+CREATE TABLE customer_contracts (
+    contract_id BIGSERIAL PRIMARY KEY,
+    contract_number VARCHAR(64) NOT NULL UNIQUE,
+    customer_id UUID NOT NULL REFERENCES customers(canonical_id) ON DELETE RESTRICT,
+    warehouse_id INT REFERENCES warehouses(warehouse_id) ON DELETE RESTRICT,
+    contract_name VARCHAR(200) NOT NULL,
+    start_date DATE NOT NULL,
+    end_date DATE,
+    status VARCHAR(20) NOT NULL DEFAULT 'DRAFT'
+      CHECK (status IN ('DRAFT','ACTIVE','SUSPENDED','EXPIRED','TERMINATED')),
+    billing_cycle VARCHAR(20) NOT NULL DEFAULT 'MONTHLY'
+      CHECK (billing_cycle IN ('MONTHLY','WEEKLY','PER_EVENT')),
+    payment_terms_days INT NOT NULL DEFAULT 30 CHECK (payment_terms_days BETWEEN 0 AND 365),
+    currency VARCHAR(8) NOT NULL DEFAULT 'VND',
+    notes TEXT,
+    created_by VARCHAR(100),
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    external_id UUID NOT NULL UNIQUE DEFAULT gen_random_uuid(),
+    CHECK (end_date IS NULL OR end_date >= start_date)
+);
+CREATE INDEX ix_customer_contracts_customer ON customer_contracts(customer_id, status);
+
+CREATE TABLE billing_rate_cards (
+    rate_card_id SERIAL PRIMARY KEY,
+    customer_id UUID REFERENCES customers(canonical_id),
+    contract_id BIGINT REFERENCES customer_contracts(contract_id) ON DELETE CASCADE,
+    warehouse_id INT REFERENCES warehouses(warehouse_id) ON DELETE RESTRICT,
+    rate_name VARCHAR(120),
+    service_type VARCHAR(50) NOT NULL,
+    unit VARCHAR(30) NOT NULL,
+    unit_price DECIMAL(14,2) NOT NULL,
+    currency VARCHAR(8) NOT NULL DEFAULT 'VND',
+    effective_from DATE,
+    effective_to DATE,
+    created_at TIMESTAMPTZ DEFAULT NOW(),
+    external_id UUID UNIQUE NOT NULL
+);
+CREATE INDEX ix_billing_rate_cards_contract ON billing_rate_cards(contract_id, service_type);
+
+CREATE TABLE billing_invoices (
+    invoice_id BIGSERIAL PRIMARY KEY,
+    invoice_number VARCHAR(64) UNIQUE,
+    customer_id UUID REFERENCES customers(canonical_id),
+    contract_id BIGINT REFERENCES customer_contracts(contract_id) ON DELETE SET NULL,
+    period_start DATE,
+    period_end DATE,
+    due_date DATE,
+    total_amount DECIMAL(14,2) NOT NULL DEFAULT 0,
+    currency VARCHAR(8) NOT NULL DEFAULT 'VND',
+    status VARCHAR(20) NOT NULL DEFAULT 'DRAFT',
+    notes TEXT,
+    issued_at TIMESTAMPTZ,
+    created_at TIMESTAMPTZ DEFAULT NOW(),
+    external_id UUID UNIQUE NOT NULL
+);
+CREATE INDEX ix_billing_invoices_customer ON billing_invoices(customer_id);
+
+CREATE TABLE billing_events (
+    event_id BIGSERIAL PRIMARY KEY,
+    customer_id UUID REFERENCES customers(canonical_id),
+    warehouse_id INT REFERENCES warehouses(warehouse_id),
+    event_type VARCHAR(50) NOT NULL,
+    reference_table VARCHAR(64),
+    reference_id BIGINT,
+    service_date DATE NOT NULL DEFAULT CURRENT_DATE,
+    quantity DECIMAL(14,4) NOT NULL DEFAULT 0,
+    unit_price DECIMAL(14,2),
+    amount DECIMAL(14,2) NOT NULL DEFAULT 0,
+    rate_card_id INT REFERENCES billing_rate_cards(rate_card_id) ON DELETE SET NULL,
+    invoice_id BIGINT REFERENCES billing_invoices(invoice_id) ON DELETE SET NULL,
+    billed BOOLEAN DEFAULT FALSE,
+    created_at TIMESTAMPTZ DEFAULT NOW()
+);
+CREATE INDEX ix_billing_events_customer ON billing_events(customer_id);
+CREATE INDEX ix_billing_events_unbilled ON billing_events(customer_id, service_date) WHERE billed = FALSE;
+CREATE UNIQUE INDEX ux_billing_events_source
+    ON billing_events(event_type, reference_table, reference_id, service_date)
+    WHERE reference_table IS NOT NULL AND reference_id IS NOT NULL;
+
+CREATE TABLE billing_invoice_lines (
+    line_id BIGSERIAL PRIMARY KEY,
+    invoice_id BIGINT NOT NULL REFERENCES billing_invoices(invoice_id) ON DELETE CASCADE,
+    event_id BIGINT REFERENCES billing_events(event_id),
+    description TEXT,
+    quantity DECIMAL(14,4) NOT NULL DEFAULT 0,
+    unit_price DECIMAL(14,2) NOT NULL DEFAULT 0,
+    amount DECIMAL(14,2) NOT NULL DEFAULT 0
+);
 
 CREATE TABLE inbound_customers (
     inbound_id            BIGSERIAL    PRIMARY KEY,
