@@ -192,6 +192,7 @@ describe('no colours outside the palette', () => {
     'styles.js',
     'BarcodeScannerModal.js',
     'ExpiryOcrModal.js',
+    'WarehouseFloorPlan.js',
   ]);
 
   it('leaves no literal colour in a screen or component', () => {

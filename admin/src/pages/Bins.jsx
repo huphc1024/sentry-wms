@@ -9,7 +9,7 @@ import { useLocale } from '../i18n/locale.jsx';
 import RichText from '../i18n/RichText.jsx';
 
 // The value is the stored bin_type; only the label is translated,
-// using the shared warehouseSimulation.* keys.
+// using the same keys the simulation page shows for the same three.
 const BIN_TYPES = [
   { value: 'Staging', labelKey: 'warehouseSimulation.binTypeStaging' },
   { value: 'PickableStaging', labelKey: 'warehouseSimulation.binTypePickableStaging' },

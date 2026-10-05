@@ -44,6 +44,7 @@ import InterWarehouseTransfers from './pages/InterWarehouseTransfers.jsx';
 import TransferOrders from './pages/TransferOrders.jsx';
 import POSActivity from './pages/POSActivity.jsx';
 import Fraud from './pages/Fraud.jsx';
+import WarehouseSimulation from './pages/WarehouseSimulation.jsx';
 import Pallets from './pages/Pallets.jsx';
 import Expiry from './pages/Expiry.jsx';
 
@@ -99,6 +100,7 @@ export default function App() {
         <Route path="/change-password" element={<ErrorBoundary fallbackMessage={t('errors.changePasswordFailed')}><ChangePassword /></ErrorBoundary>} />
         <Route path="/" element={<ErrorBoundary fallbackMessage={t('errors.couldNotLoad', { name: t('nav.dashboard') })}><Dashboard /></ErrorBoundary>} />
         <Route path="/inventory" element={<ErrorBoundary fallbackMessage={t('errors.couldNotLoad', { name: t('nav.inventory') })}><Inventory /></ErrorBoundary>} />
+        <Route path="/warehouse-simulation" element={<ErrorBoundary fallbackMessage={t('errors.couldNotLoad', { name: t('nav.simulation') })}><WarehouseSimulation /></ErrorBoundary>} />
         <Route path="/cycle-counts" element={<ErrorBoundary fallbackMessage={t('errors.couldNotLoad', { name: t('nav.counts') })}><CycleCounts /></ErrorBoundary>} />
         <Route path="/count-approvals" element={<ErrorBoundary fallbackMessage={t('errors.couldNotLoad', { name: t('nav.approvals') })}><CycleCountApproval /></ErrorBoundary>} />
         <Route path="/receiving" element={<ErrorBoundary fallbackMessage={t('errors.couldNotLoad', { name: t('nav.receiving') })}><Receiving /></ErrorBoundary>} />

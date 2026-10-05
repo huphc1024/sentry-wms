@@ -4,7 +4,7 @@ import { buildItemScanOptions, resolveItemFromScan } from '../utils/itemScanOpti
 import { useLocale } from '../i18n/locale.jsx';
 
 /**
- * SKU / barcode autocomplete — same pattern as the other search boxes:
+ * SKU / barcode autocomplete — same pattern as warehouse simulation search:
  * native <input list> + debounced /admin/items?q= fetch.
  */
 export default function SkuBarcodeAutocomplete({

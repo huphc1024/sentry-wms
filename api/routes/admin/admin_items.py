@@ -41,7 +41,7 @@ from utils.validation import validate_body
 
 @admin_bp.route("/items", methods=["GET"])
 @require_auth
-@require_admin_or_page_permission("items")
+@require_admin_or_page_permission("items", "warehouse-simulation")
 @with_db
 def list_items():
     page = request.args.get("page", 1, type=int)

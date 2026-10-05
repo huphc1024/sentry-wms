@@ -1,0 +1,26 @@
+{% extends "web/base.html" %}
+{% block title %}Dang nhap - Sơn Lộc WMS{% endblock %}
+{% block body %}
+<div style="min-height:100vh;display:flex;align-items:center;justify-content:center;padding:16px;">
+  <div class="card" style="width:360px;padding:22px;">
+    <div style="font-size:20px;font-weight:700;margin-bottom:14px;color:#8e2716;">Sơn Lộc WMS</div>
+    <div class="muted" style="margin-bottom:16px;">Dang nhap he thong quan ly kho</div>
+
+    {% if error %}
+      <div class="error">{{ error }}</div>
+    {% endif %}
+
+    <form method="post" action="{{ url_for('web.login_submit') }}">
+      <div style="margin-bottom:12px;">
+        <label style="display:block;font-size:13px;margin-bottom:6px;">Ten dang nhap</label>
+        <input class="input" type="text" name="username" value="{{ username }}" style="width:100%;" required autofocus>
+      </div>
+      <div style="margin-bottom:16px;">
+        <label style="display:block;font-size:13px;margin-bottom:6px;">Mat khau</label>
+        <input class="input" type="password" name="password" style="width:100%;" required>
+      </div>
+      <button class="btn btn-primary" type="submit" style="width:100%;">Dang nhap</button>
+    </form>
+  </div>
+</div>
+{% endblock %}

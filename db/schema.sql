@@ -35,8 +35,41 @@ CREATE TABLE zones (
     zone_name VARCHAR(100) NOT NULL,
     zone_type VARCHAR(50) NOT NULL,  -- 'RECEIVING', 'STORAGE', 'PICKING', 'STAGING', 'SHIPPING'
     is_active BOOLEAN DEFAULT TRUE,
-    UNIQUE(warehouse_id, zone_code)
+    color_hex VARCHAR(7),
+    map_x DECIMAL(8,2),
+    map_y DECIMAL(8,2),
+    map_w DECIMAL(8,2),
+    map_h DECIMAL(8,2),
+    UNIQUE(warehouse_id, zone_code),
+    UNIQUE(zone_id, warehouse_id)
 );
+
+CREATE TABLE racks (
+    rack_id BIGSERIAL PRIMARY KEY,
+    external_id UUID NOT NULL UNIQUE DEFAULT gen_random_uuid(),
+    warehouse_id INT NOT NULL REFERENCES warehouses(warehouse_id) ON DELETE CASCADE,
+    zone_id INT NOT NULL,
+    rack_code VARCHAR(64) NOT NULL,
+    rack_name VARCHAR(128),
+    aisle VARCHAR(32),
+    bay VARCHAR(32),
+    legacy_rack_key VARCHAR(120) NOT NULL,
+    map_x DECIMAL(10,2) NOT NULL,
+    map_y DECIMAL(10,2) NOT NULL,
+    map_w DECIMAL(10,2) NOT NULL CHECK (map_w > 0),
+    map_h DECIMAL(10,2) NOT NULL CHECK (map_h > 0),
+    rotation_deg DECIMAL(6,2) NOT NULL DEFAULT 0
+      CHECK (rotation_deg >= 0 AND rotation_deg < 360),
+    is_active BOOLEAN NOT NULL DEFAULT TRUE,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    FOREIGN KEY (zone_id, warehouse_id) REFERENCES zones(zone_id, warehouse_id),
+    UNIQUE (warehouse_id, rack_code),
+    UNIQUE (warehouse_id, legacy_rack_key)
+);
+
+CREATE INDEX ix_racks_wh_zone ON racks(warehouse_id, zone_id) WHERE is_active;
+CREATE INDEX ix_racks_legacy_key ON racks(warehouse_id, legacy_rack_key);
 
 CREATE TABLE bins (
     bin_id SERIAL PRIMARY KEY,
@@ -55,12 +88,79 @@ CREATE TABLE bins (
     max_volume_cuft DECIMAL(10,2),
     description VARCHAR(200),
     is_active BOOLEAN DEFAULT TRUE,
+    map_x DECIMAL(8,2),
+    map_y DECIMAL(8,2),
+    map_w DECIMAL(8,2) DEFAULT 24,
+    map_h DECIMAL(8,2) DEFAULT 20,
+    rack_id BIGINT REFERENCES racks(rack_id) ON DELETE SET NULL,
     external_id UUID UNIQUE NOT NULL,
     UNIQUE(warehouse_id, bin_code)
 );
 
 CREATE INDEX ix_bins_pick_sequence ON bins(warehouse_id, pick_sequence);
 CREATE INDEX ix_bins_barcode ON bins(bin_barcode);
+CREATE INDEX ix_bins_rack_id ON bins(rack_id) WHERE rack_id IS NOT NULL;
+CREATE UNIQUE INDEX ux_bins_rack_slot
+    ON bins(rack_id, level_num, position_num)
+    WHERE rack_id IS NOT NULL AND is_active = TRUE
+      AND NULLIF(TRIM(level_num), '') IS NOT NULL
+      AND NULLIF(TRIM(position_num), '') IS NOT NULL;
+
+CREATE TABLE warehouse_layouts (
+    warehouse_id INT PRIMARY KEY REFERENCES warehouses(warehouse_id) ON DELETE CASCADE,
+    world_width_m DECIMAL(8, 2) NOT NULL DEFAULT 50,
+    world_height_m DECIMAL(8, 2) NOT NULL DEFAULT 40,
+    warehouse_x_m DECIMAL(8, 2) NOT NULL DEFAULT 2,
+    warehouse_y_m DECIMAL(8, 2) NOT NULL DEFAULT 2,
+    warehouse_w_m DECIMAL(8, 2) NOT NULL DEFAULT 46,
+    warehouse_h_m DECIMAL(8, 2) NOT NULL DEFAULT 30,
+    grid_step_m DECIMAL(8, 4) NOT NULL DEFAULT 0.25,
+    coordinate_unit VARCHAR(20) NOT NULL DEFAULT 'METER'
+      CHECK (coordinate_unit IN ('METER', 'LEGACY_CANVAS')),
+    version INT NOT NULL DEFAULT 1,
+    updated_at TIMESTAMPTZ DEFAULT NOW(),
+    updated_by INT
+);
+
+CREATE TABLE warehouse_rack_layouts (
+    layout_rack_id SERIAL PRIMARY KEY,
+    warehouse_id INT NOT NULL REFERENCES warehouses(warehouse_id) ON DELETE CASCADE,
+    rack_key VARCHAR(120) NOT NULL,
+    zone_id INT REFERENCES zones(zone_id) ON DELETE SET NULL,
+    label VARCHAR(80),
+    x_m DECIMAL(8, 2) NOT NULL,
+    y_m DECIMAL(8, 2) NOT NULL,
+    w_m DECIMAL(8, 2) NOT NULL,
+    h_m DECIMAL(8, 2) NOT NULL,
+    rotation_deg DECIMAL(6, 2) NOT NULL DEFAULT 0,
+    rack_id BIGINT REFERENCES racks(rack_id) ON DELETE CASCADE,
+    UNIQUE (warehouse_id, rack_key)
+);
+
+CREATE INDEX ix_warehouse_rack_layouts_wh ON warehouse_rack_layouts (warehouse_id);
+CREATE UNIQUE INDEX ux_warehouse_rack_layouts_rack_id
+    ON warehouse_rack_layouts(rack_id) WHERE rack_id IS NOT NULL;
+
+CREATE TABLE warehouse_map_paths (
+    path_id SERIAL PRIMARY KEY,
+    warehouse_id INT NOT NULL REFERENCES warehouses(warehouse_id) ON DELETE CASCADE,
+    path_type VARCHAR(20) NOT NULL CHECK (path_type IN ('FORKLIFT', 'PEDESTRIAN')),
+    label VARCHAR(100),
+    points JSONB NOT NULL CHECK (
+      jsonb_typeof(points) = 'array' AND jsonb_array_length(points) >= 2
+    ),
+    width_m DECIMAL(6, 3) NOT NULL DEFAULT 2.5 CHECK (width_m > 0),
+    one_way BOOLEAN NOT NULL DEFAULT FALSE,
+    direction VARCHAR(10) NOT NULL DEFAULT 'both',
+    sort_order INT NOT NULL DEFAULT 0,
+    CONSTRAINT warehouse_map_paths_direction_check CHECK (direction IN ('both', 'forward', 'reverse')),
+    CONSTRAINT warehouse_map_paths_one_way_direction CHECK (
+      (one_way = FALSE AND direction = 'both')
+      OR (one_way = TRUE AND direction IN ('forward', 'reverse'))
+    )
+);
+
+CREATE INDEX ix_warehouse_map_paths_wh ON warehouse_map_paths (warehouse_id, path_type);
 
 -- ============================================================
 -- ITEMS (SKU MASTER)

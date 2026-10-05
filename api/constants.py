@@ -347,6 +347,8 @@ ALL_PAGE_KEYS = (
     "warehouses", "bins", "zones", "preferred-bins",
     # Pallet LPN tracking, QR labels, and expiry/disposal supervision.
     "pallets", "expiry",
+    # Warehouse Simulation: 2D floor plan with bin positions and item categories.
+    "warehouse-simulation",
     # POS Activity dashboard (opt-in via pos_activity_enabled setting).
     "pos-activity",
     "users",
@@ -371,8 +373,10 @@ ALL_PAGE_KEYS = (
 # override key. Kept out of ALL_PAGE_KEYS so the sidebar permission
 # grid renders them in a separate "Overrides" group.
 OVERRIDE_SO_FULL_EDIT = "so-full-edit"
+OVERRIDE_WAREHOUSE_MAP_EDIT = "warehouse-map-edit"
 ALL_OVERRIDE_KEYS = (
     OVERRIDE_SO_FULL_EDIT,
+    OVERRIDE_WAREHOUSE_MAP_EDIT,
 )
 
 # SO mutation audit actions (mig 062). Mirror the PO line

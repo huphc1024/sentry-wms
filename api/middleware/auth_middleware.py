@@ -283,7 +283,7 @@ def require_admin_or_page_permission(*page_keys):
     / @with_db).
 
     Accepts one or more page keys, e.g.
-    @require_admin_or_page_permission("bins")
+    @require_admin_or_page_permission("bins", "warehouse-simulation")
     """
     def decorator(f):
         @wraps(f)

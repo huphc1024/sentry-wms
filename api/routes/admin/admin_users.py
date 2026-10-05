@@ -1105,7 +1105,7 @@ def review_adjustments(validated):
 
 @admin_bp.route("/adjustments/direct", methods=["POST"])
 @require_auth
-@require_admin_or_page_permission("adjustments")
+@require_admin_or_page_permission("adjustments", "warehouse-simulation")
 @validate_body(DirectAdjustmentRequest)
 @with_db
 def direct_adjustment(validated):

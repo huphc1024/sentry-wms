@@ -23,7 +23,7 @@ def _next_pallet_code(warehouse_id: int) -> str | None:
 
 @admin_bp.route('/pallets/next-code', methods=['GET'])
 @require_auth
-@require_admin_or_page_permission('pallets')
+@require_admin_or_page_permission('pallets', 'warehouse-simulation')
 @with_db
 def next_pallet_code():
     warehouse_id = request.args.get('warehouse_id', type=int)
@@ -96,7 +96,7 @@ def get_pallet(pallet_id):
 
 @admin_bp.route('/pallets', methods=['POST'])
 @require_auth
-@require_admin_or_page_permission('pallets')
+@require_admin_or_page_permission('pallets', 'warehouse-simulation')
 @validate_body(CreatePalletRequest)
 @with_db
 def create_pallet(validated):
@@ -142,7 +142,7 @@ def create_pallet(validated):
 
 @admin_bp.route('/pallets/<int:pallet_id>/attach-inventory', methods=['POST'])
 @require_auth
-@require_admin_or_page_permission('pallets')
+@require_admin_or_page_permission('pallets', 'warehouse-simulation')
 @validate_body(AttachInventoryToPalletRequest)
 @with_db
 def attach_inventory_to_pallet(pallet_id, validated):

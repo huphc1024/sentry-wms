@@ -1,5 +1,5 @@
-import React, { useState, useRef } from 'react';
-import { useScrollToTop } from '@react-navigation/native';
+import React, { useState, useRef, useCallback } from 'react';
+import { useScrollToTop, useFocusEffect } from '@react-navigation/native';
 import { View, Text, TouchableOpacity, ScrollView, TextInput, Modal, StyleSheet } from 'react-native';
 import ScanInput from '../components/ScanInput';
 import ErrorPopup from '../components/ErrorPopup';
@@ -295,6 +295,31 @@ export default function PutAwayScreen({ navigation, route }) {
     finishItem();
   };
 
+  useFocusEffect(
+    useCallback(() => {
+      const selected = route.params?.mapSelectedBin;
+      if (!selected?.bin_id || !activeItem) return;
+      setScannedBin({
+        bin_id: selected.bin_id,
+        bin_code: selected.bin_code,
+        zone_name: selected.zone_name,
+      });
+      setPutQty(String(activeItem.quantity || '1'));
+      setProcessPhase('enter_qty');
+      navigation.setParams({ mapSelectedBin: undefined });
+    }, [route.params?.mapSelectedBin, activeItem, navigation])
+  );
+
+  const openMapSelect = () => {
+    if (!activeItem) return;
+    navigation.navigate('Map', {
+      selectMode: 'putaway',
+      itemId: activeItem.item_id,
+      sku: activeItem.sku,
+      returnScreen: 'PutAway',
+    });
+  };
+
   return (
     <View style={screenStyles.screen}>
       <ScreenHeader
@@ -428,11 +453,17 @@ export default function PutAwayScreen({ navigation, route }) {
                   {preferredBin.zone_name && (
                     <Text style={styles.suggestZone}>{preferredBin.zone_name}</Text>
                   )}
+                  <TouchableOpacity style={[buttonStyles.buttonSecondary, { marginTop: 12 }]} onPress={openMapSelect}>
+                    <Text style={buttonStyles.buttonSecondaryText}>{t('putaway.btn.pickOtherOnMap')}</Text>
+                  </TouchableOpacity>
                 </View>
               ) : processPhase === 'scan_bin' ? (
                 <View style={styles.noPreferredCard}>
                   <Text style={styles.noPreferredText}>{t('putaway.noPreferred')}</Text>
                   <Text style={styles.noPreferredSub}>{t('putaway.scanAnyBin')}</Text>
+                  <TouchableOpacity style={[buttonStyles.buttonSecondary, { marginTop: 12 }]} onPress={openMapSelect}>
+                    <Text style={buttonStyles.buttonSecondaryText}>{t('putaway.btn.pickOnMap')}</Text>
+                  </TouchableOpacity>
                 </View>
               ) : null}
 

@@ -27,6 +27,7 @@ const FUNCTIONS = [
   { key: 'putaway', labelKey: 'home.fn.putaway.label', subKey: 'home.fn.putaway.sub', screen: 'PutAway', accent: 'copper' }, // i18n-ignore: screen names / accent codes
   { key: 'transfer', labelKey: 'home.fn.transfer.label', subKey: 'home.fn.transfer.sub', screen: 'Transfer', accent: 'gray' }, // i18n-ignore: screen names / accent codes
   { key: 'count', labelKey: 'home.fn.count.label', subKey: 'home.fn.count.sub', screen: 'Count', accent: 'gray' }, // i18n-ignore: screen names / accent codes
+  { key: 'map', labelKey: 'home.fn.map.label', subKey: 'home.fn.map.sub', screen: 'Map', accent: 'gray' }, // i18n-ignore: screen names / accent codes
   { key: 'ship', labelKey: 'home.fn.ship.label', subKey: 'home.fn.ship.sub', screen: 'Ship', accent: 'gray' }, // i18n-ignore: screen names / accent codes
 ];
 
@@ -192,7 +193,11 @@ export default function HomeScreen({ navigation }) {
     }
   };
 
-  const visibleFunctions = FUNCTIONS.filter((fn) => allowedFunctions.includes(fn.key));
+  // MAP is always visible for any signed-in worker — it is a read-only
+  // warehouse locator, not an operational privilege like pick/receive.
+  const visibleFunctions = FUNCTIONS.filter(
+    (fn) => fn.key === 'map' || allowedFunctions.includes(fn.key)
+  );
 
   const getBadgeCount = (key) => badges[key] || 0;
 

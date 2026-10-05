@@ -213,7 +213,7 @@ def list_zones():
 
 @admin_bp.route("/zones", methods=["POST"])
 @require_auth
-@require_admin_or_page_permission("zones")
+@require_admin_or_page_permission("zones", "warehouse-simulation")
 @validate_body(CreateZoneRequest)
 @with_db
 def create_zone(validated):
@@ -412,7 +412,7 @@ def get_bin(bin_id):
 
 @admin_bp.route("/bins", methods=["POST"])
 @require_auth
-@require_admin_or_page_permission("bins")
+@require_admin_or_page_permission("bins", "warehouse-simulation")
 @validate_body(CreateBinRequest)
 @with_db
 def create_bin(validated):

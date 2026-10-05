@@ -245,6 +245,15 @@ export default function PickWalkScreen({ navigation, route }) {
                 </Text>
               </>
             ) : null}
+            <TouchableOpacity
+              style={[buttonStyles.buttonSecondary, { marginTop: 12, width: '100%' }]}
+              onPress={() => navigation.navigate('Map', {
+                itemId: task.item_id,
+                sku: task.sku,
+              })}
+            >
+              <Text style={buttonStyles.buttonSecondaryText}>{t('pick.viewOnMap')}</Text>
+            </TouchableOpacity>
           </View>
 
           {/* Item card */}

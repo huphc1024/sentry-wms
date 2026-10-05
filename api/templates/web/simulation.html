@@ -1,0 +1,345 @@
+{% extends "web/base.html" %}
+{% block title %}Mo phong kho - Sơn Lộc WMS{% endblock %}
+{% block body %}
+<div class="topbar">
+  <div class="brand">Sơn Lộc WMS - Web</div>
+  <form method="post" action="{{ url_for('web.logout_submit') }}" style="margin:0;">
+    <button class="btn" type="submit">Dang xuat</button>
+  </form>
+</div>
+
+<div class="main">
+  <div class="card" style="padding:12px;">
+    <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;">
+      <h1 style="font-size:20px;margin:0 10px 0 0;">Mo phong kho</h1>
+      <select id="warehouseSelect">
+        {% for w in warehouses %}
+          <option value="{{ w.id }}" {% if selected_warehouse_id == w.id %}selected{% endif %}>
+            {{ w.code }} - {{ w.name }}
+          </option>
+        {% endfor %}
+      </select>
+      <select id="zoneSelect">
+        <option value="ALL">Tat ca khu</option>
+      </select>
+      <div style="display:inline-flex;gap:4px;">
+        <button id="btnLayerCategory" class="btn btn-primary" type="button">Loai hang</button>
+        <button id="btnLayerOccupancy" class="btn" type="button">Muc day</button>
+      </div>
+      <div style="display:inline-flex;gap:4px;align-items:center;margin-left:auto;">
+        <button id="zoomOut" class="btn" type="button">-</button>
+        <span id="zoomLabel" class="muted" style="font-size:12px;min-width:48px;text-align:center;">100%</span>
+        <button id="zoomIn" class="btn" type="button">+</button>
+        <button id="zoomReset" class="btn" type="button">Dat lai</button>
+      </div>
+      <button id="btnRefresh" class="btn" type="button">Lam moi</button>
+    </div>
+    <div id="errBox" class="error" style="display:none;margin-top:10px;"></div>
+  </div>
+
+  <div style="margin-top:12px;display:grid;grid-template-columns:1fr 300px;gap:12px;">
+    <div class="card" style="padding:10px;">
+      <div class="muted" style="font-size:12px;margin-bottom:8px;">Keo de di chuyen - Cuon chuot de zoom</div>
+      <div id="viewport" style="height:520px;border:1px solid var(--border);border-radius:8px;overflow:hidden;background:#fafafa;cursor:grab;">
+        <svg id="mapSvg" width="100%" height="100%" role="img" aria-label="Mo phong kho"></svg>
+      </div>
+      <div id="legend" style="margin-top:10px;display:flex;flex-wrap:wrap;gap:10px 16px;"></div>
+    </div>
+    <aside class="card" style="padding:12px;">
+      <h2 style="font-size:15px;margin-top:0;">Chi tiet vi tri</h2>
+      <div id="detailBox" class="muted" style="font-size:13px;">Chon 1 o tren ban do de xem chi tiet.</div>
+      <hr style="margin:16px 0;border:none;border-top:1px solid var(--border);">
+      <h3 style="font-size:14px;margin:0 0 8px;">Tong quan khu</h3>
+      <ul id="zoneList" style="list-style:none;padding:0;margin:0;font-size:13px;"></ul>
+    </aside>
+  </div>
+</div>
+
+<script>
+(() => {
+  const LAYER_CATEGORY = "category";
+  const LAYER_OCCUPANCY = "occupancy";
+  const MIN_ZOOM = 0.4;
+  const MAX_ZOOM = 5;
+  const ZOOM_STEP = 1.2;
+
+  const warehouseSelect = document.getElementById("warehouseSelect");
+  const zoneSelect = document.getElementById("zoneSelect");
+  const btnLayerCategory = document.getElementById("btnLayerCategory");
+  const btnLayerOccupancy = document.getElementById("btnLayerOccupancy");
+  const btnRefresh = document.getElementById("btnRefresh");
+  const mapSvg = document.getElementById("mapSvg");
+  const viewport = document.getElementById("viewport");
+  const legend = document.getElementById("legend");
+  const detailBox = document.getElementById("detailBox");
+  const zoneList = document.getElementById("zoneList");
+  const errBox = document.getElementById("errBox");
+  const zoomLabel = document.getElementById("zoomLabel");
+  const zoomIn = document.getElementById("zoomIn");
+  const zoomOut = document.getElementById("zoomOut");
+  const zoomReset = document.getElementById("zoomReset");
+
+  let data = null;
+  let selectedBinId = null;
+  let layer = LAYER_CATEGORY;
+  let zoom = 1;
+  let pan = { x: 0, y: 0 };
+  let dragStart = null;
+
+  function clampZoom(z) { return Math.min(MAX_ZOOM, Math.max(MIN_ZOOM, z)); }
+  function currentCanvas() { return data?.canvas || { width: 900, height: 500 }; }
+  function currentBins() {
+    if (!data?.bins) return [];
+    if (zoneSelect.value === "ALL") return data.bins;
+    return data.bins.filter(b => String(b.zone_id) === zoneSelect.value);
+  }
+  function viewBox() {
+    const c = currentCanvas();
+    return `${pan.x} ${pan.y} ${c.width / zoom} ${c.height / zoom}`;
+  }
+
+  function setError(msg) {
+    if (!msg) {
+      errBox.style.display = "none";
+      errBox.textContent = "";
+      return;
+    }
+    errBox.style.display = "block";
+    errBox.textContent = msg;
+  }
+
+  function fillColor(bin) {
+    if (layer === LAYER_CATEGORY && bin.dominant_category) return bin.category_color;
+    if (bin.total_qty === 0) return "#ECF0F1";
+    if (bin.status === "full") return "#E67E22";
+    return "#3498DB";
+  }
+
+  function strokeColor(bin) {
+    if (bin.bin_id === selectedBinId) return "#2C3E50";
+    if (bin.total_qty > 0) return "#7F8C8D";
+    return "#BDC3C7";
+  }
+
+  function setLayer(next) {
+    layer = next;
+    btnLayerCategory.className = `btn ${next === LAYER_CATEGORY ? "btn-primary" : ""}`;
+    btnLayerOccupancy.className = `btn ${next === LAYER_OCCUPANCY ? "btn-primary" : ""}`;
+    render();
+  }
+
+  function renderZonesAndBins() {
+    const c = currentCanvas();
+    mapSvg.setAttribute("viewBox", viewBox());
+    mapSvg.innerHTML = "";
+
+    const base = document.createElementNS("http://www.w3.org/2000/svg", "rect");
+    base.setAttribute("x", 0); base.setAttribute("y", 0);
+    base.setAttribute("width", c.width); base.setAttribute("height", c.height);
+    base.setAttribute("fill", "#FAFAFA");
+    mapSvg.appendChild(base);
+
+    for (const z of (data?.zones || [])) {
+      if (!z.bounds) continue;
+      if (zoneSelect.value !== "ALL" && String(z.zone_id) !== zoneSelect.value) continue;
+      const g = document.createElementNS("http://www.w3.org/2000/svg", "g");
+      const r = document.createElementNS("http://www.w3.org/2000/svg", "rect");
+      r.setAttribute("x", z.bounds.x);
+      r.setAttribute("y", z.bounds.y);
+      r.setAttribute("width", z.bounds.w);
+      r.setAttribute("height", z.bounds.h);
+      r.setAttribute("fill", z.color);
+      r.setAttribute("fill-opacity", 0.12);
+      r.setAttribute("stroke", z.color);
+      r.setAttribute("stroke-width", 2 / zoom);
+      r.setAttribute("rx", 6);
+      g.appendChild(r);
+      const t = document.createElementNS("http://www.w3.org/2000/svg", "text");
+      t.setAttribute("x", z.bounds.x + 8);
+      t.setAttribute("y", z.bounds.y + 18);
+      t.setAttribute("font-size", 12 / zoom);
+      t.setAttribute("font-weight", "600");
+      t.setAttribute("fill", z.color);
+      t.textContent = `${z.zone_code} (${z.occupied_bins}/${z.bin_count})`;
+      g.appendChild(t);
+      mapSvg.appendChild(g);
+    }
+
+    for (const bin of currentBins()) {
+      const g = document.createElementNS("http://www.w3.org/2000/svg", "g");
+      const r = document.createElementNS("http://www.w3.org/2000/svg", "rect");
+      r.setAttribute("x", bin.map.x);
+      r.setAttribute("y", bin.map.y);
+      r.setAttribute("width", bin.map.w);
+      r.setAttribute("height", bin.map.h);
+      r.setAttribute("fill", fillColor(bin));
+      r.setAttribute("stroke", strokeColor(bin));
+      r.setAttribute("stroke-width", (bin.bin_id === selectedBinId ? 3 : 1) / zoom);
+      r.setAttribute("rx", 3);
+      g.appendChild(r);
+      const t = document.createElementNS("http://www.w3.org/2000/svg", "text");
+      t.setAttribute("x", bin.map.x + bin.map.w / 2);
+      t.setAttribute("y", bin.map.y + bin.map.h / 2 + 4 / zoom);
+      t.setAttribute("font-size", 9 / zoom);
+      t.setAttribute("text-anchor", "middle");
+      t.setAttribute("fill", "#2C3E50");
+      t.textContent = bin.bin_code.length > 10 ? (bin.bin_code.slice(0, 9) + "...") : bin.bin_code;
+      g.appendChild(t);
+      g.style.cursor = "pointer";
+      g.addEventListener("click", (e) => {
+        e.stopPropagation();
+        selectedBinId = bin.bin_id;
+        render();
+      });
+      mapSvg.appendChild(g);
+    }
+  }
+
+  function renderLegend() {
+    legend.innerHTML = "";
+    if (!data) return;
+    if (layer === LAYER_CATEGORY) {
+      for (const c of (data.categories || [])) {
+        const item = document.createElement("span");
+        item.style.display = "inline-flex";
+        item.style.alignItems = "center";
+        item.style.gap = "6px";
+        item.innerHTML = `<span style="display:inline-block;width:12px;height:12px;border-radius:3px;background:${c.color}"></span>${c.category} (${c.total_qty})`;
+        legend.appendChild(item);
+      }
+      return;
+    }
+    const entries = [
+      ["#ECF0F1", "Trong"],
+      ["#3498DB", "Co hang"],
+      ["#E67E22", "Day"],
+    ];
+    for (const [color, name] of entries) {
+      const item = document.createElement("span");
+      item.style.display = "inline-flex";
+      item.style.alignItems = "center";
+      item.style.gap = "6px";
+      item.innerHTML = `<span style="display:inline-block;width:12px;height:12px;border-radius:3px;background:${color}"></span>${name}`;
+      legend.appendChild(item);
+    }
+  }
+
+  function renderDetail() {
+    if (!data) return;
+    const bin = (data.bins || []).find(x => x.bin_id === selectedBinId);
+    if (!bin) {
+      detailBox.className = "muted";
+      detailBox.textContent = "Chon 1 o tren ban do de xem chi tiet.";
+      return;
+    }
+    const aisleText = bin.aisle
+      ? `Loi di ${bin.aisle} - Hang ${bin.row_num || "-"} - Tang ${bin.level_num || "-"}`
+      : "";
+    const lines = [
+      `<div style="font-weight:700;">${bin.bin_code}</div>`,
+      `<div class="muted">${bin.zone_name} - ${bin.zone_type}</div>`,
+      `<div style="font-family:monospace;font-size:12px;margin-top:3px;">${bin.bin_barcode || ""}</div>`,
+      aisleText ? `<div style="font-size:12px;">${aisleText}</div>` : "",
+      `<div style="margin-top:8px;"><strong>Ton:</strong> ${bin.total_qty} don vi</div>`,
+      bin.dominant_category
+        ? `<div><strong>Loai chinh:</strong> <span style="display:inline-block;background:${bin.category_color};color:#fff;padding:2px 8px;border-radius:4px;">${bin.dominant_category}</span></div>`
+        : `<div class="muted">O trong</div>`
+    ].filter(Boolean);
+    if ((bin.contents || []).length > 0) {
+      lines.push('<ul style="padding-left:16px;">');
+      for (const c of bin.contents) {
+        lines.push(`<li><span style="font-family:monospace">${c.sku}</span> - ${c.item_name}<br><span class="muted">${c.category} - ${c.quantity_on_hand}</span></li>`);
+      }
+      lines.push("</ul>");
+    }
+    detailBox.className = "";
+    detailBox.innerHTML = lines.join("");
+  }
+
+  function renderZoneList() {
+    zoneList.innerHTML = "";
+    for (const z of (data?.zones || [])) {
+      const li = document.createElement("li");
+      li.style.display = "flex";
+      li.style.alignItems = "center";
+      li.style.gap = "8px";
+      li.style.padding = "4px 0";
+      li.innerHTML = `<span style="display:inline-block;width:12px;height:12px;border-radius:3px;background:${z.color};"></span>${z.zone_code}: ${z.occupied_bins}/${z.bin_count} o co hang`;
+      zoneList.appendChild(li);
+    }
+  }
+
+  function render() {
+    zoomLabel.textContent = `${Math.round(zoom * 100)}%`;
+    renderZonesAndBins();
+    renderLegend();
+    renderDetail();
+    renderZoneList();
+  }
+
+  async function loadMap() {
+    const wid = warehouseSelect.value;
+    if (!wid) return;
+    setError("");
+    const res = await fetch(`/api/admin/warehouse-map?warehouse_id=${encodeURIComponent(wid)}`, {
+      credentials: "same-origin",
+    });
+    if (!res.ok) {
+      const body = await res.json().catch(() => ({}));
+      setError(body.error || "Khong tai duoc du lieu ban do.");
+      return;
+    }
+    data = await res.json();
+    selectedBinId = null;
+    zoom = 1;
+    pan = { x: 0, y: 0 };
+
+    zoneSelect.innerHTML = '<option value="ALL">Tat ca khu</option>';
+    for (const z of (data.zones || [])) {
+      const opt = document.createElement("option");
+      opt.value = String(z.zone_id);
+      opt.textContent = `${z.zone_code} - ${z.zone_name}`;
+      zoneSelect.appendChild(opt);
+    }
+    render();
+  }
+
+  btnRefresh.addEventListener("click", loadMap);
+  warehouseSelect.addEventListener("change", loadMap);
+  zoneSelect.addEventListener("change", render);
+  btnLayerCategory.addEventListener("click", () => setLayer(LAYER_CATEGORY));
+  btnLayerOccupancy.addEventListener("click", () => setLayer(LAYER_OCCUPANCY));
+
+  zoomIn.addEventListener("click", () => { zoom = clampZoom(zoom * ZOOM_STEP); render(); });
+  zoomOut.addEventListener("click", () => { zoom = clampZoom(zoom / ZOOM_STEP); render(); });
+  zoomReset.addEventListener("click", () => { zoom = 1; pan = { x: 0, y: 0 }; render(); });
+
+  viewport.addEventListener("wheel", (e) => {
+    e.preventDefault();
+    zoom = clampZoom(zoom * (e.deltaY > 0 ? 1 / ZOOM_STEP : ZOOM_STEP));
+    render();
+  }, { passive: false });
+
+  viewport.addEventListener("pointerdown", (e) => {
+    if (e.button !== 0) return;
+    dragStart = { x: e.clientX, y: e.clientY, panX: pan.x, panY: pan.y, zoom };
+    viewport.style.cursor = "grabbing";
+  });
+  viewport.addEventListener("pointerup", () => { dragStart = null; viewport.style.cursor = "grab"; });
+  viewport.addEventListener("pointerleave", () => { dragStart = null; viewport.style.cursor = "grab"; });
+  viewport.addEventListener("pointermove", (e) => {
+    if (!dragStart || !data) return;
+    const rect = viewport.getBoundingClientRect();
+    const c = currentCanvas();
+    const sx = (c.width / dragStart.zoom) / rect.width;
+    const sy = (c.height / dragStart.zoom) / rect.height;
+    const dx = (e.clientX - dragStart.x) * sx;
+    const dy = (e.clientY - dragStart.y) * sy;
+    pan = { x: dragStart.panX - dx, y: dragStart.panY - dy };
+    render();
+  });
+
+  if (warehouseSelect.value) loadMap();
+})();
+</script>
+{% endblock %}

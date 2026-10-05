@@ -463,7 +463,9 @@ def create_app():
     from routes.dockd import dockd_bp
     from routes.expiry import expiry_bp
     from routes.pos import pos_bp
+    from routes.warehouse_map import warehouse_map_bp
     from routes.pallets import pallets_bp
+    from routes.web import web_bp
 
     app.register_blueprint(auth_bp, url_prefix="/api/auth")
     app.register_blueprint(lookup_bp, url_prefix="/api/lookup")
@@ -476,6 +478,7 @@ def create_app():
     app.register_blueprint(transfers_bp, url_prefix="/api/transfers")
     app.register_blueprint(expiry_bp, url_prefix="/api/expiry")
     app.register_blueprint(pallets_bp, url_prefix="/api/pallets")
+    app.register_blueprint(warehouse_map_bp, url_prefix="/api/warehouse-map")
     app.register_blueprint(admin_bp, url_prefix="/api/admin")
     app.register_blueprint(warehouses_bp, url_prefix="/api/warehouses")
     # v1.5.0 #122: first /api/v1/* surface. Gated by @require_wms_token
@@ -501,6 +504,8 @@ def create_app():
     # @require_wms_token's V1100 dispatcher branch (pos.dispatch slug,
     # exclusive direction).
     app.register_blueprint(pos_bp, url_prefix="/api/v1/pos")
+    # Server-rendered admin web (Python templates).
+    app.register_blueprint(web_bp)
 
     # Import connector modules so they auto-register with the registry
     import connectors.example  # noqa: F401

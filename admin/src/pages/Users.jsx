@@ -16,6 +16,7 @@ const ALL_FUNCTIONS = [
   { key: 'putaway', labelKey: 'users.fnPutAway' },
   { key: 'count', labelKey: 'users.fnCount' },
   { key: 'transfer', labelKey: 'users.fnTransfer' },
+  { key: 'map', labelKey: 'users.fnMap' },
   // Retail POS: the register gates login on this grant (ADMIN exempt). Grant it
   // to retail / customer-service accounts that should be able to sell.
   { key: 'sell', labelKey: 'users.fnSell' },
@@ -41,7 +42,7 @@ const ROLE_PRESETS = [
       'sales-orders', 'backorders', 'fraud', 'picking-tickets', 'picking-batches',
       'items', 'vendors', 'adjustments',
       'warehouses', 'bins', 'zones', 'preferred-bins',
-      'pallets', 'expiry',
+      'pallets', 'expiry', 'warehouse-simulation',
       'notifications', 'audit-log',
     ],
   },
@@ -49,17 +50,17 @@ const ROLE_PRESETS = [
     id: 'picker',
     labelKey: 'users.presetPicker',
     role: 'USER',
-    allowed_functions: ['pick', 'pack', 'ship'],
-    page_keys: ['dashboard', 'inventory'],
+    allowed_functions: ['pick', 'pack', 'ship', 'map'],
+    page_keys: ['dashboard', 'inventory', 'warehouse-simulation'],
   },
   {
     id: 'receiver',
     labelKey: 'users.presetReceiver',
     role: 'USER',
-    allowed_functions: ['receive', 'putaway'],
+    allowed_functions: ['receive', 'putaway', 'map'],
     page_keys: [
       'dashboard', 'inventory', 'purchase-orders', 'receiving', 'putaway',
-      'pallets',
+      'pallets', 'warehouse-simulation',
     ],
   },
 ];
@@ -70,6 +71,7 @@ const PAGE_GROUPS = [
     pages: [
       { key: 'dashboard', labelKey: 'nav.dashboard' },
       { key: 'inventory', labelKey: 'nav.inventory' },
+      { key: 'warehouse-simulation', labelKey: 'users.pageWarehouseSimulation' },
       { key: 'cycle-counts', labelKey: 'users.pageCycleCounts' },
       { key: 'count-approvals', labelKey: 'users.pageCountApprovals' },
     ],
@@ -135,6 +137,7 @@ const PAGE_GROUPS = [
     isOverride: true,
     pages: [
       { key: 'so-full-edit', labelKey: 'users.overrideSoFullEdit' },
+      { key: 'warehouse-map-edit', labelKey: 'users.overrideMapEdit' },
     ],
   },
 ];

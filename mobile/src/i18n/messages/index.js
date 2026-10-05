@@ -7,8 +7,9 @@ import * as pick from './pick.js';
 import * as packship from './packship.js';
 import * as count from './count.js';
 import * as transfer from './transfer.js';
+import * as map from './map.js';
 
-const files = [common, auth, home, receive, putaway, pick, packship, count, transfer];
+const files = [common, auth, home, receive, putaway, pick, packship, count, transfer, map];
 
 function merge(lang) {
   const out = {};
