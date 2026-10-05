@@ -20,6 +20,7 @@ const NAV = [
       { to: '/inventory', labelKey: 'nav.inventory', pageKey: 'inventory' },
       { to: '/cycle-counts', labelKey: 'nav.counts', pageKey: 'cycle-counts' },
       { to: '/count-approvals', labelKey: 'nav.approvals', pageKey: 'count-approvals' },
+      { to: '/ai-assistant', labelKey: 'nav.aiAssistant', pageKey: 'ai-assistant' },
     ],
   },
   {

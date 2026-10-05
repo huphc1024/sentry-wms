@@ -1,8 +1,10 @@
-"""The single place that talks to the Anthropic API.
+"""LLM provider selection plus the Anthropic (Claude) implementation.
 
-call_claude() returns (parsed_dict, usage_dict) or raises AIUnavailable.
-Callers treat AIUnavailable as "fall back to rules mode". Prompts and API
-keys are never logged; error text goes through scrub_secrets first.
+AI_PROVIDER=claude (default) | gemini picks the provider; the Gemini code
+lives in services.ai.gemini. generate_json() returns (parsed_dict,
+usage_dict) for either provider or raises AIUnavailable; callers treat
+AIUnavailable as "fall back to rules mode". Prompts and API keys are never
+logged; error text goes through scrub_secrets first.
 """
 
 import json
@@ -26,8 +28,40 @@ class AIUnavailable(Exception):
     """The LLM could not produce a usable answer (any reason)."""
 
 
+PROVIDERS = ("claude", "gemini")
+KEY_ENV = {"claude": "ANTHROPIC_API_KEY", "gemini": "GEMINI_API_KEY"}
+
+
+def provider():
+    """'claude' (default, also for unknown values) or 'gemini'."""
+    raw = os.environ.get("AI_PROVIDER", "").strip().lower()
+    return raw if raw in PROVIDERS else "claude"
+
+
+def api_key_present():
+    """True when the selected provider's API key is set."""
+    return bool(os.environ.get(KEY_ENV[provider()], "").strip())
+
+
 def model_name():
+    if provider() == "gemini":
+        from services.ai import gemini
+
+        return gemini.model_name()
+    return claude_model_name()
+
+
+def claude_model_name():
     return os.environ.get("AI_MODEL", "").strip() or DEFAULT_MODEL
+
+
+def generate_json(system, user_text, schema, effort="low"):
+    """Provider-neutral structured JSON call (suggestions, phases 1-2)."""
+    if provider() == "gemini":
+        from services.ai import gemini
+
+        return gemini.generate_json(system, user_text, schema)
+    return call_claude(system, user_text, schema, effort)
 
 
 def _get_client(api_key):
@@ -42,11 +76,27 @@ def _get_client(api_key):
     return _client
 
 
+def create_message(**params):
+    """Raw messages.create for the assistant's tool loop (phase 3). Returns
+    the SDK Message; any missing key / SDK / network error becomes
+    AIUnavailable. `model` defaults to AI_MODEL."""
+    api_key = os.environ.get("ANTHROPIC_API_KEY", "").strip()
+    if not api_key:
+        raise AIUnavailable("no_api_key")
+    params.setdefault("model", claude_model_name())
+    try:
+        return _get_client(api_key).messages.create(**params)
+    except Exception as exc:  # anthropic.APIError subclasses, timeouts, etc.
+        kind = type(exc).__name__
+        _LOGGER.warning("AI call failed: %s: %s", kind, scrub_secrets(str(exc))[:300])
+        raise AIUnavailable(kind) from None
+
+
 def call_claude(system, user_text, schema, effort="low"):
     api_key = os.environ.get("ANTHROPIC_API_KEY", "").strip()
     if not api_key:
         raise AIUnavailable("no_api_key")
-    model = model_name()
+    model = claude_model_name()
     try:
         # Opus 5.5 always thinks adaptively: no `thinking`, temperature or
         # budget_tokens are sent. Refusal fallbacks are a beta server-side

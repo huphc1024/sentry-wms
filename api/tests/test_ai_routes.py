@@ -68,7 +68,7 @@ class TestAIStatus:
     def test_status_rules_mode_without_key(self, client, auth_headers):
         resp = client.get("/api/admin/ai/status", headers=auth_headers)
         assert resp.status_code == 200
-        assert resp.get_json() == {"enabled": True, "mode": "rules"}
+        assert resp.get_json() == {"enabled": True, "mode": "rules", "provider": "claude"}
 
     def test_status_flag_off(self, client, auth_headers):
         _set_setting("ai_suggestions_enabled", "false")
@@ -189,6 +189,65 @@ class TestAIRoutes:
         assert [s["title"] for s in data["suggestions"]] == ["T"]
         assert _one("SELECT details->>'input_tokens' FROM audit_log "
                     "WHERE action_type = 'AI_SUGGESTION' ORDER BY log_id DESC LIMIT 1") == "10"
+
+
+    def test_llm_mode_with_patched_gemini_client(self, client, auth_headers, monkeypatch):
+        """AI_PROVIDER=gemini: same validation/merge, JSON text from a fake
+        google-genai client, status reports the provider."""
+        import json
+        from google.genai import types
+        from services.ai import gemini
+
+        monkeypatch.setenv("AI_PROVIDER", "gemini")
+        monkeypatch.setenv("GEMINI_API_KEY", "test-key-not-real")
+        status = client.get("/api/admin/ai/status", headers=auth_headers).get_json()
+        assert status == {"enabled": True, "mode": "llm", "provider": "gemini"}
+        count_id = _make_count()
+        sent = []
+
+        class Models:
+            def generate_content(self, **kw):
+                sent.append(kw)
+                cid = json.loads(kw["contents"])["candidates"][0]["id"]
+                body = {"suggestions": [
+                    {"candidate_id": cid, "priority": "high", "action": "investigate",
+                     "title": "G", "detail": "D"},
+                    {"candidate_id": "0000000000000000", "priority": "high", "action": "none",
+                     "title": "ghost", "detail": "ghost"}]}
+                return types.GenerateContentResponse(
+                    candidates=[types.Candidate(
+                        content=types.Content(role="model", parts=[types.Part(text=json.dumps(body))]),
+                        finish_reason="STOP")],
+                    usage_metadata=types.GenerateContentResponseUsageMetadata(
+                        prompt_token_count=11, candidates_token_count=4, thoughts_token_count=3))
+
+        monkeypatch.setattr(gemini, "_get_client", lambda key: type("C", (), {"models": Models()}))
+        resp = client.post("/api/admin/ai/cycle-count-review",
+                           json={"count_id": count_id, "lang": "en"}, headers=auth_headers)
+        data = resp.get_json()
+        assert resp.status_code == 200 and data["mode"] == "llm"
+        assert [s["title"] for s in data["suggestions"]] == ["G"]
+        assert sent[0]["config"].response_mime_type == "application/json"
+        details = _one("SELECT details FROM audit_log WHERE action_type = 'AI_SUGGESTION' "
+                       "ORDER BY log_id DESC LIMIT 1")
+        assert details["model"] == gemini.DEFAULT_MODEL
+        assert details["input_tokens"] == 11 and details["output_tokens"] == 7
+
+    def test_gemini_error_falls_back_to_rules(self, client, auth_headers, monkeypatch):
+        from services.ai import gemini
+
+        monkeypatch.setenv("AI_PROVIDER", "gemini")
+        monkeypatch.setenv("GEMINI_API_KEY", "test-key-not-real")
+        count_id = _make_count()
+
+        class Models:
+            def generate_content(self, **kw):
+                raise TimeoutError("timed out")
+
+        monkeypatch.setattr(gemini, "_get_client", lambda key: type("C", (), {"models": Models()}))
+        resp = client.post("/api/admin/ai/cycle-count-review",
+                           json={"count_id": count_id, "lang": "en"}, headers=auth_headers)
+        assert resp.status_code == 200 and resp.get_json()["mode"] == "rules"
 
 
 class TestAIFeedback:

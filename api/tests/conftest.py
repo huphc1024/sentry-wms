@@ -46,8 +46,12 @@ _TEST_MAPPINGS_DIR = _tempfile.mkdtemp(prefix="sentry-test-mappings-")
 os.environ.setdefault("SENTRY_INBOUND_MAPPINGS_DIR", _TEST_MAPPINGS_DIR)
 
 # AI suggestions run in free rules mode under test; LLM-mode tests patch
-# services.ai.client.call_claude instead of using a real key.
-os.environ.pop("ANTHROPIC_API_KEY", None)
+# services.ai.client.call_claude (or the Gemini client) instead of using a real key.
+# Set to "" rather than popped: app.py calls load_dotenv(), which would
+# otherwise re-import real keys from the repo .env (it never overrides an
+# existing variable, even an empty one).
+for _ai_var in ("ANTHROPIC_API_KEY", "GEMINI_API_KEY", "AI_PROVIDER"):
+    os.environ[_ai_var] = ""
 
 os.environ.setdefault("JWT_SECRET", "NEVER_USE_THIS_IN_PRODUCTION_32!")
 os.environ.setdefault("SENTRY_ENCRYPTION_KEY", "t5hPIEVn_O41qfiMqAiPEnwzQh68o3Es46YfSOBvEK8=")

@@ -26,6 +26,7 @@ export const en = {
   'status.SHIPPED': 'SHIPPED',
   'status.SHORT': 'SHORT',
   'status.VARIANCE': 'VARIANCE',
+  'status.WAITING_STOCK': 'WAITING STOCK',
 };
 
 export const vi = {
@@ -48,4 +49,5 @@ export const vi = {
   'status.SHIPPED': 'ĐÃ GỬI',
   'status.SHORT': 'THIẾU',
   'status.VARIANCE': 'LỆCH',
+  'status.WAITING_STOCK': 'CHỜ HÀNG',
 };

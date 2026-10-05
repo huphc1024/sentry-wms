@@ -48,7 +48,7 @@ sales-orders, backorders, fraud, picking-tickets, picking-batches,
 items, vendors, adjustments,
 warehouses, bins, zones, preferred-bins,
 pallets, expiry, vehicle-movements, warehouse-simulation,
-notifications, audit-log
+notifications, audit-log, ai-assistant
 ```
 
 Mobile: `pick, pack, ship, receive, putaway, count, transfer, map`

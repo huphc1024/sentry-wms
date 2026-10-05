@@ -347,6 +347,9 @@ ALL_PAGE_KEYS = (
     "warehouses", "bins", "zones", "preferred-bins",
     # Pallet LPN tracking, QR labels, and expiry/disposal supervision.
     "pallets", "expiry",
+    # AI assistant (phase 3): read-only Q&A over stock, zones, expiry,
+    # waiting orders, POs, receipts, counts and sales of one warehouse.
+    "ai-assistant",
     # Gate/yard vehicle movement log.
     "vehicle-movements",
     # Warehouse Simulation: 2D floor plan with bin positions and item categories.
@@ -436,3 +439,8 @@ ACTION_SO_UNSHIPPED = "SO_UNSHIPPED"
 # AI suggestions (mig 097): one audit row per suggestion request. details
 # carries feature/mode/model/token counts only -- never prompt text.
 ACTION_AI_SUGGESTION = "AI_SUGGESTION"
+# AI assistant (phase 3): one audit row per /ai/ask request. details carries
+# mode/tools/token counts and the question LENGTH only -- never its text,
+# which is free input and may contain names or phone numbers. Only rows
+# with mode 'llm' count towards ai_daily_call_limit.
+ACTION_AI_ASSISTANT = "AI_ASSISTANT"
