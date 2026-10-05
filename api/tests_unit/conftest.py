@@ -5,4 +5,5 @@ import os
 import sys
 
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
-os.environ.pop("ANTHROPIC_API_KEY", None)
+for _ai_var in ("ANTHROPIC_API_KEY", "GEMINI_API_KEY", "AI_PROVIDER"):
+    os.environ.pop(_ai_var, None)

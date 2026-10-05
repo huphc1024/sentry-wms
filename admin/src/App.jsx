@@ -48,6 +48,7 @@ import Fraud from './pages/Fraud.jsx';
 import WarehouseSimulation from './pages/WarehouseSimulation.jsx';
 import Pallets from './pages/Pallets.jsx';
 import Expiry from './pages/Expiry.jsx';
+import AiAssistant from './pages/AiAssistant.jsx';
 import VehicleMovements from './pages/VehicleMovements.jsx';
 import RateCards from './pages/RateCards.jsx';
 import Invoices from './pages/Invoices.jsx';
@@ -159,6 +160,7 @@ export default function App() {
         <Route path="/transfer-orders" element={<ErrorBoundary fallbackMessage={t('errors.couldNotLoad', { name: t('nav.transferOrders') })}><TransferOrders /></ErrorBoundary>} />
         <Route path="/pallets" element={<ErrorBoundary fallbackMessage={t('errors.couldNotLoad', { name: t('nav.pallets') })}><Pallets /></ErrorBoundary>} />
         <Route path="/expiry" element={<ErrorBoundary fallbackMessage={t('errors.couldNotLoad', { name: t('nav.expiry') })}><Expiry /></ErrorBoundary>} />
+        <Route path="/ai-assistant" element={<ErrorBoundary fallbackMessage={t('errors.couldNotLoad', { name: t('nav.aiAssistant') })}><AiAssistant /></ErrorBoundary>} />
         <Route path="/vehicle-movements" element={<ErrorBoundary fallbackMessage={t('errors.couldNotLoad', { name: t('nav.vehicleMovements') })}><VehicleMovements /></ErrorBoundary>} />
         <Route path="/customers" element={<ErrorBoundary fallbackMessage={t('errors.couldNotLoad', { name: t('nav.customers') })}><Customers /></ErrorBoundary>} />
         <Route path="/rate-cards" element={<ErrorBoundary fallbackMessage={t('errors.couldNotLoad', { name: t('nav.rateCards') })}><RateCards /></ErrorBoundary>} />

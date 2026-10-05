@@ -6,21 +6,36 @@ Operator-facing suggestions on admin pages: **replenishment** (Inventory), **exp
 
 | Mode | When | Cost |
 |---|---|---|
-| `rules` | No `ANTHROPIC_API_KEY`, feature disabled for LLM, or any AI error | Free; nothing leaves the server |
-| `llm` | `ANTHROPIC_API_KEY` set and the feature enabled | Anthropic API usage |
+| `rules` | No API key for the selected provider, feature disabled for LLM, or any AI error | Free; nothing leaves the server |
+| `llm` | The selected provider's key set (`ANTHROPIC_API_KEY` for `AI_PROVIDER=claude`, `GEMINI_API_KEY` for `AI_PROVIDER=gemini`) and the feature enabled | Anthropic or Google Gemini API usage |
 
-Both modes start from the same SQL candidates (items at/below reorder point or with backorder demand; stock expired or expiring within N days; counted lines with variance, plus pending adjustments). Rules mode turns them into bilingual (vi/en) sentences with deterministic priorities. LLM mode sends the redacted candidates to Claude, which selects, ranks and rewrites them. Every suggestion must reference a candidate id; anything the model invents is dropped, and `sku`, `bin_code`, `quantity` and `due_date` always come from our own data. A refusal, timeout, API error, malformed output or empty result silently falls back to rules mode (the error is logged after secret scrubbing).
+Both modes start from the same SQL candidates (items at/below reorder point or with backorder demand; stock expired or expiring within N days; counted lines with variance, plus pending adjustments). Rules mode turns them into bilingual (vi/en) sentences with deterministic priorities. LLM mode sends the redacted candidates to the model (Claude or Gemini), which selects, ranks and rewrites them. Every suggestion must reference a candidate id; anything the model invents is dropped, and `sku`, `bin_code`, `quantity` and `due_date` always come from our own data. A refusal, timeout, API error, malformed output or empty result silently falls back to rules mode (the error is logged after secret scrubbing).
 
 ## Configuration
 
 | Setting | Where | Default |
 |---|---|---|
-| `ANTHROPIC_API_KEY` | environment (`.env`) | empty = rules mode |
-| `AI_MODEL` | environment | `claude-opus-5-5` |
+| `AI_PROVIDER` | environment (`.env`) | `claude` (`gemini` to use Google Gemini; unknown values mean `claude`) |
+| `ANTHROPIC_API_KEY` | environment (`.env`) | empty = rules mode (when `AI_PROVIDER=claude`) |
+| `AI_MODEL` | environment | `claude-opus-5-5` (Claude only) |
+| `GEMINI_API_KEY` | environment (`.env`) | empty = rules mode (when `AI_PROVIDER=gemini`) |
+| `GEMINI_MODEL` | environment | `gemini-3.5-flash` |
+| `GEMINI_FALLBACK_MODEL` | environment | `gemini-3.1-flash-lite`, tried once when the main model answers 429 / 503; `none` disables |
+| `GEMINI_THINKING_LEVEL` | environment | `low` (`minimal` / `low` / `medium` / `high`; `none` sends no thinking config) |
 | `ai_suggestions_enabled` | `app_settings` | `true` |
-| `ai_daily_call_limit` | `app_settings` | `200` per UTC day |
+| `ai_daily_call_limit` | `app_settings` | `200` per UTC day (shared with the phase 3 assistant's LLM answers, see [ai-assistant.md](ai-assistant.md)) |
 
-Requests use effort `low`, `max_tokens` 4000, a 30 s timeout and one retry.
+Claude requests use effort `low`, `max_tokens` 4000, a 30 s timeout and one retry. `GET /api/admin/ai/status` returns `{"enabled", "mode", "provider"}`.
+
+## Providers
+
+`services/ai/client.generate_json()` is the provider-neutral entry point; `AI_PROVIDER` selects `call_claude` (Anthropic structured output) or `services/ai/gemini.generate_json` (SDK `google-genai`, pinned in `api/requirements.txt`). Both return the same `(parsed, usage)` shape (`usage` = model, input tokens, output tokens; for Gemini output includes thinking tokens), and every error becomes `AIUnavailable`, so the fallback to rules is identical.
+
+Gemini specifics:
+
+- `client.models.generate_content` with `system_instruction`, `response_mime_type="application/json"` and `response_json_schema`, `max_output_tokens` 8192 (thinking tokens count against it), thinking level from `GEMINI_THINKING_LEVEL`. Only finish reason `STOP` is accepted; `MAX_TOKENS` (truncated), `SAFETY` and other endings fall back to rules.
+- 30 s timeout and no SDK retries; a 429 / 503 (`RESOURCE_EXHAUSTED` / `UNAVAILABLE`) from `GEMINI_MODEL` is retried once on `GEMINI_FALLBACK_MODEL`, any other error falls back immediately. The audit row records the model that answered.
+- The output schema is reduced to the Gemini-safe subset before sending (`gemini.to_gemini_schema`): `type`, `description`, `enum`, `format`, `minimum`, `maximum`, `minItems`, `maxItems`, `title`, `properties`, `required`, `items`, `anyOf` / `oneOf`. `additionalProperties`, `minLength`, `maxLength`, `pattern`, `default` and similar are dropped; the model output is validated by `merge_llm` exactly as for Claude (only known candidate ids, allowed priorities and actions; facts from our data).
 
 ## Endpoints
 
@@ -63,11 +78,13 @@ Priority: `high` for `release`, `create_po`, a ship-by date within 2 days, a PO 
 
 - Context is built from per-feature **allow-lists** (SKU, item name, bin code, quantities, dates, rule hints; for backorders the order number, per-line stock facts and a warehouse code). Customer, vendor, address, contact, memo/notes, driver, password and token fields are never selected by the candidate queries; nested lists (backorder lines) pass through their own allow-list.
 - A second tripwire (`assert_no_pii`) aborts the LLM call if a forbidden key ever appears; free-text values have emails, phone-like numbers and long digit runs masked.
+- Both providers receive the same redacted context; nothing extra is sent to Gemini.
+- **Gemini free tier:** per Google's terms (verify the current Gemini API terms and pricing page), content submitted on the free tier may be used to improve Google products; the paid tier states it is not. Only the redacted operational data described above is ever sent. Use a paid key, or stay on rules mode, if that is not acceptable.
 - Prompts and responses are not stored. The audit row (`AI_SUGGESTION`) holds only feature, mode, model, token counts and suggestion count. Feedback rows hold a suggestion hash, kind, mode and rating.
 
 ## Turning it off
 
-- Stop LLM use only: unset `ANTHROPIC_API_KEY` (rules mode keeps working).
+- Stop LLM use only: unset the selected provider's key (`ANTHROPIC_API_KEY` or `GEMINI_API_KEY`); rules mode keeps working.
 - Disable entirely: `UPDATE app_settings SET value = 'false' WHERE key = 'ai_suggestions_enabled'` (insert the row if missing). Endpoints then answer `503 {"error": "ai_disabled"}`.
 - The same `503` is returned once `ai_daily_call_limit` requests have been audited for the day.
 

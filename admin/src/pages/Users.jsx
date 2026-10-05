@@ -43,7 +43,7 @@ const ROLE_PRESETS = [
       'items', 'vendors', 'adjustments',
       'warehouses', 'bins', 'zones', 'preferred-bins',
       'pallets', 'expiry', 'vehicle-movements', 'warehouse-simulation',
-      'notifications', 'audit-log',
+      'notifications', 'audit-log', 'ai-assistant',
     ],
   },
   {
@@ -81,6 +81,7 @@ const PAGE_GROUPS = [
       { key: 'warehouse-simulation', labelKey: 'users.pageWarehouseSimulation' },
       { key: 'cycle-counts', labelKey: 'users.pageCycleCounts' },
       { key: 'count-approvals', labelKey: 'users.pageCountApprovals' },
+      { key: 'ai-assistant', labelKey: 'nav.aiAssistant' },
     ],
   },
   {

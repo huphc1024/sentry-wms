@@ -3,14 +3,14 @@
 app_settings keys:
   ai_suggestions_enabled  'true' (default) / 'false'
   ai_daily_call_limit     integer, default 200 (counted per UTC day from
-                          audit_log rows with action AI_SUGGESTION)
+                          audit_log rows with action AI_SUGGESTION, plus
+                          AI_ASSISTANT rows whose mode is 'llm')
 """
-
-import os
 
 from sqlalchemy import text
 
-from constants import ACTION_AI_SUGGESTION
+from constants import ACTION_AI_ASSISTANT, ACTION_AI_SUGGESTION
+from services.ai import client as ai_client
 
 FLAG_KEY = "ai_suggestions_enabled"
 LIMIT_KEY = "ai_daily_call_limit"
@@ -34,7 +34,9 @@ def parse_limit(raw, default=DEFAULT_LIMIT):
 
 
 def api_key_present():
-    return bool(os.environ.get("ANTHROPIC_API_KEY", "").strip())
+    """Key of the selected provider (AI_PROVIDER: ANTHROPIC_API_KEY for
+    claude, GEMINI_API_KEY for gemini)."""
+    return ai_client.api_key_present()
 
 
 def decide(flag_raw, limit_raw, used_today, key_present):
@@ -53,19 +55,25 @@ def _load(db):
 
 
 def calls_today(db):
+    """AI_SUGGESTION rows plus assistant rows that actually used the LLM
+    (quick-mode assistant answers are free and do not count)."""
     return db.execute(
         text(
-            "SELECT COUNT(*) FROM audit_log WHERE action_type = :a "
+            "SELECT COUNT(*) FROM audit_log WHERE (action_type = :a "
+            "OR (action_type = :b AND details->>'mode' = 'llm')) "
             "AND (created_at AT TIME ZONE 'UTC')::date = (NOW() AT TIME ZONE 'UTC')::date"
         ),
-        {"a": ACTION_AI_SUGGESTION},
+        {"a": ACTION_AI_SUGGESTION, "b": ACTION_AI_ASSISTANT},
     ).scalar() or 0
 
 
 def status(db):
-    """DB-backed wrapper around decide()."""
+    """DB-backed wrapper around decide(), plus the configured provider
+    ('claude' | 'gemini'; reported even in rules mode)."""
     flag_raw, limit_raw = _load(db)
-    return decide(flag_raw, limit_raw, calls_today(db), api_key_present())
+    out = decide(flag_raw, limit_raw, calls_today(db), api_key_present())
+    out["provider"] = ai_client.provider()
+    return out
 
 
 def llm_enabled(db):

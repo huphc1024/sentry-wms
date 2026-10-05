@@ -5,6 +5,8 @@ All notable changes to Sơn Lộc WMS will be documented in this file.
 ## [Unreleased]
 
 - Added read-only dashboard endpoints `GET /api/admin/dashboard/overview` and `/dashboard/sales` (KPIs, gap-filled daily series, status/zone/channel breakdowns).
+- Added the read-only AI assistant ("Trợ lý AI", admin page `/ai-assistant`, page key `ai-assistant`, `POST /api/admin/ai/ask`): free preset quick questions without an API key, free-text Q&A over nine fixed warehouse-scoped tools when AI is on; see `docs/ai-assistant.md`.
+- Added Google Gemini as a second AI provider (`AI_PROVIDER=gemini`, `GEMINI_API_KEY`, `GEMINI_MODEL`, SDK `google-genai`) for AI suggestions and the assistant; default stays `claude`, rules / quick mode unchanged; see `docs/ai-suggestions.md`.
 
 "Customer portal" arc. A 3PL customer can now see its own stock, inbound
 and invoices, and submit outbound requests, through a portal of its own -

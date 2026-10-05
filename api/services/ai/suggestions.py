@@ -161,7 +161,7 @@ def generate(kind, rows, lang, use_llm):
     ctx_rows = [_ctx_row(kind, rows_by_id[cid], s) for cid, s in by_id.items()]
     try:
         ctx = redaction.build_context(kind, ctx_rows, lang)
-        parsed, usage = ai_client.call_claude(
+        parsed, usage = ai_client.generate_json(
             SYSTEM_PROMPT,
             json.dumps(ctx, sort_keys=True, ensure_ascii=False),
             OUTPUT_SCHEMA,
