@@ -8,6 +8,7 @@ import Modal from '../components/Modal.jsx';
 import RichText from '../i18n/RichText.jsx';
 import { useLocale } from '../i18n/locale.jsx';
 import SalesOrderModal from '../components/SalesOrderModal.jsx';
+import AiSuggestions from '../components/AiSuggestions.jsx';
 // expected_date is a date-only string. new Date('2026-08-25') parses as UTC
 // midnight and renders a day early west of it, which is the bug this helper
 // exists to avoid.
@@ -257,6 +258,13 @@ export default function Backorders() {
       )}
       {actionError && (
         <div className="form-error" style={{ marginBottom: 12 }}>{actionError}</div>
+      )}
+      {tab === 'waiting' && warehouseId && (
+        <AiSuggestions
+          kind="backorder"
+          warehouseId={warehouseId}
+          request={() => ({ path: '/admin/ai/backorders', body: { warehouse_id: warehouseId } })}
+        />
       )}
       <div className="section">
         <div role="tablist" style={{ display: 'flex', gap: 4, marginBottom: 12 }}>

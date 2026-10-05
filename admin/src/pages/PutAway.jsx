@@ -3,6 +3,7 @@ import { api } from '../api.js';
 import { useWarehouse } from '../warehouse.jsx';
 import PageHeader from '../components/PageHeader.jsx';
 import Modal from '../components/Modal.jsx';
+import AiSuggestions from '../components/AiSuggestions.jsx';
 import { useLocale } from '../i18n/locale.jsx';
 
 // Dashboard view of staging bins for the supervisor. Grid of
@@ -110,6 +111,14 @@ export default function PutAway() {
           {t('putAway.totalUnits')}
         </span>
       </div>
+
+      {warehouseId && (
+        <AiSuggestions
+          kind="putaway"
+          warehouseId={warehouseId}
+          request={() => ({ path: '/admin/ai/putaway', body: { warehouse_id: warehouseId } })}
+        />
+      )}
 
       {loading && (
         <p style={{ fontSize: 13, color: 'var(--text-secondary)' }}>{t('common.loading')}</p>

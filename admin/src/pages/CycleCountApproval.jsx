@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react';
 import { api } from '../api.js';
 import PageHeader from '../components/PageHeader.jsx';
+import AiSuggestions from '../components/AiSuggestions.jsx';
 import { useLocale } from '../i18n/locale.jsx';
 
 export default function CycleCountApproval() {
@@ -115,6 +116,10 @@ export default function CycleCountApproval() {
               <div style={{ fontWeight: 600, fontSize: 14, marginBottom: 12 }}>
                 {t('cycleCounts.countTitle', { id: countId, bin: items[0].bin_code })}
               </div>
+              <AiSuggestions
+                kind="cycle_count"
+                request={() => ({ path: '/admin/ai/cycle-count-review', body: { count_id: Number(countId) } })}
+              />
               <table style={{ width: '100%', fontSize: 13, borderCollapse: 'collapse' }}>
                 <thead>
                   <tr style={{ borderBottom: '1px solid var(--border)' }}>

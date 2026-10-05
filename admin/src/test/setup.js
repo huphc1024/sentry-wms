@@ -50,3 +50,17 @@ if (typeof window !== 'undefined' && !window.matchMedia) {
     dispatchEvent: () => false,
   });
 }
+
+/**
+ * jsdom has no ResizeObserver either. Ant Design's Tabs (and recharts)
+ * observe their container on mount; a no-op observer is the right answer
+ * for a DOM that never lays anything out.
+ */
+if (typeof window !== 'undefined' && !window.ResizeObserver) {
+  window.ResizeObserver = class {
+    observe() {}
+    unobserve() {}
+    disconnect() {}
+  };
+  globalThis.ResizeObserver = window.ResizeObserver;
+}

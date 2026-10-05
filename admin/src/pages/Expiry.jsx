@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import PageHeader from '../components/PageHeader.jsx';
 import Modal from '../components/Modal.jsx';
+import AiSuggestions from '../components/AiSuggestions.jsx';
 import { api } from '../api.js';
 import { useWarehouse } from '../warehouse.jsx';
 import { useLocale } from '../i18n/locale.jsx';
@@ -180,6 +181,12 @@ export default function Expiry() {
               {notice.message}
             </div>
           )}
+
+          <AiSuggestions
+            kind="expiry"
+            warehouseId={warehouseId}
+            request={() => ({ path: '/admin/ai/expiry-actions', body: { warehouse_id: warehouseId, days: 30 } })}
+          />
 
           <div className="expiry-toolbar">
             <div>

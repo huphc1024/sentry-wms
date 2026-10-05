@@ -3,6 +3,7 @@ import { api } from '../api.js';
 import { useWarehouse } from '../warehouse.jsx';
 import DataTable from '../components/DataTable.jsx';
 import PageHeader from '../components/PageHeader.jsx';
+import AiSuggestions from '../components/AiSuggestions.jsx';
 import { useLocale } from '../i18n/locale.jsx';
 
 // Page-level warehouse + bin filters were added on 2026-05-10 because the
@@ -125,6 +126,13 @@ export default function Inventory() {
   return (
     <div>
       <PageHeader title={t('nav.inventory')} />
+      {warehouseFilter && (
+        <AiSuggestions
+          kind="replenish"
+          warehouseId={warehouseFilter}
+          request={() => ({ path: '/admin/ai/replenishment', body: { warehouse_id: warehouseFilter } })}
+        />
+      )}
       <div className="filter-bar" style={{ display: 'flex', gap: 12, flexWrap: 'wrap', alignItems: 'center' }}>
         <select
           className="form-input"

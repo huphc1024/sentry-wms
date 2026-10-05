@@ -26,6 +26,13 @@ export default defineConfig({
               test: /node_modules[\/](antd|@ant-design|@rc-component|rc-[\w-]+)[\/]/,
               priority: 10,
             },
+            {
+              // Charts only load with the dashboard; keep d3 and recharts
+              // out of the entry bundle and cacheable on their own.
+              name: 'charts',
+              test: /node_modules[\/](recharts|d3-[\w-]+|victory-vendor|internmap|decimal\.js-light)[\/]/,
+              priority: 10,
+            },
           ],
         },
       },
