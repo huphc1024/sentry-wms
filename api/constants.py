@@ -347,6 +347,8 @@ ALL_PAGE_KEYS = (
     "warehouses", "bins", "zones", "preferred-bins",
     # Pallet LPN tracking, QR labels, and expiry/disposal supervision.
     "pallets", "expiry",
+    # Gate/yard vehicle movement log.
+    "vehicle-movements",
     # Warehouse Simulation: 2D floor plan with bin positions and item categories.
     "warehouse-simulation",
     # POS Activity dashboard (opt-in via pos_activity_enabled setting).

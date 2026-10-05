@@ -439,6 +439,23 @@ def record_ship(
         shipped_at=shipped_at,
     )
 
+    try:
+        from services.vehicle_service import emit_outbound_shipped
+        emit_outbound_shipped(
+            db,
+            so_id=so_id,
+            warehouse_id=warehouse_id,
+            source_txn_id=source_txn_id,
+            username=username,
+            carrier=carrier,
+            tracking_number=tracking_number,
+        )
+    except Exception:
+        logger.exception(
+            "emit_outbound_shipped failed for so_id=%s; ship kept",
+            so_id,
+        )
+
     return {
         "fulfillment_id": fulfillment_id,
         "shipped_at": shipped_at,
@@ -715,6 +732,22 @@ def record_admin_ship(db, *, so_id, username, source_txn_id, acknowledge_shortfa
             username=username,
             shipped_at=shipped_at,
         )
+        try:
+            from services.vehicle_service import emit_outbound_shipped
+            emit_outbound_shipped(
+                db,
+                so_id=so_id,
+                warehouse_id=so.warehouse_id,
+                source_txn_id=source_txn_id,
+                username=username,
+                carrier=carrier_from_ship_method(so.ship_method),
+                tracking_number=so.tracking_number,
+            )
+        except Exception:
+            logger.exception(
+                "emit_outbound_shipped failed for so_id=%s; ship kept",
+                so_id,
+            )
 
     return {
         "fulfillment_id": fulfillment_id,

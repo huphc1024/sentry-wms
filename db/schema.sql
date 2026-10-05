@@ -231,6 +231,29 @@ CREATE UNIQUE INDEX ux_pallets_barcode ON pallets(pallet_barcode)
 CREATE INDEX ix_pallets_expiry ON pallets(expiry_date)
     WHERE status = 'STORED';
 
+-- Gate / yard sessions (mig 086 + 092). Linked to PO inbound or SO outbound.
+CREATE TABLE vehicle_movements (
+    movement_id BIGSERIAL PRIMARY KEY,
+    movement_type VARCHAR(20) NOT NULL,
+    vehicle_plate VARCHAR(64) NOT NULL,
+    driver_name VARCHAR(200),
+    reference_type VARCHAR(64),
+    reference_id BIGINT,
+    related_pallet_id BIGINT REFERENCES pallets(pallet_id),
+    recorded_by VARCHAR(100),
+    recorded_at TIMESTAMPTZ DEFAULT NOW(),
+    notes TEXT,
+    warehouse_id INT REFERENCES warehouses(warehouse_id) ON DELETE RESTRICT,
+    status VARCHAR(20) NOT NULL DEFAULT 'CHECKED_IN'
+      CHECK (status IN ('CHECKED_IN', 'IN_PROGRESS', 'COMPLETED', 'CANCELLED')),
+    completed_at TIMESTAMPTZ,
+    completed_by VARCHAR(100)
+);
+CREATE INDEX ix_vehicle_movements_plate ON vehicle_movements(vehicle_plate);
+CREATE INDEX ix_vehicle_movements_ref ON vehicle_movements(reference_type, reference_id);
+CREATE INDEX ix_vehicle_movements_warehouse_status ON vehicle_movements(warehouse_id, status);
+CREATE INDEX ix_vehicle_movements_plate_status ON vehicle_movements(vehicle_plate, status);
+
 CREATE TABLE inventory (
     inventory_id SERIAL PRIMARY KEY,
     item_id INT NOT NULL REFERENCES items(item_id),

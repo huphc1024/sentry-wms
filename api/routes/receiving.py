@@ -470,6 +470,23 @@ def receive_items(validated):
             {"po_id": po_id, "status": PO_RECEIVED},
         )
         po_status = PO_RECEIVED
+        # Gate close + inbound.completed are best-effort: a missing
+        # migration or webhook failure must not roll back a successful
+        # physical receipt (otherwise fully receiving the last line 500s).
+        try:
+            from services.vehicle_service import emit_inbound_completed
+            emit_inbound_completed(
+                g.db,
+                po_id=po_id,
+                warehouse_id=warehouse_id,
+                source_txn_id=getattr(g, "source_txn_id", None) or uuid.uuid4(),
+                username=username,
+            )
+        except Exception:
+            current_app.logger.exception(
+                "emit_inbound_completed failed for po_id=%s; receipt kept",
+                po_id,
+            )
     else:
         g.db.execute(
             text("UPDATE purchase_orders SET status = :status WHERE po_id = :po_id"),

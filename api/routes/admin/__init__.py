@@ -65,4 +65,5 @@ from routes.admin import (  # noqa: E402, F401
     admin_warehouse_map,
     admin_webhooks,
     admin_pallets,
+    admin_vehicle_movements,
 )

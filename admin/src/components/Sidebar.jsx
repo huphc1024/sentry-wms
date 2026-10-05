@@ -54,6 +54,7 @@ const NAV = [
         { to: '/data', labelKey: 'nav.data', pageKeys: ['warehouses', 'bins', 'zones', 'preferred-bins'] },
         { to: '/pallets', labelKey: 'nav.pallets', pageKey: 'pallets' },
         { to: '/expiry', labelKey: 'nav.expiry', pageKey: 'expiry' },
+        { to: '/vehicle-movements', labelKey: 'nav.vehicleMovements', pageKey: 'vehicle-movements' },
     ],
   },
   {

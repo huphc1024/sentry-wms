@@ -47,6 +47,7 @@ import Fraud from './pages/Fraud.jsx';
 import WarehouseSimulation from './pages/WarehouseSimulation.jsx';
 import Pallets from './pages/Pallets.jsx';
 import Expiry from './pages/Expiry.jsx';
+import VehicleMovements from './pages/VehicleMovements.jsx';
 
 function ProtectedRoute({ children }) {
   const { user, loading } = useAuth();
@@ -153,6 +154,7 @@ export default function App() {
         <Route path="/transfer-orders" element={<ErrorBoundary fallbackMessage={t('errors.couldNotLoad', { name: t('nav.transferOrders') })}><TransferOrders /></ErrorBoundary>} />
         <Route path="/pallets" element={<ErrorBoundary fallbackMessage={t('errors.couldNotLoad', { name: t('nav.pallets') })}><Pallets /></ErrorBoundary>} />
         <Route path="/expiry" element={<ErrorBoundary fallbackMessage={t('errors.couldNotLoad', { name: t('nav.expiry') })}><Expiry /></ErrorBoundary>} />
+        <Route path="/vehicle-movements" element={<ErrorBoundary fallbackMessage={t('errors.couldNotLoad', { name: t('nav.vehicleMovements') })}><VehicleMovements /></ErrorBoundary>} />
       </Route>
     </Routes>
   );

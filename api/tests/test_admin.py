@@ -372,6 +372,31 @@ class TestPalletPagePermission:
         assert resp.status_code == 200
 
 
+# ── Vehicle movement page permissions ─────────────────────────────────────────
+
+class TestVehicleMovementPagePermission:
+    def test_vehicle_movements_denied_without_grant(self, client):
+        _, headers = _web_user_with_pages(client, ["inventory"], username="novehicle")
+        resp = client.post(
+            "/api/admin/vehicle-movements",
+            json={"movement_type": "INBOUND", "vehicle_plate": "51A-12345", "warehouse_id": 1},
+            headers=headers,
+        )
+        assert resp.status_code == 403
+
+    def test_vehicle_movements_granted_user(self, client):
+        _, headers = _web_user_with_pages(
+            client, ["vehicle-movements"], username="vehicleuser",
+        )
+        resp = client.post(
+            "/api/admin/vehicle-movements",
+            json={"movement_type": "INBOUND", "vehicle_plate": "51A-99999", "warehouse_id": 1},
+            headers=headers,
+        )
+        assert resp.status_code == 201
+        assert resp.get_json().get("message") == "recorded"
+
+
 # ── Items ─────────────────────────────────────────────────────────────────────
 
 class TestItems:

@@ -14,6 +14,7 @@ import HomeScreen from '../screens/HomeScreen';
 import ChangePasswordScreen from '../screens/ChangePasswordScreen';
 import ReceiveScreen from '../screens/ReceiveScreen';
 import PutAwayScreen from '../screens/PutAwayScreen';
+import GateScreen from '../screens/GateScreen';
 import PickScanScreen from '../screens/PickScanScreen';
 import PickWalkScreen from '../screens/PickWalkScreen';
 import PickCompleteScreen from '../screens/PickCompleteScreen';
@@ -76,6 +77,7 @@ export default function AppNavigator() {
               <Stack.Screen name="Home" component={HomeScreen} />
               <Stack.Screen name="Receive" component={ReceiveScreen} />
               <Stack.Screen name="PutAway" component={PutAwayScreen} />
+              <Stack.Screen name="Gate" component={GateScreen} />
               <Stack.Screen name="PickScan" component={PickScanScreen} />
               <Stack.Screen name="PickWalk" component={PickWalkScreen} />
               <Stack.Screen name="PickComplete" component={PickCompleteScreen} />

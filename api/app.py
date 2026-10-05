@@ -465,6 +465,7 @@ def create_app():
     from routes.pos import pos_bp
     from routes.warehouse_map import warehouse_map_bp
     from routes.pallets import pallets_bp
+    from routes.gate import gate_bp
     from routes.web import web_bp
 
     app.register_blueprint(auth_bp, url_prefix="/api/auth")
@@ -478,6 +479,7 @@ def create_app():
     app.register_blueprint(transfers_bp, url_prefix="/api/transfers")
     app.register_blueprint(expiry_bp, url_prefix="/api/expiry")
     app.register_blueprint(pallets_bp, url_prefix="/api/pallets")
+    app.register_blueprint(gate_bp, url_prefix="/api/gate")
     app.register_blueprint(warehouse_map_bp, url_prefix="/api/warehouse-map")
     app.register_blueprint(admin_bp, url_prefix="/api/admin")
     app.register_blueprint(warehouses_bp, url_prefix="/api/warehouses")

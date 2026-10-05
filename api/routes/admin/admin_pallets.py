@@ -192,11 +192,17 @@ def move_pallet(pallet_id):
 @require_admin_or_page_permission('pallets')
 @with_db
 def ship_pallet(pallet_id):
-    """Mark pallet shipped (IN_TRANSIT)."""
+    """Mark pallet shipped (IN_TRANSIT) and optionally record vehicle movement. Body: { vehicle_plate, driver_name }"""
+    body = request.get_json() or {}
+    vehicle_plate = body.get('vehicle_plate')
+    driver_name = body.get('driver_name')
     p = g.db.execute(text('SELECT pallet_id, item_id, warehouse_id, bin_id, customer_id FROM pallets WHERE pallet_id = :pid'), {'pid': pallet_id}).fetchone()
     if not p:
         return jsonify({'error': 'Pallet not found'}), 404
     g.db.execute(text('UPDATE pallets SET status = :st, updated_at = NOW() WHERE pallet_id = :pid'), {'st': 'IN_TRANSIT', 'pid': pallet_id})
+    # record vehicle movement if provided
+    if vehicle_plate:
+        g.db.execute(text('INSERT INTO vehicle_movements (movement_type, vehicle_plate, driver_name, reference_type, reference_id, related_pallet_id, recorded_by, recorded_at) VALUES (:mt, :plate, :driver, :rt, :rid, :pallet, :user, NOW())'), {'mt': 'OUTBOUND', 'plate': vehicle_plate, 'driver': driver_name, 'rt': 'PALLET', 'rid': pallet_id, 'pallet': pallet_id, 'user': g.current_user['username']})
     g.db.commit()
     return jsonify({'message': 'shipped'}), 200
 

@@ -46,6 +46,9 @@ V150_CATALOG: Tuple[Tuple[str, int, str], ...] = (
     ("inventoryadjusted.completed", 1, "inventory_adjustment"),
     ("expiry.expired", 1, "inventory_adjustment"),
     ("expiry.disposed", 1, "inventory_adjustment"),
+    # Phase 5 partner-facing gate / commercial events.
+    ("inbound.completed", 1, "purchase_order"),
+    ("outbound.shipped", 1, "sales_order"),
     ("pick.confirmed",       1, "sales_order"),
     ("pack.confirmed",       1, "sales_order"),
     ("ship.confirmed",       1, "sales_order"),
