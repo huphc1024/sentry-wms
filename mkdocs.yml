@@ -46,6 +46,7 @@ nav:
   - ERP Integration: erp-integration.md
   - Transfer Orders: transfer-orders.md
   - AI Suggestions: ai-suggestions.md
+  - AI Assistant: ai-assistant.md
   - Dashboard API: dashboard-api.md
   - Architecture patterns: patterns.md
   - Go-live:
@@ -54,6 +55,7 @@ nav:
       - Training flows: training-flows.md
       - UAT test cases: uat-test-cases.md
   - Test Lab: test-lab.md
+  - Production-like Demo Data: prodlike-data.md
   - Contributing: contributing.md
   - Changelog: changelog.md
 
