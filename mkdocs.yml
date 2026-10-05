@@ -45,6 +45,8 @@ nav:
   - Connectors: connectors.md
   - ERP Integration: erp-integration.md
   - Transfer Orders: transfer-orders.md
+  - AI Suggestions: ai-suggestions.md
+  - Dashboard API: dashboard-api.md
   - Architecture patterns: patterns.md
   - Go-live:
       - Runbook: runbooks/go-live.md

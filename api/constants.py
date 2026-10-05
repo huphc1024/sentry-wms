@@ -432,3 +432,7 @@ ACTION_SO_STATUS_REVERTED = "SO_STATUS_REVERTED"
 ACTION_SO_PICK_RELEASED = "SO_PICK_RELEASED"
 ACTION_SO_UNPACKED = "SO_UNPACKED"
 ACTION_SO_UNSHIPPED = "SO_UNSHIPPED"
+
+# AI suggestions (mig 097): one audit row per suggestion request. details
+# carries feature/mode/model/token counts only -- never prompt text.
+ACTION_AI_SUGGESTION = "AI_SUGGESTION"

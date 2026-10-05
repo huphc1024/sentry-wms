@@ -70,6 +70,8 @@ function wire() {
 
 async function openLocalPickupTab() {
   const view = render(<MemoryRouter><Dashboard /></MemoryRouter>);
+  // The dashboard opens on Overview; the pickup worklist sits under Productivity.
+  fireEvent.click(await view.findByRole('tab', { name: 'Productivity' }));
   fireEvent.click(await view.findByText('Local Pickup'));
   return view;
 }

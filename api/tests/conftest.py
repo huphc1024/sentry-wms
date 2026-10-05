@@ -45,6 +45,10 @@ import tempfile as _tempfile
 _TEST_MAPPINGS_DIR = _tempfile.mkdtemp(prefix="sentry-test-mappings-")
 os.environ.setdefault("SENTRY_INBOUND_MAPPINGS_DIR", _TEST_MAPPINGS_DIR)
 
+# AI suggestions run in free rules mode under test; LLM-mode tests patch
+# services.ai.client.call_claude instead of using a real key.
+os.environ.pop("ANTHROPIC_API_KEY", None)
+
 os.environ.setdefault("JWT_SECRET", "NEVER_USE_THIS_IN_PRODUCTION_32!")
 os.environ.setdefault("SENTRY_ENCRYPTION_KEY", "t5hPIEVn_O41qfiMqAiPEnwzQh68o3Es46YfSOBvEK8=")
 os.environ.setdefault("SENTRY_TOKEN_PEPPER", "NEVER_USE_THIS_PEPPER_IN_PRODUCTION")
@@ -109,6 +113,7 @@ ALL_TABLES = [
     "connector_credentials",
     "login_attempts",
     "preferred_bins",
+    "ai_suggestion_feedback",
     "app_settings",
     "audit_log",
     "inventory_adjustments",
