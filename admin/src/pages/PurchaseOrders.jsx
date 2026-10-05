@@ -89,8 +89,38 @@ export default function PurchaseOrders() {
   const [newLineError, setNewLineError] = useState('');
   const [addingLine, setAddingLine] = useState(false);
   const [resolvedItem, setResolvedItem] = useState(null);
+  // Inbound ownership (mig 087). No backfill was possible, so every PO
+  // created before the portal landed reads "Own stock" until an operator
+  // attributes it here -- that is what makes it visible to the customer.
+  const [customers, setCustomers] = useState([]);
+  const [ownerForm, setOwnerForm] = useState(null);
+  const [ownerError, setOwnerError] = useState('');
 
   useEffect(() => { loadOrders(); }, [page, statusFilter, search, showArchived]);  // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Initial remote-data hydration is intentionally effect-driven. The
+  // async IIFE keeps setState out of the effect body, so no
+  // set-state-in-effect suppression is needed here.
+  useEffect(() => {
+    (async () => {
+      const res = await api.get('/admin/customers');
+      if (res?.ok) setCustomers((await res.json()).customers || []);
+    })();
+  }, []);
+
+  async function saveOwner() {
+    setOwnerError('');
+    const res = await api.put(`/admin/purchase-orders/${ownerForm.po_id}/owner`, {
+      owner_customer_id: ownerForm.owner_customer_id || null,
+    });
+    if (!res?.ok) {
+      const data = await res?.json().catch(() => ({}));
+      setOwnerError(data?.error || 'Failed to set owner');
+      return;
+    }
+    setOwnerForm(null);
+    await loadOrders();
+  }
 
   async function submitCreate() {
     setCreateError('');
@@ -370,10 +400,16 @@ export default function PurchaseOrders() {
     { key: 'vendor_name', labelKey: 'common.vendor' },
     { key: 'expected_date', labelKey: 'purchaseOrders.expectedDate', mono: true, render: (r) => r.expected_date ? new Date(r.expected_date).toLocaleDateString() : '-' },
     { key: 'status', labelKey: 'common.status', render: (r) => <StatusTag status={r.status} /> },
+    {
+      key: 'owner_customer_code',
+      labelKey: 'purchaseOrders.forCustomer',
+      render: (r) => r.owner_customer_code || t('items.ownStock'),
+    },
     { key: 'created_at', labelKey: 'salesOrders.created', render: (r) => r.created_at ? new Date(r.created_at).toLocaleDateString() : '-' },
     { key: 'actions', label: '', render: (r) => (
       <div style={{ display: 'flex', gap: 4 }}>
         <button className="btn btn-sm" onClick={(e) => { e.stopPropagation(); openEdit(r); }} aria-label={t('common.edit')} title={t('common.edit')}>&#9998;</button>
+        <button className="btn btn-sm" onClick={(e) => { e.stopPropagation(); setOwnerError(''); setOwnerForm({ po_id: r.po_id, po_number: r.po_number, owner_customer_id: r.owner_customer_id || '' }); }} aria-label={t('purchaseOrders.setCustomer')} title={t('purchaseOrders.setCustomer')}>&#128100;</button>
       </div>
     )},
   ];
@@ -795,6 +831,36 @@ export default function PurchaseOrders() {
         </Modal>
       )}
 
+      {ownerForm && (
+        <Modal title={t('purchaseOrders.customerFor', { po: ownerForm.po_number })} onClose={() => setOwnerForm(null)}
+          footer={
+            <>
+              <button className="btn" onClick={() => setOwnerForm(null)}>{t('common.cancel')}</button>
+              <button className="btn btn-primary" onClick={saveOwner}>{t('common.save')}</button>
+            </>
+          }
+        >
+          {ownerError && <div className="alert alert-error">{ownerError}</div>}
+          <p style={{ fontSize: 13, color: 'var(--text-secondary)', marginBottom: 12 }}>
+            Attributing this PO is what makes the incoming goods show up in that
+            customer&apos;s portal. Leave it as own stock for the operator&apos;s own inbound.
+          </p>
+          <div className="form-group">
+            <label htmlFor="po-owner">{t('purchaseOrders.forCustomer')}</label>
+            <select id="po-owner" className="form-input"
+              value={ownerForm.owner_customer_id}
+              onChange={(e) => setOwnerForm({ ...ownerForm, owner_customer_id: e.target.value })}
+            >
+              <option value="">{t('items.ownStockNoCustomer')}</option>
+              {customers.filter((c) => c.is_active).map((c) => (
+                <option key={c.customer_id} value={c.customer_id}>
+                  {c.customer_code} &middot; {c.customer_name}
+                </option>
+              ))}
+            </select>
+          </div>
+        </Modal>
+      )}
     </div>
   );
 }

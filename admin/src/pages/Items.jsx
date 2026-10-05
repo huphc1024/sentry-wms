@@ -49,6 +49,11 @@ export default function Items() {
   const [detail, setDetail] = useState(null);
   const [form, setForm] = useState({});
   const [error, setError] = useState('');
+  // Stock ownership (mig 087). Loaded once: the owner select needs the
+  // customer list, and it does not change per keystroke like the item
+  // search does.
+  const [customers, setCustomers] = useState([]);
+  const [ownerForm, setOwnerForm] = useState(null);
 
   // Debounce typed search and guard against out-of-order responses.
   // Each run owns an AbortController; the cleanup cancels a pending
@@ -88,6 +93,33 @@ export default function Items() {
       setItems(mapped);
       setPagination({ page: data.page, pages: data.pages, total: data.total, per_page: data.per_page });
     }
+  }
+
+  // Initial remote-data hydration is intentionally effect-driven. The
+  // async IIFE keeps setState out of the effect body, so no
+  // set-state-in-effect suppression is needed here.
+  useEffect(() => {
+    (async () => {
+      const res = await api.get('/admin/customers');
+      if (res?.ok) setCustomers((await res.json()).customers || []);
+    })();
+  }, []);
+
+  async function saveOwner() {
+    setError('');
+    // Empty string from the select means "no owner", which the endpoint
+    // takes as null: the SKU is the operator's own stock and the portal
+    // shows it to nobody.
+    const res = await api.put(`/admin/items/${ownerForm.id}/owner`, {
+      owner_customer_id: ownerForm.owner_customer_id || null,
+    });
+    if (!res?.ok) {
+      const data = await res?.json().catch(() => ({}));
+      setError(data?.error || 'Failed to set owner');
+      return;
+    }
+    setOwnerForm(null);
+    await loadItems();
   }
 
   async function viewItem(item) {
@@ -214,6 +246,11 @@ export default function Items() {
     { key: 'category', labelKey: 'items.category', render: (r) => r.category || '-' },
     { key: 'weight_lbs', labelKey: 'items.weight', render: (r) => r.weight_lbs != null ? `${(r.weight_lbs / KG_TO_LB).toFixed(2)} kg` : '-' },
     {
+      key: 'owner_customer_code',
+      labelKey: 'items.owner',
+      render: (r) => r.owner_customer_code || t('items.ownStock'),
+    },
+    {
       key: 'is_active',
       labelKey: 'items.active',
       render: (r) => t(r.is_active ? 'common.yes' : 'common.no'),
@@ -221,6 +258,7 @@ export default function Items() {
     { key: 'actions', label: '', render: (r) => (
       <div style={{ display: 'flex', gap: 4 }}>
         <button className="btn btn-sm" onClick={(e) => { e.stopPropagation(); openEdit(r); }} aria-label={t('common.edit')} title={t('common.edit')}>&#9998;</button>
+        <button className="btn btn-sm" onClick={(e) => { e.stopPropagation(); setError(''); setOwnerForm({ id: r.id, sku: r.sku, owner_customer_id: r.owner_customer_id || '' }); }} aria-label={t('items.setOwner')} title={t('items.setOwner')}>&#128100;</button>
         <button className="btn btn-sm btn-danger" onClick={(e) => { e.stopPropagation(); deleteItem(r.id || r.item_id); }} aria-label={t('common.delete')} title={t('common.delete')}>&#128465;</button>
       </div>
     )},
@@ -418,6 +456,36 @@ export default function Items() {
           <div className="form-group">
             <label>{t('items.descriptionNotes')}</label>
             <textarea className="form-input" rows="3" value={form.description || ''} onChange={(e) => setForm({ ...form, description: e.target.value })} />
+          </div>
+        </Modal>
+      )}
+
+      {ownerForm && (
+        <Modal title={t('items.ownerOf', { sku: ownerForm.sku })} onClose={() => setOwnerForm(null)}
+          footer={
+            <>
+              <button className="btn" onClick={() => setOwnerForm(null)}>{t('common.cancel')}</button>
+              <button className="btn btn-primary" onClick={saveOwner}>{t('common.save')}</button>
+            </>
+          }
+        >
+          {error && <div className="alert alert-error">{error}</div>}
+          <p style={{ fontSize: 13, color: 'var(--text-secondary)', marginBottom: 12 }}>
+            {t('items.ownerHint')}
+          </p>
+          <div className="form-group">
+            <label htmlFor="item-owner">{t('items.owner')}</label>
+            <select id="item-owner" className="form-input"
+              value={ownerForm.owner_customer_id}
+              onChange={(e) => setOwnerForm({ ...ownerForm, owner_customer_id: e.target.value })}
+            >
+              <option value="">{t('items.ownStockNoCustomer')}</option>
+              {customers.filter((c) => c.is_active).map((c) => (
+                <option key={c.customer_id} value={c.customer_id}>
+                  {c.customer_code} &middot; {c.customer_name}
+                </option>
+              ))}
+            </select>
           </div>
         </Modal>
       )}

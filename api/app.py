@@ -466,6 +466,7 @@ def create_app():
     from routes.warehouse_map import warehouse_map_bp
     from routes.pallets import pallets_bp
     from routes.gate import gate_bp
+    from routes.portal import portal_auth_bp, portal_bp
     from routes.web import web_bp
 
     app.register_blueprint(auth_bp, url_prefix="/api/auth")
@@ -483,6 +484,13 @@ def create_app():
     app.register_blueprint(warehouse_map_bp, url_prefix="/api/warehouse-map")
     app.register_blueprint(admin_bp, url_prefix="/api/admin")
     app.register_blueprint(warehouses_bp, url_prefix="/api/warehouses")
+    # Customer portal (phase 3). Every route here is gated by
+    # @require_customer_auth, which rejects staff tokens -- and the staff
+    # @require_auth rejects portal tokens -- so the two surfaces cannot
+    # be reached with the other's session even though both are signed
+    # with the same JWT secret.
+    app.register_blueprint(portal_auth_bp, url_prefix="/api/portal/auth")
+    app.register_blueprint(portal_bp, url_prefix="/api/portal")
     # v1.5.0 #122: first /api/v1/* surface. Gated by @require_wms_token
     # per route; cookie-auth users do not see this surface.
     app.register_blueprint(polling_bp, url_prefix="/api/v1/events")

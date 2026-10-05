@@ -27,6 +27,7 @@ import Items from './pages/Items.jsx';
 import Vendors from './pages/Vendors.jsx';
 import Data from './pages/Data.jsx';
 import Warehouses from './pages/Warehouses.jsx';
+import CustomerUsers from './pages/CustomerUsers.jsx';
 import Users from './pages/Users.jsx';
 import Tokens from './pages/Tokens.jsx';
 import InboundActivity from './pages/InboundActivity.jsx';
@@ -142,6 +143,7 @@ export default function App() {
         <Route path="/zones" element={<Navigate to="/data/zones" replace />} />
         <Route path="/preferred-bins" element={<Navigate to="/data/preferred-bins" replace />} />
         <Route path="/users" element={<ErrorBoundary fallbackMessage={t('errors.couldNotLoad', { name: t('nav.users') })}><Users /></ErrorBoundary>} />
+        <Route path="/customer-users" element={<ErrorBoundary fallbackMessage={t('errors.couldNotLoad', { name: t('nav.customerUsers') })}><CustomerUsers /></ErrorBoundary>} />
         <Route path="/api-tokens" element={<ErrorBoundary fallbackMessage={t('errors.couldNotLoad', { name: t('nav.apiTokens') })}><Tokens /></ErrorBoundary>} />
         <Route path="/inbound" element={<ErrorBoundary fallbackMessage={t('errors.couldNotLoad', { name: t('nav.inboundActivity') })}><InboundActivity /></ErrorBoundary>} />
         <Route path="/consumer-groups" element={<ErrorBoundary fallbackMessage={t('errors.couldNotLoad', { name: t('nav.consumerGroups') })}><ConsumerGroups /></ErrorBoundary>} />

@@ -4,6 +4,7 @@ import DataTable from '../components/DataTable.jsx';
 import PageHeader from '../components/PageHeader.jsx';
 import Modal from '../components/Modal.jsx';
 import { useLocale } from '../i18n/locale.jsx';
+import RichText from '../i18n/RichText.jsx';
 
 // Rotation badges computed server-side, rendered client-side.
 const ROTATION_BADGE = {
@@ -117,6 +118,10 @@ const EMPTY_FORM = {
   source_system: '',
   inbound_resources: [],
   mapping_override: false,
+  // Phase 6 (mig 089): bind the token to one customer. '' = an
+  // operator-owned token, which is every token issued before this
+  // existed and still the right default for connector tokens.
+  customer_id: '',
   advancedMode: false,
   advancedWarehouseIds: '',
   advancedEventTypes: '',
@@ -144,6 +149,9 @@ export default function Tokens() {
     endpoints: [],
     inbound_resources: [],
     source_systems: [],
+    customers: [],
+    customer_scoped_endpoints: [],
+    customer_forbidden_inbound_resources: [],
   });
   const [warehouses, setWarehouses] = useState([]);
 
@@ -179,6 +187,10 @@ export default function Tokens() {
         endpoints: data.endpoints || [],
         inbound_resources: data.inbound_resources || [],
         source_systems: data.source_systems || [],
+        customers: data.customers || [],
+        customer_scoped_endpoints: data.customer_scoped_endpoints || [],
+        customer_forbidden_inbound_resources:
+          data.customer_forbidden_inbound_resources || [],
       });
     }
     if (warehousesRes?.ok) {
@@ -269,6 +281,32 @@ export default function Tokens() {
       );
       return;
     }
+    // Phase 6: a customer-bound token only reaches surfaces that can
+    // filter on the owning customer. Mirrored server-side in
+    // schemas/tokens.py; checked here so the operator sees it before
+    // the round-trip.
+    if (form.customer_id) {
+      const allowed = scopeCatalog.customer_scoped_endpoints;
+      const unscopable = endpoints.filter((s) => !allowed.includes(s));
+      if (unscopable.length > 0) {
+        setCreateError(
+          t('tokens.cannotCarry', {
+            list: unscopable.join(', '),
+            allowed: allowed.join(', ') || t('tokens.noneLower'),
+          })
+        );
+        return;
+      }
+      const forbidden = form.inbound_resources.filter(
+        (r) => scopeCatalog.customer_forbidden_inbound_resources.includes(r)
+      );
+      if (forbidden.length > 0) {
+        setCreateError(
+          t('tokens.cannotWriteMaster', { list: forbidden.join(', ') })
+        );
+        return;
+      }
+    }
     const payload = {
       token_name: form.token_name.trim(),
       warehouse_ids: wh_ids,
@@ -277,6 +315,7 @@ export default function Tokens() {
       source_system: form.source_system || null,
       inbound_resources: form.inbound_resources,
       mapping_override: form.mapping_override,
+      customer_id: form.customer_id || null,
     };
     const res = await api.post('/admin/tokens', payload);
     const body = await res?.json();
@@ -360,6 +399,19 @@ export default function Tokens() {
     { key: 'warehouse_ids', labelKey: 'users.warehouses', render: (r) => renderCsv(r.warehouse_ids) },
     { key: 'event_types', labelKey: 'tokens.eventTypes', render: (r) => renderCsv(r.event_types) },
     { key: 'endpoints', labelKey: 'tokens.endpoints', render: (r) => renderCsv(r.endpoints) },
+    {
+      key: 'customer_id',
+      labelKey: 'common.customer',
+      render: (r) =>
+        r.customer_id
+          ? (
+            <span className="mono" style={{ fontSize: 12 }}
+                  title={r.customer_name || ''}>
+              {r.customer_code || r.customer_id}
+            </span>
+          )
+          : <span style={{ color: 'var(--text-secondary)' }}>{t('tokens.operator')}</span>,
+    },
     {
       key: 'source_system',
       labelKey: 'tokens.source',
@@ -531,6 +583,40 @@ export default function Tokens() {
               </div>
             </>
           )}
+
+          {/* Phase 6 (mig 089): tenant binding. Applies to both the
+              checkbox and advanced paths, so it sits outside that
+              branch. Leaving it on "Operator" reproduces every
+              pre-phase-6 token exactly. */}
+          <div className="form-group" style={{ marginTop: 12, borderTop: '1px solid var(--border)', paddingTop: 12 }}>
+            <label htmlFor="token-customer">{t('tokens.customerBinding')}</label>
+            <select
+              id="token-customer"
+              aria-label={t('tokens.customerBinding')}
+              className="form-input"
+              value={form.customer_id}
+              onChange={(e) => setForm((f) => ({ ...f, customer_id: e.target.value }))}
+            >
+              <option value="">{t('tokens.operatorNoScope')}</option>
+              {scopeCatalog.customers.map((c) => (
+                <option key={c.customer_id} value={c.customer_id}>
+                  {c.customer_code}{c.customer_name ? ` - ${c.customer_name}` : ''}
+                </option>
+              ))}
+            </select>
+            <div style={{ fontSize: 12, color: 'var(--text-secondary)', marginTop: 4 }}>
+              <RichText
+                text={t('tokens.customerBindingHint')}
+                values={{
+                  endpoints: (
+                    <span className="mono">
+                      {scopeCatalog.customer_scoped_endpoints.join(', ') || 'snapshot.inventory'}
+                    </span>
+                  ),
+                }}
+              />
+            </div>
+          </div>
 
           {/* #159: advanced escape hatch. Collapsed by default so
               the common case stays checkbox-driven. Shown when the

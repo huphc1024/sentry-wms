@@ -48,6 +48,7 @@ from psycopg2.extras import Json
 from sqlalchemy import text
 from sqlalchemy.exc import IntegrityError
 
+from services import customer_token_scope
 from services.mapping_loader import (
     CrossSystemLookupMiss,
     MappingDocument,
@@ -539,6 +540,33 @@ def handle_inbound(
     ):
         canonical_payload["warehouse_id"] = int(token["warehouse_ids"][0])
         write_field_set = write_field_set | {"warehouse_id"}
+
+    # ----- Step 4.6: customer binding (phase 6, mig 089) -----
+    # Runs after the mapping has produced canonical_payload (so it can
+    # inspect what the source asked for) and before any write. Inert for
+    # an operator token: customer_id is NULL on every token issued
+    # before this column existed.
+    scope_customer_id = customer_token_scope.token_customer_id(token)
+    if scope_customer_id:
+        violation, write_field_set = customer_token_scope.enforce_inbound_scope(
+            db,
+            resource_key=resource_key,
+            canonical_type=cfg.canonical_type,
+            canonical_table=cfg.canonical_table,
+            source_system=source_system,
+            external_id=external_id,
+            canonical_payload=canonical_payload,
+            write_field_set=write_field_set,
+            customer_id=scope_customer_id,
+        )
+        if violation is not None:
+            return HandlerError(
+                status_code=403,
+                body={
+                    "error_kind": violation.error_kind,
+                    "message": violation.message,
+                },
+            )
 
     # v1.9.0 #311: ERP-driven cancel detection. When the inbound
     # canonical_payload carries status='CANCELLED' on an existing SO

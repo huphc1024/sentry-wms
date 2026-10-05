@@ -69,6 +69,7 @@ const NAV = [
     labelKey: 'nav.system',
     items: [
       { to: '/users', labelKey: 'nav.users', pageKey: 'users' },
+      { to: '/customer-users', labelKey: 'nav.customerUsers', pageKey: 'customer-users' },
       { to: '/api-tokens', labelKey: 'nav.apiTokens', pageKey: 'api-tokens' },
       { to: '/inbound', labelKey: 'nav.inboundActivity', pageKey: 'inbound' },
       { to: '/consumer-groups', labelKey: 'nav.consumerGroups', pageKey: 'consumer-groups' },

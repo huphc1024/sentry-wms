@@ -97,7 +97,7 @@ def _fetch_by_hash(token_hash: str) -> Optional[dict]:
                 SELECT token_id, token_name, token_hash, warehouse_ids,
                        event_types, endpoints, connector_id, status,
                        source_system, inbound_resources, mapping_override,
-                       mapping_overrides,
+                       mapping_overrides, customer_id,
                        created_at, rotated_at, expires_at, revoked_at,
                        last_used_at
                   FROM wms_tokens
@@ -119,6 +119,13 @@ def _fetch_by_hash(token_hash: str) -> Optional[dict]:
         "endpoints": list(row.endpoints) if row.endpoints else [],
         "connector_id": row.connector_id,
         "status": row.status,
+        # Phase 6 (mig 089): tenant binding. NULL for every
+        # operator-owned token, which is every token issued before this
+        # column existed -- so the scope checks that read it are inert
+        # unless an admin deliberately binds a token to a customer.
+        # Stringified here so callers compare against the string form
+        # that customer_scope_clause / g.current_customer use.
+        "customer_id": str(row.customer_id) if row.customer_id else None,
         # v1.7.0 Pipe B scope dimensions. source_system is NULL for
         # outbound-only tokens; inbound_resources defaults to '{}' so
         # outbound-only tokens still see an empty list (Decision-S).

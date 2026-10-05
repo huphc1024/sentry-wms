@@ -85,8 +85,17 @@ def list_items():
             SELECT i.item_id, i.sku, i.item_name, i.upc, i.mpn, i.category, i.storage_profile,
                    i.weight_lbs, i.is_lot_tracked,
                    i.default_bin_id, i.is_active, i.created_at,
-                   b.bin_code AS default_bin_code
+                   b.bin_code AS default_bin_code,
+                   -- mig 087: which customer's stock this SKU is. NULL is
+                   -- the operator's own goods; the portal shows a NULL
+                   -- owner to nobody. Read-only here -- it is written
+                   -- through /admin/items/<id>/owner, which gates on
+                   -- 'customer-users' rather than 'items'.
+                   i.owner_customer_id,
+                   oc.customer_code AS owner_customer_code,
+                   oc.customer_name AS owner_customer_name
             FROM items i
+            LEFT JOIN customers oc ON oc.canonical_id = i.owner_customer_id
             -- An item can carry more than one priority-1 preferred_bins
             -- row (the data allows it), and a plain join fans the item
             -- out into duplicate result rows. Collapse to one
@@ -117,6 +126,9 @@ def list_items():
              "is_lot_tracked": r.is_lot_tracked,
              "default_bin_id": r.default_bin_id, "default_bin_code": r.default_bin_code,
              "is_active": r.is_active,
+             "owner_customer_id": str(r.owner_customer_id) if r.owner_customer_id else None,
+             "owner_customer_code": r.owner_customer_code,
+             "owner_customer_name": r.owner_customer_name,
              "created_at": r.created_at.isoformat() if r.created_at else None}
             for r in rows
         ],

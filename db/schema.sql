@@ -2463,3 +2463,96 @@ CREATE TABLE IF NOT EXISTS channel_recompute_state (
 INSERT INTO channel_recompute_state (only_row, last_cursor)
 VALUES (TRUE, 0)
 ON CONFLICT (only_row) DO NOTHING;
+
+-- ============================================================
+-- CUSTOMER PORTAL (phase 1)
+-- ============================================================
+-- Placed at the end of the file rather than inline on each CREATE TABLE
+-- because every column here references customers(canonical_id), and
+-- `customers` is declared well after items / sales_orders /
+-- purchase_orders. Same reason pallets.customer_id (mig 087) sits under
+-- the customers block instead of in the pallets DDL.
+--
+-- Existing deploys pick these up via:
+--   db/migrations/093_customer_ownership.sql
+--   db/migrations/094_customer_users.sql
+--   db/migrations/095_customer_token_scope.sql
+-- Those files carry the full rationale (ownership model, why customer
+-- logins are a separate table, backfill posture). No backfill is repeated
+-- here: schema.sql only ever runs against an empty database.
+
+-- mig 093: stock ownership. Owner lives on `items`, so no inventory write
+-- path changes. NULL = owned by the warehouse operator itself; the portal
+-- must read NULL as "not visible to any customer", never "visible to all".
+ALTER TABLE items
+    ADD COLUMN owner_customer_id UUID
+        REFERENCES customers(canonical_id) ON DELETE RESTRICT;
+CREATE INDEX ix_items_owner_customer
+    ON items(owner_customer_id) WHERE owner_customer_id IS NOT NULL;
+
+-- sales_orders.customer_id (VARCHAR, written straight from the inbound
+-- mapping docs) is kept as-is; customer_ref is the resolved FK that
+-- customer-scoped queries filter on.
+ALTER TABLE sales_orders
+    ADD COLUMN customer_ref UUID
+        REFERENCES customers(canonical_id) ON DELETE RESTRICT;
+CREATE INDEX ix_sales_orders_customer_ref
+    ON sales_orders(customer_ref, status) WHERE customer_ref IS NOT NULL;
+
+ALTER TABLE purchase_orders
+    ADD COLUMN owner_customer_id UUID
+        REFERENCES customers(canonical_id) ON DELETE RESTRICT;
+CREATE INDEX ix_purchase_orders_owner_customer
+    ON purchase_orders(owner_customer_id, status)
+    WHERE owner_customer_id IS NOT NULL;
+
+-- mig 094: portal logins. Separate table from `users` on purpose -- see
+-- the migration header. Login rate limiting reuses `login_attempts` with
+-- a 'customer:<username>' key.
+CREATE TABLE customer_users (
+    customer_user_id    SERIAL       PRIMARY KEY,
+    customer_id         UUID         NOT NULL
+                            REFERENCES customers(canonical_id) ON DELETE RESTRICT,
+    username            VARCHAR(50)  NOT NULL UNIQUE,
+    password_hash       VARCHAR(255) NOT NULL,
+    full_name           VARCHAR(100) NOT NULL,
+    email               VARCHAR(255),
+    is_active           BOOLEAN      NOT NULL DEFAULT TRUE,
+    must_change_password BOOLEAN     NOT NULL DEFAULT TRUE,
+    password_changed_at TIMESTAMPTZ,
+    last_login          TIMESTAMPTZ,
+    created_at          TIMESTAMPTZ  NOT NULL DEFAULT NOW(),
+    created_by          INT          REFERENCES users(user_id) ON DELETE SET NULL,
+    external_id         UUID         NOT NULL UNIQUE DEFAULT gen_random_uuid()
+);
+CREATE INDEX ix_customer_users_customer
+    ON customer_users(customer_id) WHERE is_active = TRUE;
+
+-- Same shape as user_page_permissions, minus any ADMIN-style bypass: a
+-- portal feature needs an explicit row, so a new account with no grants
+-- can log in, change its password, and see nothing else. Valid keys:
+-- api/constants.py -> ALL_CUSTOMER_FEATURE_KEYS.
+CREATE TABLE customer_user_permissions (
+    customer_user_id INT          NOT NULL
+                         REFERENCES customer_users(customer_user_id) ON DELETE CASCADE,
+    feature_key      VARCHAR(64)  NOT NULL,
+    granted_at       TIMESTAMPTZ  NOT NULL DEFAULT NOW(),
+    granted_by       INT          REFERENCES users(user_id) ON DELETE SET NULL,
+    PRIMARY KEY (customer_user_id, feature_key)
+);
+CREATE INDEX ix_customer_user_permissions_user
+    ON customer_user_permissions(customer_user_id);
+
+-- mig 095: per-customer token scope. NULL = operator-owned, unscoped
+-- (existing behaviour). Enforcement in the inbound/snapshot handlers
+-- lands in phase 6; the column exists now so tokens can be provisioned.
+ALTER TABLE wms_tokens
+    ADD COLUMN customer_id UUID
+        REFERENCES customers(canonical_id) ON DELETE RESTRICT;
+CREATE INDEX ix_wms_tokens_customer
+    ON wms_tokens(customer_id) WHERE customer_id IS NOT NULL;
+
+-- mig 096: unique so_number for portal-submitted orders. A sequence
+-- rather than a timestamp or MAX(...)+1, both of which collide under
+-- concurrent submissions. See the migration for the full reasoning.
+CREATE SEQUENCE portal_order_seq AS BIGINT START WITH 1;

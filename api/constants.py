@@ -356,6 +356,12 @@ ALL_PAGE_KEYS = (
     # POS Activity dashboard (opt-in via pos_activity_enabled setting).
     "pos-activity",
     "users",
+    # Customer portal logins (phase 4): provision / deactivate a
+    # customer's portal accounts and set their feature grants. Kept
+    # separate from 'users' so an operator can be trusted with staff
+    # accounts without also being able to hand out portal access to a
+    # customer's data (and vice versa).
+    "customer-users",
     "api-tokens", "inbound", "consumer-groups",
     # Channels (Pipe C): per-channel availability config + the publish
     # health view. Holders see the /channels page and can CRUD channels,
@@ -381,6 +387,30 @@ OVERRIDE_WAREHOUSE_MAP_EDIT = "warehouse-map-edit"
 ALL_OVERRIDE_KEYS = (
     OVERRIDE_SO_FULL_EDIT,
     OVERRIDE_WAREHOUSE_MAP_EDIT,
+)
+
+# mig 088: source of truth for customer_user_permissions.feature_key --
+# what a customer portal login can see. Same relationship as
+# ALL_PAGE_KEYS -> user_page_permissions.page_key, with one difference:
+# there is no ADMIN-style bypass on the customer side, so an account with
+# no grants can log in, change its password, and see nothing else.
+#
+# Deliberately a separate namespace from ALL_PAGE_KEYS even where the
+# names overlap ('inventory'): the staff key grants the full warehouse
+# view, the customer key grants only that customer's own stock. Reusing
+# one key for both would make a widened staff page silently widen the
+# portal too.
+CUSTOMER_FEATURE_INVENTORY = "inventory"   # own on-hand by SKU/lot/expiry
+CUSTOMER_FEATURE_ORDERS = "orders"         # own outbound orders + status
+CUSTOMER_FEATURE_INBOUND = "inbound"       # own expected/received goods
+CUSTOMER_FEATURE_INVOICES = "invoices"     # own billing invoices
+CUSTOMER_FEATURE_REPORTS = "reports"       # own movement/aging reports
+ALL_CUSTOMER_FEATURE_KEYS = (
+    CUSTOMER_FEATURE_INVENTORY,
+    CUSTOMER_FEATURE_ORDERS,
+    CUSTOMER_FEATURE_INBOUND,
+    CUSTOMER_FEATURE_INVOICES,
+    CUSTOMER_FEATURE_REPORTS,
 )
 
 # SO mutation audit actions (mig 062). Mirror the PO line

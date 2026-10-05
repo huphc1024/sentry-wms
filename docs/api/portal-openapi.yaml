@@ -1,0 +1,539 @@
+openapi: 3.1.0
+info:
+  title: Sentry WMS Customer Portal API
+  version: "1.30.0"
+  description: >
+    Session-authenticated API behind the customer portal SPA
+    (sentry-wms/portal). Every route is confined to the calling
+    customer's own data in SQL, and every response withholds the
+    operator's internal layout (bin, zone, pick location) by design.
+
+    Hand-written, unlike docs/api/inbound-openapi.yaml which is
+    generated. api/tests/test_portal_openapi_parity.py fails if a route
+    is added to routes/portal/ without landing here.
+
+servers:
+  - url: /
+
+tags:
+  - name: auth
+    description: Portal session lifecycle.
+  - name: inventory
+    description: The caller's own on-hand stock and expected inbound.
+  - name: orders
+    description: The caller's own outbound orders, including submission.
+  - name: invoices
+    description: The caller's own issued invoices.
+
+components:
+  securitySchemes:
+    PortalSession:
+      type: apiKey
+      in: cookie
+      name: sentry_portal_auth
+      description: >
+        HttpOnly session cookie set by POST /api/portal/auth/login.
+        Distinct from the staff cookie (sentry_auth) so an operator can
+        hold both sessions in one browser. A bearer token in
+        Authorization is also accepted for non-browser clients.
+    PortalCsrf:
+      type: apiKey
+      in: header
+      name: X-CSRF-Token
+      description: >
+        Double-submit CSRF token. Required on every POST when the
+        session comes from the cookie; must equal the readable
+        sentry_portal_csrf cookie.
+
+  responses:
+    Unauthorized:
+      description: No session, an expired session, or a staff token.
+      content:
+        application/json:
+          schema:
+            type: object
+            properties:
+              error:
+                type: string
+                examples: ["Unauthorized", "Token expired", "Forbidden"]
+    FeatureDenied:
+      description: >
+        The account holds no grant for this feature
+        (customer_user_permissions), or must change its password first.
+      content:
+        application/json:
+          schema:
+            type: object
+            properties:
+              error:
+                type: string
+                examples: ["Permission denied", "password_change_required"]
+              feature_key:
+                type: string
+    NotFound:
+      description: >
+        No such record -- or one belonging to another customer. The two
+        are deliberately indistinguishable so the endpoint cannot be
+        used to enumerate other customers' order or invoice numbers.
+      content:
+        application/json:
+          schema:
+            type: object
+            properties:
+              error:
+                type: string
+
+  parameters:
+    Page:
+      name: page
+      in: query
+      required: false
+      schema: { type: integer, minimum: 1, default: 1 }
+    PageSize:
+      name: page_size
+      in: query
+      required: false
+      schema: { type: integer, minimum: 1, maximum: 200, default: 50 }
+
+  schemas:
+    PageEnvelope:
+      type: object
+      properties:
+        page: { type: integer }
+        page_size: { type: integer }
+        total: { type: integer }
+
+    Identity:
+      type: object
+      properties:
+        customer_user_id: { type: integer }
+        username: { type: string }
+        full_name: { type: string, nullable: true }
+        email: { type: string, nullable: true }
+        customer_id: { type: string, format: uuid }
+        customer_name: { type: string, nullable: true }
+        customer_code: { type: string, nullable: true }
+        must_change_password: { type: boolean }
+        features:
+          type: array
+          description: >
+            Grants held: inventory, orders, inbound, invoices, reports.
+            Read fresh from the database on every request, so a grant
+            revoked mid-session disappears without re-authentication.
+          items: { type: string }
+
+    InventoryRow:
+      type: object
+      description: >
+        On-hand aggregated per item + lot + expiry + warehouse. No
+        bin_code or zone: where goods sit inside the building is the
+        operator's layout, and a per-bin breakdown would reconstruct it
+        even without the labels.
+      properties:
+        sku: { type: string }
+        item_name: { type: string, nullable: true }
+        lot_number: { type: string, nullable: true }
+        expiry_date: { type: string, format: date, nullable: true }
+        warehouse_code: { type: string }
+        warehouse_name: { type: string, nullable: true }
+        quantity_on_hand: { type: integer }
+        quantity_allocated: { type: integer }
+        quantity_available:
+          type: integer
+          description: on_hand - allocated; derived, not stored.
+
+    PurchaseOrderRow:
+      type: object
+      properties:
+        po_number: { type: string }
+        status:
+          type: string
+          examples: ["OPEN", "PARTIAL", "RECEIVED", "CLOSED"]
+        expected_date: { type: string, format: date, nullable: true }
+        received_at: { type: string, format: date-time, nullable: true }
+        warehouse_code: { type: string }
+        line_count: { type: integer }
+        quantity_ordered: { type: integer }
+        quantity_received: { type: integer }
+
+    OrderRow:
+      type: object
+      properties:
+        so_number: { type: string }
+        status:
+          type: string
+          examples: ["OPEN", "PICKED", "PACKED", "SHIPPED", "CANCELLED"]
+        order_date: { type: string, format: date-time, nullable: true }
+        ship_by_date: { type: string, format: date, nullable: true }
+        ship_method: { type: string, nullable: true }
+        order_origin: { type: string, nullable: true }
+        warehouse_code: { type: string }
+        line_count: { type: integer }
+        quantity_ordered: { type: integer }
+        quantity_shipped: { type: integer }
+
+    OrderDetail:
+      type: object
+      properties:
+        so_number: { type: string }
+        status: { type: string }
+        order_date: { type: string, format: date-time, nullable: true }
+        ship_by_date: { type: string, format: date, nullable: true }
+        ship_method: { type: string, nullable: true }
+        ship_address: { type: string, nullable: true }
+        memo: { type: string, nullable: true }
+        order_origin: { type: string, nullable: true }
+        warehouse_code: { type: string }
+        lines:
+          type: array
+          items:
+            type: object
+            properties:
+              line_number: { type: integer }
+              sku: { type: string }
+              item_name: { type: string, nullable: true }
+              quantity_ordered: { type: integer }
+              quantity_picked: { type: integer, nullable: true }
+              quantity_shipped: { type: integer, nullable: true }
+              status: { type: string, nullable: true }
+
+    OutboundRequest:
+      type: object
+      description: >
+        What the customer may say. Everything trust-sensitive is set by
+        the server: the owning customer comes from the session, the
+        status is OPEN, the SO number is generated, and order_origin is
+        'customer-portal'. priority and status are deliberately absent
+        so a customer cannot jump the operator's pick queue.
+      required: [lines]
+      properties:
+        lines:
+          type: array
+          minItems: 1
+          maxItems: 500
+          items:
+            type: object
+            required: [sku, quantity]
+            properties:
+              sku: { type: string, maxLength: 50 }
+              quantity: { type: integer, minimum: 1, maximum: 1000000 }
+        warehouse_code:
+          type: string
+          maxLength: 20
+          description: >
+            Optional when the caller holds stock in exactly one
+            warehouse; required (400, with the valid codes in `choices`)
+            when it holds stock in several.
+        reference: { type: string, maxLength: 64 }
+        ship_to_name: { type: string, maxLength: 200 }
+        ship_address: { type: string, maxLength: 500 }
+        ship_method: { type: string, maxLength: 50 }
+        memo: { type: string, maxLength: 500 }
+
+    InvoiceRow:
+      type: object
+      properties:
+        invoice_number: { type: string }
+        period_start: { type: string, format: date, nullable: true }
+        period_end: { type: string, format: date, nullable: true }
+        due_date: { type: string, format: date, nullable: true }
+        total_amount: { type: number, nullable: true }
+        currency: { type: string, nullable: true }
+        status:
+          type: string
+          examples: ["SENT", "PAID", "CANCELLED"]
+        issued_at: { type: string, format: date-time, nullable: true }
+
+security:
+  - PortalSession: []
+
+paths:
+  /api/portal/auth/login:
+    post:
+      tags: [auth]
+      summary: Start a portal session.
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [username, password]
+              properties:
+                username: { type: string }
+                password: { type: string }
+      responses:
+        "200":
+          description: >
+            Session cookies set (sentry_portal_auth HttpOnly +
+            sentry_portal_csrf readable). A freshly provisioned account
+            has must_change_password set and can reach only
+            /auth/me, /auth/logout and /auth/change-password until it
+            changes it.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  token: { type: string }
+                  customer_user: { type: object }
+        "401":
+          description: Wrong username or password.
+        "429":
+          description: >
+            Too many failed attempts for this (IP, username) pair.
+            Staff and portal lockout buckets are separate namespaces.
+
+  /api/portal/auth/logout:
+    post:
+      tags: [auth]
+      summary: End the session.
+      security:
+        - PortalSession: []
+          PortalCsrf: []
+      responses:
+        "200":
+          description: >
+            Logged out. A request with no session cookie is a 200 no-op
+            that sets no cookies, so a cross-origin form post cannot
+            force a victim's browser to apply expired ones.
+        "403":
+          description: CSRF token missing or invalid.
+
+  /api/portal/auth/me:
+    get:
+      tags: [auth]
+      summary: Who the caller is, and what it may see.
+      responses:
+        "200":
+          description: Identity plus live feature grants.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Identity" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+
+  /api/portal/auth/change-password:
+    post:
+      tags: [auth]
+      summary: Change the account's password.
+      security:
+        - PortalSession: []
+          PortalCsrf: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [current_password, new_password]
+              properties:
+                current_password: { type: string }
+                new_password: { type: string }
+      responses:
+        "200":
+          description: >
+            Changed. Every token issued at or before this second is
+            invalidated, so other sessions for this login end.
+        "400": { description: New password fails the strength rules. }
+        "403": { description: Current password is incorrect. }
+
+  /api/portal/inventory:
+    get:
+      tags: [inventory]
+      summary: On-hand stock the caller owns.
+      parameters:
+        - $ref: "#/components/parameters/Page"
+        - $ref: "#/components/parameters/PageSize"
+        - name: search
+          in: query
+          required: false
+          schema: { type: string }
+          description: Case-insensitive match on SKU or item name.
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: "#/components/schemas/PageEnvelope"
+                  - type: object
+                    properties:
+                      items:
+                        type: array
+                        items: { $ref: "#/components/schemas/InventoryRow" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/FeatureDenied" }
+
+  /api/portal/inbound:
+    get:
+      tags: [inventory]
+      summary: Expected and received goods (purchase orders the caller owns).
+      parameters:
+        - $ref: "#/components/parameters/Page"
+        - $ref: "#/components/parameters/PageSize"
+        - name: status
+          in: query
+          required: false
+          schema: { type: string }
+      responses:
+        "200":
+          description: >
+            Scoped on purchase_orders.owner_customer_id, which has no
+            backfill: a PO created before the customer-ownership
+            migration shows up for nobody until an operator attributes
+            it. Empty means "not yet attributed", not "nothing inbound".
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: "#/components/schemas/PageEnvelope"
+                  - type: object
+                    properties:
+                      purchase_orders:
+                        type: array
+                        items: { $ref: "#/components/schemas/PurchaseOrderRow" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/FeatureDenied" }
+
+  /api/portal/orders:
+    get:
+      tags: [orders]
+      summary: The caller's outbound orders.
+      parameters:
+        - $ref: "#/components/parameters/Page"
+        - $ref: "#/components/parameters/PageSize"
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: "#/components/schemas/PageEnvelope"
+                  - type: object
+                    properties:
+                      orders:
+                        type: array
+                        items: { $ref: "#/components/schemas/OrderRow" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/FeatureDenied" }
+    post:
+      tags: [orders]
+      summary: Submit an outbound request.
+      security:
+        - PortalSession: []
+          PortalCsrf: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/OutboundRequest" }
+      responses:
+        "201":
+          description: >
+            Order created at status OPEN in the operator's normal queue,
+            attributed to the authenticated caller.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  so_number: { type: string }
+                  status: { type: string }
+                  line_count: { type: integer }
+        "400":
+          description: >
+            Unknown sku (one not owned by the caller reads the same as
+            one that does not exist), duplicate sku, non-positive
+            quantity, or warehouse_code required -- the last carries the
+            valid codes in `choices`.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  error: { type: string }
+                  sku: { type: string }
+                  choices:
+                    type: array
+                    items: { type: string }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/FeatureDenied" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "409": { description: The caller holds no stock to ship from. }
+
+  /api/portal/orders/{so_number}:
+    get:
+      tags: [orders]
+      summary: One order, with its lines.
+      parameters:
+        - name: so_number
+          in: path
+          required: true
+          schema: { type: string }
+      responses:
+        "200":
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/OrderDetail" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/FeatureDenied" }
+        "404": { $ref: "#/components/responses/NotFound" }
+
+  /api/portal/invoices:
+    get:
+      tags: [invoices]
+      summary: Issued invoices for the caller.
+      parameters:
+        - $ref: "#/components/parameters/Page"
+        - $ref: "#/components/parameters/PageSize"
+      responses:
+        "200":
+          description: >
+            DRAFT invoices are withheld: an operator revises the total
+            before issuing, and a customer reading a draft would be
+            reading a number nobody has committed to.
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: "#/components/schemas/PageEnvelope"
+                  - type: object
+                    properties:
+                      invoices:
+                        type: array
+                        items: { $ref: "#/components/schemas/InvoiceRow" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/FeatureDenied" }
+
+  /api/portal/invoices/{invoice_number}:
+    get:
+      tags: [invoices]
+      summary: One issued invoice, with its charge lines.
+      parameters:
+        - name: invoice_number
+          in: path
+          required: true
+          schema: { type: string }
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: "#/components/schemas/InvoiceRow"
+                  - type: object
+                    properties:
+                      notes: { type: string, nullable: true }
+                      lines:
+                        type: array
+                        items:
+                          type: object
+                          properties:
+                            description: { type: string }
+                            quantity: { type: number, nullable: true }
+                            unit_price: { type: number, nullable: true }
+                            amount: { type: number, nullable: true }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/FeatureDenied" }
+        "404": { $ref: "#/components/responses/NotFound" }

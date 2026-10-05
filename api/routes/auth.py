@@ -2,9 +2,6 @@
 Auth endpoints: login and token refresh.
 """
 
-import os
-from datetime import datetime, timezone, timedelta
-
 from flask import Blueprint, g, jsonify, request
 from sqlalchemy import text
 
@@ -12,6 +9,15 @@ from middleware.auth_middleware import require_auth
 from middleware.db import with_db
 from schemas.auth import ChangePasswordRequest, LoginRequest
 from services.auth_service import authenticate_user, decode_token, generate_token, validate_password
+from services.login_rate_limit import (
+    LOCKOUT_MINUTES,
+    LOGIN_ATTEMPT_KEY_MAX_LEN,
+    MAX_LOGIN_ATTEMPTS,
+    check_rate_limit,
+    normalize_rate_limit_key,
+    record_failure,
+    reset_attempts,
+)
 from services.cookie_auth import (
     AUTH_COOKIE_NAME,
     clear_auth_cookies,
@@ -23,88 +29,17 @@ from utils.validation import validate_body
 
 ALL_FUNCTIONS = ["receive", "putaway", "pick", "pack", "ship", "count", "transfer", "map"]
 
-# #35: env-configurable so a shared-IP deployment can raise the ceiling
-# without a code change. Defaults preserve the historical 5 / 15.
-MAX_LOGIN_ATTEMPTS = int(os.getenv("MAX_LOGIN_ATTEMPTS", "5"))
-LOCKOUT_MINUTES = int(os.getenv("LOGIN_LOCKOUT_MINUTES", "15"))
-# V-024: cap login_attempts.key at 64 chars so an attacker cannot bloat
-# the table by spraying long random usernames. Anything longer is SHA-256
-# hashed (hex digest = 64 chars) before it reaches the DB.
-LOGIN_ATTEMPT_KEY_MAX_LEN = 64
-
 auth_bp = Blueprint("auth", __name__)
 
-
-def _normalize_rate_limit_key(key: str) -> str:
-    if len(key) <= LOGIN_ATTEMPT_KEY_MAX_LEN:
-        return key
-    import hashlib
-    return hashlib.sha256(key.encode("utf-8")).hexdigest()
-
-
-def _check_rate_limit(db, key):
-    """Check if a rate-limit key is locked out. Returns (locked, remaining_seconds)."""
-    key = _normalize_rate_limit_key(key)
-    row = db.execute(
-        text("SELECT attempts, locked_until FROM login_attempts WHERE key = :key"),
-        {"key": key},
-    ).fetchone()
-    if not row or not row.locked_until:
-        return False, 0
-    now = datetime.now(timezone.utc)
-    if row.locked_until > now:
-        remaining = int((row.locked_until - now).total_seconds())
-        return True, remaining
-    return False, 0
-
-
-def _record_failure(db, key, allow_lockout):
-    """Record a failed login attempt against ``key``.
-
-    V-023 / #35: only keys passed with ``allow_lockout=True`` ever set
-    ``locked_until``. The login path locks on the ``(IP, username)``
-    tuple; the username-only key (``user:<name>``) is still incremented
-    for observability but never locks -- an attacker spamming a username
-    from one IP cannot lock the real user out from a different IP.
-
-    Returns (locked_out, attempts_remaining). ``locked_out`` is only
-    True when ``allow_lockout`` is also True and the key has crossed
-    the threshold.
-    """
-    key = _normalize_rate_limit_key(key)
-    lockout_at = datetime.now(timezone.utc) + timedelta(minutes=LOCKOUT_MINUTES)
-    db.execute(
-        text("""
-            INSERT INTO login_attempts (key, attempts, last_attempt)
-            VALUES (:key, 1, NOW())
-            ON CONFLICT (key) DO UPDATE
-            SET attempts = login_attempts.attempts + 1, last_attempt = NOW()
-        """),
-        {"key": key},
-    )
-    row = db.execute(
-        text("SELECT attempts FROM login_attempts WHERE key = :key"),
-        {"key": key},
-    ).fetchone()
-    if allow_lockout and row and row.attempts >= MAX_LOGIN_ATTEMPTS:
-        db.execute(
-            text("UPDATE login_attempts SET locked_until = :until, attempts = 0 WHERE key = :key"),
-            {"key": key, "until": lockout_at},
-        )
-        db.commit()
-        return True, 0
-    db.commit()
-    return False, MAX_LOGIN_ATTEMPTS - (row.attempts if row else 0)
-
-
-def _reset_attempts(db, key):
-    """Clear attempts after successful login."""
-    key = _normalize_rate_limit_key(key)
-    db.execute(
-        text("DELETE FROM login_attempts WHERE key = :key"),
-        {"key": key},
-    )
-    db.commit()
+# Lockout bookkeeping now lives in services/login_rate_limit.py so the
+# customer portal login shares one implementation instead of reaching in
+# here for private helpers. The underscore aliases below are kept because
+# tests/test_login_attempts_cleanup.py imports
+# routes.auth._normalize_rate_limit_key directly.
+_normalize_rate_limit_key = normalize_rate_limit_key
+_check_rate_limit = check_rate_limit
+_record_failure = record_failure
+_reset_attempts = reset_attempts
 
 
 @auth_bp.route("/login", methods=["POST"])

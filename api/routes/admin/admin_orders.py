@@ -143,8 +143,24 @@ def list_purchase_orders():
     rows = g.db.execute(
         text(f"""
             SELECT po_id, po_number, po_barcode, vendor_name, status, expected_date,
-                   warehouse_id, notes, created_at, received_at, created_by
-            FROM purchase_orders {where_sql} ORDER BY po_id DESC LIMIT :limit OFFSET :offset
+                   warehouse_id, notes, created_at, received_at, created_by,
+                   -- mig 087: whose goods are arriving. No backfill was
+                   -- possible, so every PO predating phase 1 reads NULL
+                   -- until an operator attributes it via
+                   -- /admin/purchase-orders/<id>/owner. Written there,
+                   -- not here: it gates on 'customer-users'.
+                   owner_customer_id,
+                   -- Subqueries rather than a LEFT JOIN on customers:
+                   -- where_sql above is built with unqualified column
+                   -- names, and customers shares `notes` and `created_at`
+                   -- with purchase_orders, so joining makes this SELECT
+                   -- (and any future unqualified filter) ambiguous.
+                   (SELECT customer_code FROM customers
+                     WHERE canonical_id = owner_customer_id) AS owner_customer_code,
+                   (SELECT customer_name FROM customers
+                     WHERE canonical_id = owner_customer_id) AS owner_customer_name
+            FROM purchase_orders
+            {where_sql} ORDER BY po_id DESC LIMIT :limit OFFSET :offset
         """),
         params,
     ).fetchall()
@@ -157,6 +173,9 @@ def list_purchase_orders():
              "warehouse_id": r.warehouse_id, "notes": r.notes,
              "created_at": r.created_at.isoformat() if r.created_at else None,
              "received_at": r.received_at.isoformat() if r.received_at else None,
+             "owner_customer_id": str(r.owner_customer_id) if r.owner_customer_id else None,
+             "owner_customer_code": r.owner_customer_code,
+             "owner_customer_name": r.owner_customer_name,
              "created_by": r.created_by}
             for r in rows
         ],
