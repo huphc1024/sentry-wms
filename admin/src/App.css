@@ -3058,6 +3058,19 @@ select.form-input {
   flex: none;
 }
 
+.warehouse-simulation-page .sim2-pallet-row {
+  width: 100%;
+  text-align: left;
+  cursor: pointer;
+}
+
+.warehouse-simulation-page .sim2-pallet-code {
+  font-size: 10.5px;
+  font-weight: 800;
+  letter-spacing: .03em;
+  color: var(--map-muted);
+}
+
 @media (max-width: 1280px) {
   .warehouse-simulation-page .sim2-main {
     grid-template-columns: 1fr;

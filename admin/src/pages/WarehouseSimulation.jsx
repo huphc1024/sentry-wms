@@ -1105,20 +1105,24 @@ export default function WarehouseSimulation() {
                           <button
                             key={pallet.pallet_id}
                             type="button"
-                            className={`sim-slot-pallet-item${selectedPallet === pallet.pallet_id ? ' is-active' : ''}`}
+                            className={`sim-slot-pallet-item sim2-stock-row sim2-pallet-row${selectedPallet === pallet.pallet_id ? ' is-active' : ''}`}
                             onClick={() => setSelectedPallet(pallet.pallet_id)}
-                            style={{ textAlign: 'left' }}
                           >
-                            <strong>{pallet.pallet_code || pallet.pallet_id}</strong>
-                            <span>
-                              {t('warehouseSimulation.skuQty', {
-                                sku: pallet.sku || '-',
-                                qty: pallet.quantity_on_hand ?? 0,
-                              })}
-                            </span>
-                            {pallet.lot_code && (
-                              <span>{t('warehouseSimulation.lotN', { lot: pallet.lot_code })}</span>
-                            )}
+                            <div className="sim2-stock-main">
+                              <span className="sim2-pallet-code">{pallet.pallet_code || pallet.pallet_id}</span>
+                              <div className="sim2-stock-head">
+                                <span className="sim2-sku">{pallet.sku || '-'}</span>
+                                {pallet.item_name && <span className="sim2-item-name" title={pallet.item_name}>{pallet.item_name}</span>}
+                              </div>
+                              <div className="sim2-stock-meta">
+                                <span className="sim2-chip sim2-chip-qty">
+                                  {t('warehouseSimulation.qtyN', { qty: pallet.quantity_on_hand ?? 0 })}
+                                </span>
+                                {pallet.lot_code && (
+                                  <span className="sim2-chip">{t('warehouseSimulation.lotN', { lot: pallet.lot_code })}</span>
+                                )}
+                              </div>
+                            </div>
                           </button>
                         ))}
                       </div>
