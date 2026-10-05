@@ -1,0 +1,700 @@
+/* ============================================================
+   Cổng khách hàng — stylesheet
+   ------------------------------------------------------------
+   Same design tokens and self-hosted faces as admin/src/App.css
+   (V-110: no third-party font requests), but written fresh rather
+   than copied: the portal has 8 screens, none of the admin's grid
+   editors, print sheets or map canvases, and a 2,900-line inherited
+   sheet would mostly be dead CSS shipped to customers.
+   ============================================================ */
+
+@font-face {
+  font-family: 'Instrument Sans';
+  src: url('/fonts/InstrumentSans-VariableFont_wdth_wght.woff2')
+       format('woff2-variations'),
+       url('/fonts/InstrumentSans-VariableFont_wdth_wght.woff2')
+       format('woff2');
+  font-weight: 400 700;
+  font-stretch: 75% 125%;
+  font-style: normal;
+  font-display: swap;
+}
+
+@font-face {
+  font-family: 'JetBrains Mono';
+  src: url('/fonts/JetBrainsMono-VariableFont_wght.woff2')
+       format('woff2-variations'),
+       url('/fonts/JetBrainsMono-VariableFont_wght.woff2')
+       format('woff2');
+  font-weight: 400 700;
+  font-style: normal;
+  font-display: swap;
+}
+
+/* Two palettes, one set of names.
+ *
+ * Every colour the app uses is declared once here and once again under
+ * [data-theme="dark"]; nothing else in this file, and nothing in a
+ * component, should carry a literal colour. That is what makes a dark
+ * mode possible at all -- a hard-coded #fff somewhere deep in a rule is
+ * a white flash on a dark screen that nobody finds until a night shift
+ * complains.
+ *
+ * The accent is copper. It is two different coppers on purpose: the
+ * lighter #C4722A does not carry enough contrast against white for
+ * button text (3.6:1, under the 4.5:1 that small text needs), so light
+ * mode uses a darker one and dark mode uses the lighter, where it sits
+ * against a dark panel instead. Brick red, which used to be the accent,
+ * now means one thing only: destructive.
+ */
+:root {
+  color-scheme: light;
+
+  --accent: #9C5718;
+  --accent-hover: #8F4F18;
+  /* Label colour on top of an accent fill. */
+  --on-accent: #FFFFFF;
+  /* The lighter copper. The portal has no dark chrome to sit it on,
+     so it is here only to keep the two apps' palettes identical. */
+  --copper: #C4722A;
+  /* Kept for anything still asking for the old cream. */
+  --cream: #FCF4E3;
+
+  --bg: #F6F6F5;
+  /* Card, table and dialog surface. Dark mode makes it dark; the name is
+     about the role, not the colour. */
+  --panel: #FFFFFF;
+  --white: var(--panel);
+  --surface: #F1F1EF;
+
+  --text: #1C1B19;
+  --text-secondary: #6E6B66;
+  /* Placeholders and disabled labels. Deliberately under AA -- it is
+     meant to recede, and nothing load-bearing is written in it. */
+  --text-tertiary: #9C9892;
+
+  --border: #E3E2DF;
+  --border-dark: #CFCDC8;
+
+  --success: #1F6F3C;
+  --success-bg: #E7F3EB;
+  --warning: #806316;
+  --warning-bg: #FBF3DE;
+  --danger: #8E2715;
+  --danger-bg: #FAE7E4;
+  --info: #1E5F8A;
+  --info-bg: #E4EFF6;
+  --purple: #534AB7;
+  --purple-bg: #EEEDFE;
+
+  --sans: 'Instrument Sans', 'Helvetica Neue', sans-serif;
+  --mono: 'JetBrains Mono', 'Fira Code', monospace;
+
+  --radius: 6px;
+  --radius-lg: 10px;
+  --radius-sm: 4px;
+  --sidebar-width: 232px;
+
+  /* The ring antd draws around a focused control. Repeated here so a
+     hand-written .form-input and an <Input> look the same when tabbed
+     to; the alpha matches antd's controlOutline. */
+  --focus-ring: 0 0 0 2px rgba(156, 87, 24, 0.14);
+  /* antd's control height and line-height for the middle / small sizes.
+     Hand-written controls sit in the same rows as antd ones, so they
+     have to agree on height or every toolbar looks ragged. */
+  --control-h: 32px;
+  --control-h-sm: 24px;
+  --control-line: 1.5714;
+
+  --shadow-pop: 0 8px 24px rgba(0, 0, 0, 0.18);
+}
+
+/* Set on <html> by the theme switch, never left to the media query
+   alone: the customer's choice has to survive a reload, and the first
+   paint has to agree with it. theme.js reads the stored choice and falls
+   back to the system preference. */
+:root[data-theme="dark"] {
+  color-scheme: dark;
+
+  /* A lighter copper than light mode uses, because here it is read
+     against a dark panel: #C4722A only manages 4.3:1 there, under the
+     4.5:1 small text needs. On a copper fill the label goes dark rather
+     than white, for the same reason in reverse. */
+  --accent: #D6883F;
+  --accent-hover: #E09A55;
+  --on-accent: #1A1A19;
+
+  --bg: #1A1A19;
+  --panel: #232322;
+  --surface: #2B2B29;
+
+  --text: #EDEBE7;
+  --text-secondary: #A8A49D;
+  --text-tertiary: #7A766F;
+
+  --border: #35342F;
+  --border-dark: #47453F;
+
+  /* Lifted well clear of the dark panel; the light-mode shades would be
+     unreadable on it. */
+  --success: #5FBF7A;
+  --success-bg: #1B2E20;
+  --warning: #D4AA3A;
+  --warning-bg: #2E2715;
+  --danger: #E57A66;
+  --danger-bg: #331C18;
+  --info: #5FA8D8;
+  --info-bg: #16262F;
+  --purple: #9B93E8;
+  --purple-bg: #221F33;
+
+  --focus-ring: 0 0 0 2px rgba(196, 114, 42, 0.28);
+
+  /* Lifted well clear of the dark fills; #2563EB is 2.4:1 on them. */
+  --shadow-pop: 0 8px 24px rgba(0, 0, 0, 0.5);
+}
+* { box-sizing: border-box; }
+
+html, body, #root { height: 100%; }
+
+body {
+  margin: 0;
+  background: var(--bg);
+  color: var(--text);
+  font-family: var(--sans);
+  font-size: 14px;
+  line-height: 1.5;
+  -webkit-font-smoothing: antialiased;
+}
+
+a { color: var(--accent); text-decoration: none; }
+a:hover { text-decoration: underline; }
+
+h1 { margin: 0; font-size: 22px; letter-spacing: -0.01em; }
+h2 { margin: 0; font-size: 15px; }
+
+.mono { font-family: var(--mono); font-variant-numeric: tabular-nums; }
+.text-muted { color: var(--text-secondary); }
+.align-right { text-align: right; }
+
+/* ── Shell ─────────────────────────────────────── */
+.shell {
+  display: grid;
+  grid-template-columns: var(--sidebar-width) minmax(0, 1fr);
+  min-height: 100%;
+}
+
+.sidebar {
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+  padding: 18px 14px;
+  border-right: 1px solid var(--border);
+  background: var(--surface);
+}
+
+.sidebar-brand {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.sidebar-brand div { display: flex; flex-direction: column; line-height: 1.25; }
+.sidebar-brand strong { font-size: 14px; }
+.sidebar-brand span { color: var(--text-secondary); font-size: 12px; }
+
+.sidebar-nav { display: flex; flex-direction: column; gap: 2px; }
+.sidebar-foot { margin-top: auto; }
+
+.nav-link {
+  padding: 8px 10px;
+  border-radius: var(--radius);
+  color: var(--text);
+  font-weight: 600;
+}
+
+.nav-link:hover { background: var(--surface); text-decoration: none; }
+
+.nav-link.active {
+  background: var(--accent);
+  color: var(--on-accent);
+}
+
+.nav-link-quiet { color: var(--text-secondary); font-weight: 500; }
+
+.main { display: flex; flex-direction: column; min-width: 0; }
+
+.topbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 12px 24px;
+  border-bottom: 1px solid var(--border);
+  background: var(--panel);
+}
+
+.topbar-customer { display: flex; align-items: baseline; gap: 8px; }
+.topbar-customer span { color: var(--text-secondary); font-size: 12px; }
+.topbar-user { display: flex; align-items: center; gap: 12px; }
+
+/* VI / EN switch (header + login card). */
+.lang-switch {
+  display: inline-flex;
+  gap: 2px;
+  padding: 2px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+}
+.lang-switch-btn {
+  border: none;
+  background: transparent;
+  color: var(--text-secondary);
+  font: inherit;
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.3px;
+  padding: 0 8px;
+  min-height: 20px;
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+}
+.lang-switch-btn:hover { color: var(--text); }
+.lang-switch-btn.active { background: var(--accent); color: var(--on-accent); }
+.login-lang { display: flex; justify-content: flex-end; margin-bottom: 12px; }
+
+.content { padding: 24px; }
+
+/* ── Page furniture ────────────────────────────── */
+/* Full-bleed: the tables here are the content, and a cap left a third of
+   a 1920px screen empty. Prose keeps its own measure (.page-note below)
+   so nothing turns into a 200-character line. */
+.page { display: grid; gap: 16px; width: 100%; min-width: 0; }
+.page-narrow { max-width: 560px; }
+
+.page-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  flex-wrap: wrap;
+}
+
+.page-note { margin: 0; color: var(--text-secondary); max-width: 70ch; }
+
+.card {
+  padding: 16px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  background: var(--panel);
+}
+
+.card-title {
+  margin: 0 0 12px;
+  color: var(--text-secondary);
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+}
+
+.card-note { padding: 20px 4px; color: var(--text-secondary); text-align: center; }
+
+.form-card { display: grid; gap: 14px; }
+
+.boundary-error {
+  margin: 16px;
+  padding: 24px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  background: var(--surface);
+  text-align: center;
+}
+
+.boundary-error h2 { color: var(--danger); font-size: 18px; }
+.boundary-error p { color: var(--text-secondary); }
+
+/* ── Forms ─────────────────────────────────────── */
+.form-group { display: grid; gap: 4px; }
+.form-row { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 14px; }
+
+.form-group label { color: var(--text-secondary); font-size: 12px; font-weight: 600; }
+/* Secondary, not tertiary. These are the password rules and the unit
+   under a figure -- sentences a customer has to read, at 2.9:1 on a
+   white card if they are painted in the placeholder grey. Tertiary stays
+   where it belongs: placeholders and disabled controls. */
+.form-hint { color: var(--text-secondary); font-size: 12px; }
+
+/* Sized against antd's Input, which now renders half the controls on
+   these screens: same height, same 11px side padding, same 14px text.
+   A field the portal draws and a field antd draws sit in the same row
+   on the order form. */
+.form-input {
+  width: 100%;
+  min-height: var(--control-h);
+  padding: 4px 11px;
+  font-size: 14px;
+  line-height: var(--control-line);
+  border: 1px solid var(--border-dark);
+  border-radius: var(--radius);
+  background: var(--panel);
+  color: var(--text);
+  font-family: var(--sans);
+  outline: none;
+  transition: border-color 0.15s, box-shadow 0.15s;
+}
+
+.form-input:focus {
+  border-color: var(--accent);
+  box-shadow: var(--focus-ring);
+}
+
+.form-input::placeholder { color: var(--text-tertiary); }
+
+.form-input:disabled {
+  background: var(--surface);
+  color: var(--text-tertiary);
+  cursor: not-allowed;
+}
+
+/* A native dropdown arrow is drawn by the operating system and looks
+   nothing like antd's chevron, which shows when a filter bar holds one
+   of each. */
+select.form-input {
+  appearance: none;
+  -webkit-appearance: none;
+  padding-right: 30px;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 12 12'%3E%3Cpath fill='none' stroke='%239c9892' stroke-width='1.4' stroke-linecap='round' stroke-linejoin='round' d='M2.5 4.5 6 8l3.5-3.5'/%3E%3C/svg%3E");
+  background-repeat: no-repeat;
+  background-position: right 11px center;
+  background-size: 12px 12px;
+}
+
+.search-input, .filter-input { max-width: 320px; }
+.qty-input { max-width: 140px; text-align: right; }
+
+.btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  min-height: var(--control-h);
+  padding: 4px 15px;
+  font-size: 14px;
+  line-height: var(--control-line);
+  border: 1px solid var(--border-dark);
+  border-radius: var(--radius);
+  background: var(--panel);
+  color: var(--text);
+  font-family: var(--sans);
+  font-weight: 600;
+  white-space: nowrap;
+  cursor: pointer;
+  transition: color 0.15s, background 0.15s, border-color 0.15s, box-shadow 0.15s;
+}
+
+/* antd's default button answers a hover by turning its border and label
+   the primary colour, not by shading its background. */
+.btn:hover:not(:disabled) {
+  color: var(--accent);
+  border-color: var(--accent);
+  text-decoration: none;
+}
+
+.btn:focus-visible {
+  outline: none;
+  border-color: var(--accent);
+  box-shadow: var(--focus-ring);
+}
+
+/* Opacity dimmed the label and the border together and left the button
+   looking like it was still loading. Greying it out says disabled. */
+.btn:disabled {
+  color: var(--text-tertiary);
+  border-color: var(--border);
+  background: var(--surface);
+  cursor: not-allowed;
+}
+
+.btn-sm {
+  min-height: var(--control-h-sm);
+  padding: 0 7px;
+  font-size: 14px;
+  border-radius: var(--radius-sm);
+}
+.btn-block { width: 100%; }
+/* The light / dark switch. A single glyph, so it keeps the small
+   button's height without the side padding a word would need. */
+.theme-toggle {
+  padding: 0;
+  width: var(--control-h-sm);
+  font-size: 13px;
+  line-height: 1;
+}
+
+
+.btn-primary {
+  border-color: var(--accent);
+  background: var(--accent);
+  color: var(--on-accent);
+}
+
+.btn-primary:hover:not(:disabled) {
+  background: var(--accent-hover);
+  border-color: var(--accent-hover);
+  color: var(--on-accent);
+}
+
+/* ── Alerts ────────────────────────────────────── */
+.alert {
+  padding: 10px 14px;
+  border-radius: var(--radius);
+  font-size: 13px;
+}
+
+.alert-danger { background: var(--danger-bg); color: var(--danger); }
+.alert-warning { background: var(--warning-bg); color: var(--warning); }
+.alert-success { background: var(--success-bg); color: var(--success); }
+
+/* ── Tables ────────────────────────────────────── */
+.table-wrap { overflow-x: auto; }
+
+/* One table on this app is still written out by hand -- the line editor
+   on the new-order form, which is too specific to go through DataTable.
+   It sits under an antd table on the same screens, so these rules are
+   measured off a rendered <Table> rather than approximated. */
+.data-table { width: 100%; border-collapse: collapse; }
+
+.data-table th {
+  padding: 12px 14px;
+  background: var(--surface);
+  border-bottom: 1px solid var(--border);
+  color: var(--text-secondary);
+  font-size: 14px;
+  font-weight: 600;
+  text-align: left;
+  white-space: nowrap;
+}
+
+.data-table td {
+  padding: 12px 14px;
+  border-bottom: 1px solid var(--border);
+  vertical-align: middle;
+}
+
+.data-table tbody tr:last-child td { border-bottom: 0; }
+.data-table tbody tr:hover { background: var(--surface); }
+
+/* Codes (SKU, SO, PO, invoice number) are identifiers -- wrapping one
+   across three lines makes it unreadable and unscannable. Let the table
+   scroll inside .table-wrap instead. */
+.data-table td.mono { white-space: nowrap; }
+.line-editor td.mono { white-space: normal; }
+
+.row-clickable { cursor: pointer; }
+
+.line-editor td { vertical-align: top; }
+.line-editor tbody tr:hover { background: transparent; }
+
+.pagination {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding-top: 12px;
+  flex-wrap: wrap;
+}
+
+.pagination-buttons { display: flex; align-items: center; gap: 8px; }
+
+/* ── Tags ──────────────────────────────────────── */
+/* Shaped like antd's Tag, and like the admin panel's: a 4px rectangle
+   with a border in a tint of its own hue. The two apps show the same
+   order in the same statuses, and a pill here against a rectangle there
+   made them look like different systems. */
+.tag {
+  display: inline-block;
+  padding: 0 7px;
+  font-size: 12px;
+  line-height: 20px;
+  font-weight: 600;
+  border: 1px solid transparent;
+  border-radius: var(--radius-sm);
+  white-space: nowrap;
+}
+
+.tag-success {
+  background: var(--success-bg);
+  color: var(--success);
+  border-color: color-mix(in srgb, var(--success) 28%, transparent);
+}
+
+.tag-warning {
+  background: var(--warning-bg);
+  color: var(--warning);
+  border-color: color-mix(in srgb, var(--warning) 28%, transparent);
+}
+
+.tag-danger {
+  background: var(--danger-bg);
+  color: var(--danger);
+  border-color: color-mix(in srgb, var(--danger) 28%, transparent);
+}
+
+.tag-info {
+  background: var(--info-bg);
+  color: var(--info);
+  border-color: color-mix(in srgb, var(--info) 28%, transparent);
+}
+
+.tag-muted {
+  background: var(--surface);
+  color: var(--text-secondary);
+  border-color: var(--border-dark);
+}
+
+/* ── Dashboard ─────────────────────────────────── */
+.stat-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(190px, 1fr));
+  gap: 12px;
+}
+
+.stat {
+  display: grid;
+  gap: 4px;
+  padding: 16px;
+  border: 1px solid var(--border);
+  border-left: 4px solid var(--copper);
+  border-radius: var(--radius-lg);
+  background: var(--panel);
+  color: var(--text);
+}
+
+.stat:hover { border-color: var(--border-dark); text-decoration: none; }
+
+.stat span {
+  color: var(--text-secondary);
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.stat strong { font-family: var(--mono); font-size: 26px; line-height: 1.1; }
+.stat em { color: var(--text-secondary); font-size: 12px; font-style: normal; }
+
+.dash-columns {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+  gap: 16px;
+  align-items: start;
+}
+
+.mini-list { display: grid; gap: 8px; margin: 0 0 12px; padding: 0; list-style: none; }
+
+.mini-list li {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding-bottom: 8px;
+  border-bottom: 1px solid var(--border);
+}
+
+.mini-list li:last-child { padding-bottom: 0; border-bottom: 0; }
+.mini-list .mono { white-space: nowrap; font-size: 13px; }
+
+/* ── Detail grids ──────────────────────────────── */
+.detail-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  gap: 14px;
+}
+
+.detail-grid > div { display: grid; gap: 3px; align-content: start; }
+
+.detail-grid span {
+  color: var(--text-secondary);
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.detail-wide { grid-column: 1 / -1; }
+
+/* A pill in a grid cell would otherwise stretch to the column width and
+   stop reading as a tag. */
+.detail-grid .tag { justify-self: start; }
+
+/* ── Progress ──────────────────────────────────── */
+.progress {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.progress-track {
+  flex: 0 0 auto;
+  width: 72px;
+  height: 6px;
+  overflow: hidden;
+  border-radius: 999px;
+  background: var(--surface);
+}
+
+.progress-bar {
+  height: 100%;
+  border-radius: 999px;
+  background: var(--success);
+}
+
+.progress span { font-size: 12px; color: var(--text-secondary); }
+
+/* ── Login ─────────────────────────────────────── */
+.login-page {
+  display: grid;
+  place-items: center;
+  min-height: 100%;
+  padding: 24px;
+  background: var(--surface);
+}
+
+.login-card {
+  display: grid;
+  gap: 14px;
+  width: 100%;
+  max-width: 380px;
+  padding: 26px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  background: var(--panel);
+}
+
+.login-brand { display: flex; align-items: center; gap: 10px; }
+.login-brand div { display: flex; flex-direction: column; line-height: 1.25; }
+.login-brand strong { font-size: 15px; }
+.login-brand span { color: var(--text-secondary); font-size: 12px; }
+
+.login-note { margin: 0; color: var(--text-secondary); font-size: 12px; }
+
+/* ── Narrow screens ────────────────────────────── */
+@media (max-width: 860px) {
+  .shell { grid-template-columns: minmax(0, 1fr); }
+
+  .sidebar {
+    flex-direction: row;
+    align-items: center;
+    gap: 12px;
+    overflow-x: auto;
+    border-right: 0;
+    border-bottom: 1px solid var(--border);
+  }
+
+  .sidebar-nav { flex-direction: row; }
+  .sidebar-foot { margin-top: 0; }
+  .content { padding: 16px; }
+  .form-row { grid-template-columns: minmax(0, 1fr); }
+}
