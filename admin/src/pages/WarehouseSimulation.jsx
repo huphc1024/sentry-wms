@@ -1152,18 +1152,20 @@ export default function WarehouseSimulation() {
                       <div className="sim2-pallet-list">
                         <div className="sim2-pallet-list-title">{t('warehouseSimulation.unpalletized')}</div>
                         {stock.unpalletized.map((row) => (
-                          <div key={`${row.item_id}-${row.lot_number || 'x'}`} className="sim-slot-pallet-item" style={{ display: 'flex', flexWrap: 'wrap', gap: 8, alignItems: 'center' }}>
-                            <div style={{ flex: '1 1 160px' }}>
-                              <strong>{row.sku || row.item_name || row.item_id}</strong>
-                              {row.item_name && row.sku && <span>{row.item_name}</span>}
-                              <span>
-                                {t('warehouseSimulation.qtyN', {
-                                  qty: row.quantity_on_hand ?? 0,
-                                })}
-                                {row.lot_number
-                                  ? ` · ${t('warehouseSimulation.lotN', { lot: row.lot_number })}`
-                                  : ''}
-                              </span>
+                          <div key={`${row.item_id}-${row.lot_number || 'x'}`} className="sim-slot-pallet-item sim2-stock-row">
+                            <div className="sim2-stock-main">
+                              <div className="sim2-stock-head">
+                                <span className="sim2-sku">{row.sku || row.item_id}</span>
+                                {row.item_name && <span className="sim2-item-name" title={row.item_name}>{row.item_name}</span>}
+                              </div>
+                              <div className="sim2-stock-meta">
+                                <span className="sim2-chip sim2-chip-qty">
+                                  {t('warehouseSimulation.qtyN', { qty: row.quantity_on_hand ?? 0 })}
+                                </span>
+                                {row.lot_number && (
+                                  <span className="sim2-chip">{t('warehouseSimulation.lotN', { lot: row.lot_number })}</span>
+                                )}
+                              </div>
                             </div>
                             <button type="button" className="btn btn-sm btn-primary" onClick={() => openAttachPallet(row)}>
                               {t('warehouseSimulation.attachPallet')}
