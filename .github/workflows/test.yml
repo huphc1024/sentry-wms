@@ -238,7 +238,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        app: [admin]
+        app: [admin, mobile]
 
     steps:
       - uses: actions/checkout@v4

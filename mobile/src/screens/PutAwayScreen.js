@@ -9,9 +9,11 @@ import { useAuth } from '../auth/AuthContext';
 import client from '../api/client';
 import ScreenHeader from '../components/ScreenHeader';
 import { colors, fonts, radii, screenStyles, buttonStyles, modalStyles, listStyles, doneStyles } from '../theme/styles';
+import { useLocale } from '../i18n/locale.js';
 
 export default function PutAwayScreen({ navigation }) {
   const { warehouseId } = useAuth();
+  const { t } = useLocale();
   const scrollRef = React.useRef(null);
   useScrollToTop(scrollRef);
 
@@ -53,7 +55,7 @@ export default function PutAwayScreen({ navigation }) {
           // Load all items from this staging bin
           const items = binResp.data.items || [];
           if (items.length === 0) {
-            showError('No items in this staging bin');
+            showError(t('putaway.err.stagingEmpty'));
             return;
           }
           const newEntries = items
@@ -69,7 +71,7 @@ export default function PutAwayScreen({ navigation }) {
               lot_number: it.lot_number || null,
             }));
           if (newEntries.length === 0) {
-            showError('All items from this bin already loaded');
+            showError(t('putaway.err.allLoaded'));
             return;
           }
           setQueue((prev) => [...prev, ...newEntries]);
@@ -84,7 +86,7 @@ export default function PutAwayScreen({ navigation }) {
     try {
       const itemResp = await client.get(`/api/lookup/item/${encodeURIComponent(barcode)}`);
       if (!itemResp.data?.item) {
-        showError('Item not found');
+        showError(t('putaway.err.itemNotFound'));
         return;
       }
 
@@ -95,13 +97,13 @@ export default function PutAwayScreen({ navigation }) {
       );
 
       if (!stagingLoc) {
-        showError('Item not in a staging bin');
+        showError(t('putaway.err.notInStaging'));
         return;
       }
 
       // Duplicate check
       if (queue.find((q) => q.item_id === scannedItem.item_id && q.from_bin_id === stagingLoc.bin_id)) {
-        showError('Already added');
+        showError(t('putaway.err.alreadyAdded'));
         return;
       }
 
@@ -116,7 +118,7 @@ export default function PutAwayScreen({ navigation }) {
         lot_number: stagingLoc.lot_number || null,
       }]);
     } catch {
-      showError('Item not found');
+      showError(t('putaway.err.itemNotFound'));
     }
   };
 
@@ -155,7 +157,7 @@ export default function PutAwayScreen({ navigation }) {
         await selectItem(match);
         return;
       }
-      showError('Scan an item from the list');
+      showError(t('putaway.err.scanFromList'));
       return;
     }
     // Active item selected  -  this scan is a bin
@@ -166,13 +168,13 @@ export default function PutAwayScreen({ navigation }) {
     try {
       const binResp = await client.get(`/api/lookup/bin/${encodeURIComponent(barcode)}`);
       if (!binResp.data?.bin) {
-        showError('Bin not found');
+        showError(t('putaway.err.binNotFound'));
         return;
       }
       setScannedBin(binResp.data.bin);
       setProcessPhase('enter_qty');
     } catch {
-      showError('Bin not found');
+      showError(t('putaway.err.binNotFound'));
     }
   };
 
@@ -220,7 +222,7 @@ export default function PutAwayScreen({ navigation }) {
         setShowPreferredPrompt(true);
       }
     } catch (err) {
-      showError(err.response?.data?.error || 'Put-away failed');
+      showError(err.response?.data?.error || t('putaway.err.failed'));
     }
   };
 
@@ -244,7 +246,7 @@ export default function PutAwayScreen({ navigation }) {
       // bin. Surface the reason instead of swallowing it, so the
       // operator knows the bin was NOT set as preferred (and why)
       // rather than assuming it stuck.
-      showError(err.response?.data?.error || 'Could not set that bin as preferred');
+      showError(err.response?.data?.error || t('putaway.err.preferredFailed'));
     }
     setShowPreferredPrompt(false);
     setPromptData(null);
@@ -260,7 +262,7 @@ export default function PutAwayScreen({ navigation }) {
   return (
     <View style={screenStyles.screen}>
       <ScreenHeader
-        title="PUT-AWAY"
+        title={t('putaway.title')}
         onBack={() => {
           if (phase === 'process' && activeItem) {
             // Back from item detail to queue list
@@ -279,7 +281,7 @@ export default function PutAwayScreen({ navigation }) {
             </View>
           ) : phase === 'process' ? (
             <Text style={{ fontFamily: fonts.mono, fontSize: 12, color: colors.textMuted }}>
-              {queue.length} left
+              {t('putaway.left', { count: queue.length })}
             </Text>
           ) : history.length > 0 ? (
             <View style={styles.badge}>
@@ -294,7 +296,7 @@ export default function PutAwayScreen({ navigation }) {
         <>
           <View style={screenStyles.content}>
             <View style={{ padding: 16, paddingBottom: 0 }}>
-              <ScanInput placeholder="SCAN ITEM OR STAGING BIN" onScan={handleScanItem} disabled={scanDisabled} />
+              <ScanInput placeholder={t('putaway.scan.itemOrStaging')} onScan={handleScanItem} disabled={scanDisabled} />
             </View>
 
             <View style={{ flex: 1, paddingHorizontal: 16 }}>
@@ -306,7 +308,7 @@ export default function PutAwayScreen({ navigation }) {
                     <View style={{ flex: 1 }}>
                       <Text style={styles.queueSku}>{entry.sku}</Text>
                       <Text style={styles.queueDetail}>
-                        {entry.item_name} {'\u00b7'} QTY: {entry.quantity} {'\u00b7'} from {entry.from_bin_code}
+                        {t('putaway.queueDetail', { name: entry.item_name, qty: entry.quantity, bin: entry.from_bin_code })}
                       </Text>
                     </View>
                     <TouchableOpacity style={listStyles.removeBtn} onPress={() => removeFromQueue(index)}>
@@ -323,7 +325,7 @@ export default function PutAwayScreen({ navigation }) {
                 onPress={handleLoadAll}
                 disabled={queue.length === 0}
               >
-                <Text style={buttonStyles.buttonPrimaryText}>LOAD ALL ITEMS</Text>
+                <Text style={buttonStyles.buttonPrimaryText}>{t('putaway.btn.loadAll')}</Text>
               </TouchableOpacity>
             </View>
           </View>
@@ -337,7 +339,7 @@ export default function PutAwayScreen({ navigation }) {
           {activeItem ? (
             <ScrollView ref={scrollRef} style={screenStyles.content} contentContainerStyle={screenStyles.contentInner} keyboardShouldPersistTaps="handled">
               <ScanInput
-                placeholder="SCAN DESTINATION BIN"
+                placeholder={t('putaway.scan.destBin')}
                 onScan={handleProcessScan}
                 disabled={scanDisabled}
                 suppressRefocus={qtyFocused}
@@ -346,12 +348,12 @@ export default function PutAwayScreen({ navigation }) {
               <View style={styles.itemCard}>
                 <Text style={styles.itemName}>{activeItem.item_name}</Text>
                 <Text style={styles.sku}>{activeItem.sku}</Text>
-                <Text style={styles.fromBin}>FROM: {activeItem.from_bin_code} {'\u00b7'} QTY: {activeItem.quantity}</Text>
+                <Text style={styles.fromBin}>{t('putaway.fromLine', { bin: activeItem.from_bin_code, qty: activeItem.quantity })}</Text>
               </View>
 
               {preferredBin ? (
                 <View style={styles.suggestCard}>
-                  <Text style={styles.suggestLabel}>SUGGESTED BIN</Text>
+                  <Text style={styles.suggestLabel}>{t('putaway.label.suggestedBin')}</Text>
                   <Text style={styles.suggestBinCode}>{preferredBin.bin_code}</Text>
                   {preferredBin.zone_name && (
                     <Text style={styles.suggestZone}>{preferredBin.zone_name}</Text>
@@ -359,17 +361,17 @@ export default function PutAwayScreen({ navigation }) {
                 </View>
               ) : processPhase === 'scan_bin' ? (
                 <View style={styles.noPreferredCard}>
-                  <Text style={styles.noPreferredText}>No preferred bin set.</Text>
-                  <Text style={styles.noPreferredSub}>Scan any bin to put away.</Text>
+                  <Text style={styles.noPreferredText}>{t('putaway.noPreferred')}</Text>
+                  <Text style={styles.noPreferredSub}>{t('putaway.scanAnyBin')}</Text>
                 </View>
               ) : null}
 
               {processPhase === 'enter_qty' && scannedBin && (
                 <View style={styles.confirmCard}>
-                  <Text style={styles.confirmLabel}>DESTINATION</Text>
+                  <Text style={styles.confirmLabel}>{t('putaway.label.destination')}</Text>
                   <Text style={styles.confirmBinCode}>{scannedBin.bin_code}</Text>
                   <View style={styles.qtyRow}>
-                    <Text style={styles.qtyLabel}>QUANTITY</Text>
+                    <Text style={styles.qtyLabel}>{t('putaway.label.quantity')}</Text>
                     <TextInput
                       style={listStyles.qtyInput}
                       value={putQty}
@@ -381,13 +383,13 @@ export default function PutAwayScreen({ navigation }) {
                     />
                   </View>
                   <TouchableOpacity style={buttonStyles.buttonPrimary} onPress={handleConfirmPutAway}>
-                    <Text style={buttonStyles.buttonPrimaryText}>CONFIRM PUT-AWAY</Text>
+                    <Text style={buttonStyles.buttonPrimaryText}>{t('putaway.btn.confirm')}</Text>
                   </TouchableOpacity>
                   <TouchableOpacity
                     style={[buttonStyles.buttonSecondary, { marginTop: 8 }]}
                     onPress={() => { setScannedBin(null); setProcessPhase('scan_bin'); }}
                   >
-                    <Text style={buttonStyles.buttonSecondaryText}>SCAN DIFFERENT BIN</Text>
+                    <Text style={buttonStyles.buttonSecondaryText}>{t('putaway.btn.scanOther')}</Text>
                   </TouchableOpacity>
                 </View>
               )}
@@ -396,7 +398,7 @@ export default function PutAwayScreen({ navigation }) {
                 style={[buttonStyles.buttonSecondary, { marginTop: 4 }]}
                 onPress={() => { setActiveItem(null); setPreferredBin(null); setScannedBin(null); setProcessPhase('scan_bin'); }}
               >
-                <Text style={buttonStyles.buttonSecondaryText}>BACK TO LIST</Text>
+                <Text style={buttonStyles.buttonSecondaryText}>{t('putaway.btn.backToList')}</Text>
               </TouchableOpacity>
             </ScrollView>
           ) : (
@@ -404,7 +406,7 @@ export default function PutAwayScreen({ navigation }) {
             <View style={screenStyles.content}>
               <View style={{ padding: 16, paddingBottom: 0 }}>
                 <ScanInput
-                  placeholder="SCAN ITEM"
+                  placeholder={t('putaway.scan.item')}
                   onScan={handleProcessScan}
                   disabled={scanDisabled}
                 />
@@ -423,7 +425,7 @@ export default function PutAwayScreen({ navigation }) {
                       <View style={{ flex: 1 }}>
                         <Text style={[styles.queueSku, entry.fullyPutAway && { color: colors.success }]}>{entry.sku}</Text>
                         <Text style={styles.queueDetail}>
-                          {entry.item_name} {'\u00b7'} QTY: {entry.fullyPutAway ? 0 : entry.quantity} {'\u00b7'} from {entry.from_bin_code}
+                          {t('putaway.queueDetail', { name: entry.item_name, qty: entry.fullyPutAway ? 0 : entry.quantity, bin: entry.from_bin_code })}
                         </Text>
                       </View>
                       {entry.fullyPutAway && (
@@ -443,11 +445,11 @@ export default function PutAwayScreen({ navigation }) {
               return (
                 <TouchableOpacity
                   style={[buttonStyles.buttonPrimary, { flex: 1 }, !allDone && buttonStyles.buttonDisabled]}
-                  onPress={() => { if (allDone) setPhase('done'); }}
+                  onPress={() => { if (allDone) setPhase('done'); }} // i18n-ignore
                   disabled={!allDone}
                 >
                   <Text style={buttonStyles.buttonPrimaryText}>
-                    {allDone ? 'FINISH' : `${remaining.length} REMAINING`}
+                    {allDone ? t('putaway.btn.finish') : t('putaway.btn.remaining', { count: remaining.length })}
                   </Text>
                 </TouchableOpacity>
               );
@@ -463,13 +465,13 @@ export default function PutAwayScreen({ navigation }) {
           contentContainerStyle={{ alignItems: 'center', paddingHorizontal: 32, paddingTop: 40, paddingBottom: 32 }}
         >
           <Text style={doneStyles.check}>{'\u2713'}</Text>
-          <Text style={doneStyles.title}>Put-Away Complete</Text>
+          <Text style={doneStyles.title}>{t('putaway.complete')}</Text>
           <Text style={[doneStyles.detail, { marginBottom: 16 }]}>
-            {history.length} item{history.length !== 1 ? 's' : ''} put away
+            {t(history.length === 1 ? 'putaway.doneCount.one' : 'putaway.doneCount.other', { count: history.length })}
           </Text>
 
           {history.length > 0 && (
-            <Text style={styles.sessionHistoryLabel}>SESSION HISTORY</Text>
+            <Text style={styles.sessionHistoryLabel}>{t('putaway.sessionHistory')}</Text>
           )}
 
           {history.map((h, i) => (
@@ -483,11 +485,11 @@ export default function PutAwayScreen({ navigation }) {
             </View>
           ))}
 
-          <TouchableOpacity style={[buttonStyles.buttonPrimary, { marginTop: 24, width: '100%' }]} onPress={() => { setPhase('load'); setQueue([]); }}>
-            <Text style={buttonStyles.buttonPrimaryText}>PUT AWAY MORE</Text>
+          <TouchableOpacity style={[buttonStyles.buttonPrimary, { marginTop: 24, width: '100%' }]} onPress={() => { setPhase('load'); /* i18n-ignore */ setQueue([]); }}>
+            <Text style={buttonStyles.buttonPrimaryText}>{t('putaway.btn.more')}</Text>
           </TouchableOpacity>
           <TouchableOpacity style={[buttonStyles.buttonSecondary, { marginTop: 8, width: '100%' }]} onPress={() => navigation.goBack()}>
-            <Text style={buttonStyles.buttonSecondaryText}>DONE</Text>
+            <Text style={buttonStyles.buttonSecondaryText}>{t('putaway.btn.done')}</Text>
           </TouchableOpacity>
         </ScrollView>
       )}
@@ -498,22 +500,22 @@ export default function PutAwayScreen({ navigation }) {
           <View style={modalStyles.card}>
             {promptData?.type === 'set_new' ? (
               <>
-                <Text style={styles.modalTitle}>Set preferred bin for</Text>
+                <Text style={styles.modalTitle}>{t('putaway.modal.title')}</Text>
                 <Text style={styles.modalItemName}>{promptData.item.item_name}</Text>
                 <Text style={styles.modalSku}>{promptData.item.sku}</Text>
                 <View style={modalStyles.divider} />
                 <Text style={modalStyles.body}>
-                  Set {promptData.newBin.bin_code} as preferred bin?
+                  {t('putaway.modal.setNew', { bin: promptData.newBin.bin_code })}
                 </Text>
               </>
             ) : (
               <>
-                <Text style={styles.modalTitle}>Set preferred bin for</Text>
+                <Text style={styles.modalTitle}>{t('putaway.modal.title')}</Text>
                 <Text style={styles.modalItemName}>{promptData?.item?.item_name}</Text>
                 <Text style={styles.modalSku}>{promptData?.item?.sku}</Text>
                 <View style={modalStyles.divider} />
                 <Text style={modalStyles.body}>
-                  Change preferred bin from {promptData?.oldBin?.bin_code} to {promptData?.newBin?.bin_code}?
+                  {t('putaway.modal.change', { from: promptData?.oldBin?.bin_code, to: promptData?.newBin?.bin_code })}
                 </Text>
               </>
             )}
@@ -521,12 +523,12 @@ export default function PutAwayScreen({ navigation }) {
             <View style={modalStyles.actions}>
               <TouchableOpacity style={[buttonStyles.buttonPrimary, { flex: 1 }]} onPress={handleUpdatePreferred}>
                 <Text style={buttonStyles.buttonPrimaryText}>
-                  {promptData?.type === 'set_new' ? 'YES' : 'UPDATE'}
+                  {promptData?.type === 'set_new' ? t('putaway.btn.yes') : t('putaway.btn.update')}
                 </Text>
               </TouchableOpacity>
               <TouchableOpacity style={[buttonStyles.buttonSecondary, { flex: 1 }]} onPress={handleSkipPreferred}>
                 <Text style={buttonStyles.buttonSecondaryText}>
-                  {promptData?.type === 'set_new' ? 'SKIP' : 'KEEP'}
+                  {promptData?.type === 'set_new' ? t('putaway.btn.skip') : t('putaway.btn.keep')}
                 </Text>
               </TouchableOpacity>
             </View>
@@ -549,12 +551,11 @@ const styles = StyleSheet.create({
     backgroundColor: colors.copper, borderRadius: 10,
     paddingHorizontal: 8, paddingVertical: 2, minWidth: 24, alignItems: 'center',
   },
-  badgeText: { color: '#FFFFFF', fontFamily: fonts.mono, fontSize: 12, fontWeight: '700' },
+  badgeText: { color: colors.background, fontFamily: fonts.mono, fontSize: 12, fontWeight: '700' },
 
   // Load phase
   queueSku: { fontFamily: fonts.mono, fontSize: 14, fontWeight: '700', color: colors.textPrimary },
   queueDetail: { fontSize: 12, color: colors.textMuted, marginTop: 2 },
-
   // Process phase
   itemCard: {
     backgroundColor: colors.cardBg, borderWidth: 1, borderColor: colors.cardBorder, borderRadius: radii.card,
@@ -563,7 +564,6 @@ const styles = StyleSheet.create({
   itemName: { fontSize: 14, fontWeight: '600', color: colors.textPrimary },
   sku: { fontFamily: fonts.mono, fontSize: 13, fontWeight: '600', color: colors.textMuted, marginTop: 1 },
   fromBin: { fontFamily: fonts.mono, fontSize: 11, color: colors.textMuted, marginTop: 2 },
-
   suggestCard: {
     borderWidth: 2, borderStyle: 'dashed', borderColor: colors.copper, borderRadius: 0,
     padding: 6, marginBottom: 6, alignItems: 'center',

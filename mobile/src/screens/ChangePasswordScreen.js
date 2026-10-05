@@ -13,9 +13,11 @@ import {
 import { useAuth } from '../auth/AuthContext';
 import client from '../api/client';
 import { colors, radii } from '../theme/styles';
+import { useLocale } from '../i18n/locale.js';
 
 export default function ChangePasswordScreen({ navigation }) {
   const { user, completePasswordChange, logout } = useAuth();
+  const { t } = useLocale();
   const forced = !!user?.must_change_password;
 
   const [currentPassword, setCurrentPassword] = useState('');
@@ -48,7 +50,7 @@ export default function ChangePasswordScreen({ navigation }) {
     setError('');
 
     if (newPassword !== confirmPassword) {
-      setError('New passwords do not match.');
+      setError(t('auth.pwMismatch'));
       return;
     }
 
@@ -68,7 +70,7 @@ export default function ChangePasswordScreen({ navigation }) {
       const resp = err?.response?.data;
       const msg =
         (resp && resp.error) ||
-        'Could not change password. Please try again.';
+        t('auth.pwChangeFailed');
       setError(msg);
       setSubmitting(false);
     }
@@ -77,7 +79,7 @@ export default function ChangePasswordScreen({ navigation }) {
   return (
     <KeyboardAvoidingView
       style={styles.screen}
-      behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+      behavior={Platform.OS === 'ios' ? 'padding' : undefined} // i18n-ignore
     >
       <ScrollView
         contentContainerStyle={styles.scroll}
@@ -86,17 +88,17 @@ export default function ChangePasswordScreen({ navigation }) {
         {forced && (
           <View style={styles.banner} accessibilityRole="alert">
             <Text style={styles.bannerText}>
-              <Text style={styles.bannerBold}>First-time setup: </Text>
-              please choose a new admin password before continuing.
+              <Text style={styles.bannerBold}>{t('auth.firstTimeSetup')} </Text>
+              {t('auth.firstTimeSetupBody')}
             </Text>
           </View>
         )}
 
-        <Text style={styles.title}>Change Password</Text>
+        <Text style={styles.title}>{t('auth.changePasswordTitle')}</Text>
 
         {error ? <Text style={styles.error}>{error}</Text> : null}
 
-        <Text style={styles.label}>Current password</Text>
+        <Text style={styles.label}>{t('auth.currentPassword')}</Text>
         <TextInput
           style={styles.input}
           value={currentPassword}
@@ -107,7 +109,7 @@ export default function ChangePasswordScreen({ navigation }) {
           autoFocus
         />
 
-        <Text style={styles.label}>New password</Text>
+        <Text style={styles.label}>{t('auth.newPassword')}</Text>
         <TextInput
           style={styles.input}
           value={newPassword}
@@ -117,10 +119,10 @@ export default function ChangePasswordScreen({ navigation }) {
           autoCorrect={false}
         />
         <Text style={styles.hint}>
-          At least 8 characters, one letter and one digit. Cannot be "admin".
+          {t('auth.passwordHint')}
         </Text>
 
-        <Text style={styles.label}>Confirm new password</Text>
+        <Text style={styles.label}>{t('auth.confirmPassword')}</Text>
         <TextInput
           style={styles.input}
           value={confirmPassword}
@@ -136,7 +138,7 @@ export default function ChangePasswordScreen({ navigation }) {
           disabled={submitting}
         >
           <Text style={styles.buttonText}>
-            {submitting ? 'Saving...' : 'Change password'}
+            {submitting ? t('auth.saving') : t('auth.changePassword')}
           </Text>
         </TouchableOpacity>
 
@@ -146,7 +148,7 @@ export default function ChangePasswordScreen({ navigation }) {
             onPress={() => navigation.goBack()}
             disabled={submitting}
           >
-            <Text style={styles.secondaryButtonText}>Cancel</Text>
+            <Text style={styles.secondaryButtonText}>{t('auth.cancel')}</Text>
           </TouchableOpacity>
         )}
 
@@ -156,7 +158,7 @@ export default function ChangePasswordScreen({ navigation }) {
             onPress={logout}
             disabled={submitting}
           >
-            <Text style={styles.secondaryButtonText}>Log out</Text>
+            <Text style={styles.secondaryButtonText}>{t('auth.logout')}</Text>
           </TouchableOpacity>
         )}
       </ScrollView>
@@ -168,7 +170,7 @@ const styles = StyleSheet.create({
   screen: { flex: 1, backgroundColor: colors.background },
   scroll: { padding: 20, paddingTop: 60 },
   banner: {
-    backgroundColor: colors.accentRed,
+    backgroundColor: colors.accent,
     padding: 14,
     borderRadius: radii.small,
     marginBottom: 20,
@@ -204,7 +206,7 @@ const styles = StyleSheet.create({
     marginBottom: 12,
   },
   button: {
-    backgroundColor: colors.accentRed,
+    backgroundColor: colors.accent,
     padding: 14,
     borderRadius: radii.button,
     alignItems: 'center',

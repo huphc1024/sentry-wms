@@ -6,9 +6,11 @@ import ScreenHeader from '../components/ScreenHeader';
 import ErrorPopup from '../components/ErrorPopup';
 import useScreenError from '../hooks/useScreenError';
 import client from '../api/client';
+import { useLocale } from '../i18n/locale.js';
 import { colors, fonts, radii, screenStyles, buttonStyles, listStyles } from '../theme/styles';
 
 export default function PackShipScreen({ navigation }) {
+  const { t } = useLocale();
   const scrollRef = React.useRef(null);
   useScrollToTop(scrollRef);
   const [order, setOrder] = useState(null);
@@ -25,7 +27,7 @@ export default function PackShipScreen({ navigation }) {
       setItems((resp.data.items || []).map((item) => ({ ...item, verified: item.quantity_packed || item.quantity_verified || 0 })));
       setPhase('packing');
     } catch (err) {
-      showError(err.response?.data?.error || 'Order not found');
+      showError(err.response?.data?.error || t('packship.orderNotFound'));
     }
   };
 
@@ -38,7 +40,7 @@ export default function PackShipScreen({ navigation }) {
       // v1.9.0: see PackScreen.js for the short-pick rationale.
       const expected = matchedItem.quantity_picked ?? matchedItem.quantity_ordered;
       if ((matchedItem.verified || 0) >= expected) {
-        showError(`${matchedItem.sku} already fully verified`);
+        showError(t('packship.alreadyVerified', { sku: matchedItem.sku }));
         return;
       }
     }
@@ -56,7 +58,7 @@ export default function PackShipScreen({ navigation }) {
         return item;
       }));
     } catch (err) {
-      showError(err.response?.data?.error || 'Verification failed');
+      showError(err.response?.data?.error || t('packship.verifyFailed'));
     }
   };
 
@@ -69,13 +71,13 @@ export default function PackShipScreen({ navigation }) {
       await client.post('/api/packing/complete', { so_id: order.so_id });
       setPhase('shipping');
     } catch (err) {
-      showError(err.response?.data?.error || 'Failed to complete pack');
+      showError(err.response?.data?.error || t('packship.completePackFailed'));
     }
   };
 
   const handleShip = async () => {
     if (!carrier.trim() || !tracking.trim()) {
-      showError('Carrier and tracking number are required');
+      showError(t('packship.carrierTrackingRequired'));
       return;
     }
     try {
@@ -87,7 +89,7 @@ export default function PackShipScreen({ navigation }) {
       });
       resetScreen();
     } catch (err) {
-      showError(err.response?.data?.error || 'Shipment failed');
+      showError(err.response?.data?.error || t('packship.shipFailed'));
     }
   };
 
@@ -101,11 +103,11 @@ export default function PackShipScreen({ navigation }) {
 
   return (
     <View style={screenStyles.screen}>
-      <ScreenHeader title="PACK / SHIP" onBack={() => navigation.goBack()} />
+      <ScreenHeader title={t('packship.titlePackShip')} onBack={() => navigation.goBack()} />
 
       <ScrollView ref={scrollRef} style={screenStyles.content} contentContainerStyle={screenStyles.contentInner} keyboardShouldPersistTaps="handled">
         {phase === 'scan_order' && (
-          <ScanInput placeholder="SCAN ORDER" onScan={handleScanOrder} disabled={scanDisabled} />
+          <ScanInput placeholder={t('packship.scanOrder')} onScan={handleScanOrder} disabled={scanDisabled} />
         )}
 
         {phase === 'packing' && (
@@ -117,12 +119,12 @@ export default function PackShipScreen({ navigation }) {
 
             {order.memo ? (
               <View style={styles.memoBlock}>
-                <Text style={styles.memoLabel}>NOTE</Text>
+                <Text style={styles.memoLabel}>{t('packship.note')}</Text>
                 <Text style={styles.memoText}>{order.memo}</Text>
               </View>
             ) : null}
 
-            <ScanInput placeholder="SCAN ITEM" onScan={handleScanItem} disabled={scanDisabled} />
+            <ScanInput placeholder={t('packship.scanItem')} onScan={handleScanItem} disabled={scanDisabled} />
 
             {items.map((item, idx) => {
               const expected = item.quantity_picked ?? item.quantity_ordered;
@@ -146,7 +148,7 @@ export default function PackShipScreen({ navigation }) {
 
             {allVerified && (
               <TouchableOpacity style={[buttonStyles.buttonPrimary, { marginTop: 16 }]} onPress={handleCompletePack}>
-                <Text style={buttonStyles.buttonPrimaryText}>COMPLETE PACK</Text>
+                <Text style={buttonStyles.buttonPrimaryText}>{t('packship.completePack')}</Text>
               </TouchableOpacity>
             )}
           </>
@@ -156,30 +158,30 @@ export default function PackShipScreen({ navigation }) {
           <>
             <View style={styles.orderInfo}>
               <Text style={styles.soNumber}>{order.so_number}</Text>
-              <Text style={styles.packedLabel}>PACKED - READY TO SHIP</Text>
+              <Text style={styles.packedLabel}>{t('packship.packedReadyToShip')}</Text>
             </View>
 
-            <Text style={styles.fieldLabel}>CARRIER</Text>
+            <Text style={styles.fieldLabel}>{t('packship.carrier')}</Text>
             <TextInput
               style={styles.textInput}
               value={carrier}
               onChangeText={setCarrier}
-              placeholder="e.g. UPS, FedEx, USPS"
+              placeholder={t('packship.carrierPlaceholder')}
               placeholderTextColor={colors.textPlaceholder}
             />
 
-            <Text style={styles.fieldLabel}>TRACKING NUMBER</Text>
+            <Text style={styles.fieldLabel}>{t('packship.trackingNumber')}</Text>
             <TextInput
               style={styles.textInput}
               value={tracking}
               onChangeText={setTracking}
-              placeholder="Enter tracking number"
+              placeholder={t('packship.trackingPlaceholder')}
               placeholderTextColor={colors.textPlaceholder}
               autoCapitalize="characters"
             />
 
             <TouchableOpacity style={[buttonStyles.buttonPrimary, { marginTop: 16 }]} onPress={handleShip}>
-              <Text style={buttonStyles.buttonPrimaryText}>SHIP</Text>
+              <Text style={buttonStyles.buttonPrimaryText}>{t('packship.ship')}</Text>
             </TouchableOpacity>
           </>
         )}
@@ -201,14 +203,14 @@ const styles = StyleSheet.create({
   packedLabel: { fontFamily: fonts.mono, fontSize: 12, color: colors.success, letterSpacing: 0.3, marginTop: 4 },
   memoBlock: {
     borderWidth: 1, borderColor: colors.warning, borderRadius: radii.badge,
-    padding: 10, marginBottom: 16, backgroundColor: '#fdf6ed',
+    padding: 10, marginBottom: 16, backgroundColor: colors.accentBg,
   },
   memoLabel: {
     fontFamily: fonts.mono, fontSize: 10, fontWeight: '700',
     color: colors.warning, letterSpacing: 0.6, marginBottom: 4,
   },
   memoText: { fontSize: 13, color: colors.textPrimary, lineHeight: 18 },
-  itemRowComplete: { borderColor: colors.success, backgroundColor: '#f0f9f0' },
+  itemRowComplete: { borderColor: colors.success, backgroundColor: colors.successBg },
   itemQty: { flexDirection: 'row', alignItems: 'center', gap: 6 },
   itemQtyText: { fontFamily: fonts.mono, fontSize: 14, fontWeight: '700', color: colors.textPrimary },
   itemQtyComplete: { color: colors.success },

@@ -90,3 +90,11 @@ describe('ScanInput copy/paste support (#104)', () => {
     expect(source).not.toMatch(/contextMenuHidden/);
   });
 });
+
+describe('ScanInput camera scanner', () => {
+  it('exposes a CAM button and barcode scanner modal', () => {
+    expect(source).toMatch(/BarcodeScannerModal/);
+    expect(source).toMatch(/CAM/);
+    expect(source).toMatch(/enableCameraScan/);
+  });
+});

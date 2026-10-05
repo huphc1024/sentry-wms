@@ -9,6 +9,7 @@ import useBatchedReceive from '../hooks/useBatchedReceive';
 import useScreenError from '../hooks/useScreenError';
 import { orderReceiveLines, paginate } from '../utils/receiveLines';
 import { useAuth } from '../auth/AuthContext';
+import { useLocale } from '../i18n/locale.js';
 import client from '../api/client';
 import ScreenHeader from '../components/ScreenHeader';
 import { colors, fonts, radii, screenStyles, buttonStyles, listStyles, doneStyles } from '../theme/styles';
@@ -23,6 +24,7 @@ const LINE_PAGE_SIZE = 50;
 
 export default function ReceiveScreen({ navigation, route }) {
   const { warehouseId } = useAuth();
+  const { t } = useLocale();
 
   // Phase: 'scan_pos' → 'receiving' → 'done'
   const [phase, setPhase] = useState('scan_pos');
@@ -62,7 +64,7 @@ export default function ReceiveScreen({ navigation, route }) {
     setSessionReceiptIds(sessionReceiptIdsRef.current);
   }, []);
   // Modal state for replacing Alert.alert
-  const [confirmModal, setConfirmModal] = useState({ visible: false, title: '', message: '', onConfirm: null, confirmText: 'OK', cancelText: 'Cancel' });
+  const [confirmModal, setConfirmModal] = useState({ visible: false, title: '', message: '', onConfirm: null, confirmText: 'OK', cancelText: t('receive.cancel') }); // i18n-ignore
 
   useEffect(() => {
     AsyncStorage.getItem(MODE_KEY).then((saved) => {
@@ -93,9 +95,9 @@ export default function ReceiveScreen({ navigation, route }) {
             .then((r) => {
               const bins = r.data?.bins || [];
               const match = bins.find((b) => b.id === binId);
-              setReceivingBinCode(match?.bin_code || `Bin #${binId}`);
+              setReceivingBinCode(match?.bin_code || t('receive.binFallback', { id: binId }));
             })
-            .catch(() => setReceivingBinCode(`Bin #${binId}`));
+            .catch(() => setReceivingBinCode(t('receive.binFallback', { id: binId })));
         }
       })
       .catch(() => {});
@@ -131,7 +133,7 @@ export default function ReceiveScreen({ navigation, route }) {
   const handleScanPO = async (barcode) => {
     // Duplicate check
     if (poQueue.find((p) => p.po_barcode === barcode || p.po_number === barcode)) {
-      showError('Already scanned');
+      showError(t('receive.alreadyScanned'));
       return;
     }
 
@@ -167,9 +169,9 @@ export default function ReceiveScreen({ navigation, route }) {
       }
     } catch (err) {
       if (err.response?.status === 404) {
-        showError('PO not found');
+        showError(t('receive.poNotFound'));
       } else {
-        showError(err.response?.data?.error || 'Validation failed');
+        showError(err.response?.data?.error || t('receive.validationFailed'));
       }
     }
   };
@@ -204,7 +206,7 @@ export default function ReceiveScreen({ navigation, route }) {
       setCurrentPoIndex(index);
       setPhase('receiving');
     } catch (err) {
-      showError(err.response?.data?.error || 'Failed to load PO');
+      showError(err.response?.data?.error || t('receive.loadPoFailed'));
     }
   };
 
@@ -228,12 +230,12 @@ export default function ReceiveScreen({ navigation, route }) {
       (l) => l.upc === barcode || l.sku === barcode || l.item_barcode === barcode
     );
     if (!match) {
-      showError('Item not on this PO');
+      showError(t('receive.itemNotOnPo'));
       return;
     }
     const remaining = match.quantity_ordered - match.quantity_received;
     if (remaining <= 0 && !allowOverReceiving) {
-      showError(`${match.sku} already fully received (${match.quantity_received}/${match.quantity_ordered})`);
+      showError(t('receive.alreadyFullyReceived', { sku: match.sku, received: match.quantity_received, ordered: match.quantity_ordered }));
       return;
     }
     if (remaining <= 0 && allowOverReceiving) {
@@ -241,10 +243,10 @@ export default function ReceiveScreen({ navigation, route }) {
         setOverReceiveWarned((prev) => new Set(prev).add(match.item_id));
         setConfirmModal({
           visible: true,
-          title: 'Item Fully Received',
-          message: `${match.sku} is already fully received (${match.quantity_received}/${match.quantity_ordered}). Over-receive?`,
-          confirmText: 'Continue',
-          cancelText: 'Cancel',
+          title: t('receive.fullyReceivedTitle'),
+          message: t('receive.fullyReceivedConfirm', { sku: match.sku, received: match.quantity_received, ordered: match.quantity_ordered }),
+          confirmText: t('receive.continue'),
+          cancelText: t('receive.cancel'),
           onConfirm: () => { setConfirmModal((p) => ({ ...p, visible: false })); setActiveItem(match); setQuantity('1'); },
         });
         return;
@@ -275,7 +277,7 @@ export default function ReceiveScreen({ navigation, route }) {
       setActiveItem(null);
       setQuantity('');
     } catch (err) {
-      showError(err.response?.data?.error || 'Failed to receive');
+      showError(err.response?.data?.error || t('receive.receiveFailed'));
     }
   };
 
@@ -289,17 +291,17 @@ export default function ReceiveScreen({ navigation, route }) {
     if (totalAfterReceive > activeItem.quantity_ordered) {
       if (!allowOverReceiving) {
         const remaining = activeItem.quantity_ordered - activeItem.quantity_received;
-        showError(`Cannot receive more than ordered (${remaining > 0 ? remaining : 0} remaining)`);
+        showError(t('receive.cannotOverReceiveRemaining', { remaining: remaining > 0 ? remaining : 0 }));
         return;
       }
       // Show warning but allow  -  EVERY time
       const overAmount = totalAfterReceive - activeItem.quantity_ordered;
       setConfirmModal({
         visible: true,
-        title: 'Over-Receiving',
-        message: `You are receiving ${overAmount} more than expected. Continue?`,
-        confirmText: 'Continue',
-        cancelText: 'Cancel',
+        title: t('receive.overReceivingTitle'),
+        message: t('receive.overReceivingConfirm', { n: overAmount }),
+        confirmText: t('receive.continue'),
+        cancelText: t('receive.cancel'),
         onConfirm: () => { setConfirmModal((p) => ({ ...p, visible: false })); doReceiveStandard(qty); },
       });
       return;
@@ -334,11 +336,11 @@ export default function ReceiveScreen({ navigation, route }) {
 
   const handleBatchError = useCallback(async (items, err) => {
     const n = items.reduce((s, it) => s + it.quantity, 0);
-    showError(err.response?.data?.error || `Failed to save ${n} scan${n !== 1 ? 's' : ''}  -  re-scan them`);
+    showError(err.response?.data?.error || t(n !== 1 ? 'receive.saveScansFailed.other' : 'receive.saveScansFailed.one', { n }));
     // The hook rolled back this batch's optimistic counts; refetch server
     // truth to reconcile.
     await refreshPO();
-  }, [showError]);
+  }, [showError, t]);
 
   const {
     enqueue: enqueueReceive,
@@ -368,12 +370,12 @@ export default function ReceiveScreen({ navigation, route }) {
       (l) => l.upc === barcode || l.sku === barcode || l.item_barcode === barcode
     );
     if (!match) {
-      showError('Item not on this PO');
+      showError(t('receive.itemNotOnPo'));
       return;
     }
     const projected = match.quantity_received + getPending(match.item_id) + 1;
     if (projected > match.quantity_ordered && !allowOverReceiving) {
-      showError('Cannot receive more than ordered');
+      showError(t('receive.cannotOverReceive'));
       return;
     }
     const binId = receivingBinId || match.staging_bin_id || 1;
@@ -382,7 +384,7 @@ export default function ReceiveScreen({ navigation, route }) {
     if (projected >= match.quantity_ordered) {
       try { Vibration.vibrate(200); } catch {}
     }
-  }, [lines, allowOverReceiving, receivingBinId, enqueueReceive, getPending, showError]);
+  }, [lines, allowOverReceiving, receivingBinId, enqueueReceive, getPending, showError, t]);
 
   const handleScanItem = mode === 'turbo' ? processTurboScan : handleScanItemStandard;
 
@@ -399,10 +401,10 @@ export default function ReceiveScreen({ navigation, route }) {
   const handleCancel = () => {
     setConfirmModal({
       visible: true,
-      title: 'Cancel Receiving',
-      message: 'Are you sure? Items already received will not be saved.',
-      confirmText: 'Cancel',
-      cancelText: 'Stay',
+      title: t('receive.cancelReceivingTitle'),
+      message: t('receive.cancelReceivingConfirm'),
+      confirmText: t('receive.cancel'),
+      cancelText: t('receive.stay'),
       onConfirm: async () => {
         setConfirmModal((p) => ({ ...p, visible: false }));
         // Flush buffered/in-flight scans first so every receipt has an id,
@@ -449,7 +451,7 @@ export default function ReceiveScreen({ navigation, route }) {
   return (
     <View style={screenStyles.screen}>
       <ScreenHeader
-        title="RECEIVE"
+        title={t('receive.title')}
         onBack={handleExit}
         right={
           phase === 'scan_pos' && poQueue.length > 0 ? (
@@ -469,7 +471,7 @@ export default function ReceiveScreen({ navigation, route }) {
         <>
           <View style={screenStyles.content}>
             <View style={{ padding: 16, paddingBottom: 0 }}>
-              <ScanInput placeholder="SCAN PO" onScan={handleScanPO} disabled={scanDisabled} />
+              <ScanInput placeholder={t('receive.scanPo')} onScan={handleScanPO} disabled={scanDisabled} />
             </View>
 
             <View style={{ flex: 1, paddingHorizontal: 16 }}>
@@ -481,7 +483,7 @@ export default function ReceiveScreen({ navigation, route }) {
                     <View style={{ flex: 1 }}>
                       <Text style={styles.poNumber}>{entry.po_number}</Text>
                       <Text style={styles.poDetail}>
-                        {entry.vendor_name} {'\u00b7'} {entry.line_count} item{entry.line_count !== 1 ? 's' : ''} {'\u00b7'} {entry.total_units} unit{entry.total_units !== 1 ? 's' : ''}
+                        {entry.vendor_name} {'\u00b7'} {t(entry.line_count !== 1 ? 'receive.itemCount.other' : 'receive.itemCount.one', { n: entry.line_count })} {'\u00b7'} {t(entry.total_units !== 1 ? 'receive.unitCount.other' : 'receive.unitCount.one', { n: entry.total_units })}
                       </Text>
                     </View>
                     <TouchableOpacity
@@ -501,7 +503,7 @@ export default function ReceiveScreen({ navigation, route }) {
                 onPress={handleLoadAll}
                 disabled={poQueue.length === 0}
               >
-                <Text style={buttonStyles.buttonPrimaryText}>LOAD ALL POs</Text>
+                <Text style={buttonStyles.buttonPrimaryText}>{t('receive.loadAll')}</Text>
               </TouchableOpacity>
             </View>
           </View>
@@ -520,7 +522,7 @@ export default function ReceiveScreen({ navigation, route }) {
               <View style={styles.poMeta}>
                 <Text style={styles.poVendor}>{po.vendor_name}</Text>
                 <View style={[styles.modeBadge, mode === 'turbo' && styles.modeBadgeTurbo]}>
-                  <Text style={styles.modeBadgeText}>{mode === 'turbo' ? 'TURBO' : 'STANDARD'}</Text>
+                  <Text style={styles.modeBadgeText}>{mode === 'turbo' ? t('receive.mode.turbo') : t('receive.mode.standard')}</Text>
                 </View>
               </View>
               {receivingBinCode ? (
@@ -532,18 +534,18 @@ export default function ReceiveScreen({ navigation, route }) {
 
             {poComplete ? (
               <View style={styles.poCompleteCard}>
-                <Text style={styles.poCompleteText}>PO Complete</Text>
-                <Text style={styles.poCompleteDetail}>{po.po_number} - all items received</Text>
+                <Text style={styles.poCompleteText}>{t('receive.poComplete')}</Text>
+                <Text style={styles.poCompleteDetail}>{t('receive.poCompleteDetail', { po: po.po_number })}</Text>
                 {currentPoIndex < poQueue.length - 1 && (
                   <TouchableOpacity style={[buttonStyles.buttonPrimary, { width: '100%' }]} onPress={handleNextPO}>
-                    <Text style={buttonStyles.buttonPrimaryText}>NEXT PO</Text>
+                    <Text style={buttonStyles.buttonPrimaryText}>{t('receive.nextPo')}</Text>
                   </TouchableOpacity>
                 )}
               </View>
             ) : (
               <>
                 <ScanInput
-                  placeholder="SCAN ITEM"
+                  placeholder={t('receive.scanItem')}
                   onScan={handleScanItem}
                   disabled={scanDisabled || (mode === 'standard' && !!activeItem)}
                   suppressRefocus={qtyFocused}
@@ -553,7 +555,7 @@ export default function ReceiveScreen({ navigation, route }) {
                   <View style={styles.turboCard}>
                     {turboStatus !== '' && <Text style={styles.turboText}>{turboStatus}</Text>}
                     {pendingTotal > 0 && (
-                      <Text style={styles.turboPending}>{'↻'} syncing {pendingTotal}...</Text>
+                      <Text style={styles.turboPending}>{'↻'} {t('receive.syncing', { n: pendingTotal })}</Text>
                     )}
                   </View>
                 )}
@@ -563,10 +565,10 @@ export default function ReceiveScreen({ navigation, route }) {
                     <Text style={listStyles.sku}>{activeItem.sku}</Text>
                     <Text style={[listStyles.itemName, { fontSize: 13 }]}>{activeItem.item_name}</Text>
                     <Text style={styles.expectedText}>
-                      Expected: {activeItem.quantity_ordered} | Received: {activeItem.quantity_received}
+                      {t('receive.expected', { ordered: activeItem.quantity_ordered, received: activeItem.quantity_received })}
                     </Text>
                     <View style={styles.qtyRow}>
-                      <Text style={listStyles.label}>QUANTITY</Text>
+                      <Text style={listStyles.label}>{t('receive.quantity')}</Text>
                       <TextInput
                         style={listStyles.qtyInput}
                         value={quantity}
@@ -578,7 +580,7 @@ export default function ReceiveScreen({ navigation, route }) {
                       />
                     </View>
                     <TouchableOpacity style={[buttonStyles.buttonPrimary, { width: '100%' }]} onPress={handleConfirmStandard}>
-                      <Text style={buttonStyles.buttonPrimaryText}>RECEIVE</Text>
+                      <Text style={buttonStyles.buttonPrimaryText}>{t('receive.receive')}</Text>
                     </TouchableOpacity>
                   </View>
                 )}
@@ -604,7 +606,7 @@ export default function ReceiveScreen({ navigation, route }) {
                     >
                       <Text style={[styles.linePageArrow, lineSafePage === 0 && styles.linePageArrowDisabled]}>{'<'}</Text>
                     </TouchableOpacity>
-                    <Text style={styles.linePageText}>Page {lineSafePage + 1} of {lineTotalPages}</Text>
+                    <Text style={styles.linePageText}>{t('common.pageOf', { page: lineSafePage + 1, total: lineTotalPages })}</Text>
                     <TouchableOpacity
                       style={styles.linePageBtn}
                       onPress={() => setLinePage((p) => Math.min(lineTotalPages - 1, p + 1))}
@@ -620,10 +622,10 @@ export default function ReceiveScreen({ navigation, route }) {
 
           <View style={screenStyles.bottomBar}>
             <TouchableOpacity style={[buttonStyles.buttonPrimary, { flex: 1 }]} onPress={handleSubmit}>
-              <Text style={buttonStyles.buttonPrimaryText}>SUBMIT</Text>
+              <Text style={buttonStyles.buttonPrimaryText}>{t('receive.submit')}</Text>
             </TouchableOpacity>
             <TouchableOpacity style={[buttonStyles.buttonSecondary, { flex: 1 }]} onPress={handleCancel}>
-              <Text style={buttonStyles.buttonSecondaryText}>CANCEL</Text>
+              <Text style={buttonStyles.buttonSecondaryText}>{t('receive.cancelBtn')}</Text>
             </TouchableOpacity>
           </View>
         </>
@@ -633,15 +635,15 @@ export default function ReceiveScreen({ navigation, route }) {
       {phase === 'done' && (
         <View style={doneStyles.section}>
           <Text style={doneStyles.check}>{'\u2713'}</Text>
-          <Text style={doneStyles.title}>Receiving Complete</Text>
+          <Text style={doneStyles.title}>{t('receive.complete')}</Text>
           <Text style={doneStyles.detail}>
-            {poQueue.length} PO{poQueue.length !== 1 ? 's' : ''} processed
+            {t(poQueue.length !== 1 ? 'receive.posProcessed.other' : 'receive.posProcessed.one', { n: poQueue.length })}
           </Text>
           <TouchableOpacity style={[buttonStyles.buttonPrimary, { width: '100%' }]} onPress={resetAll}>
-            <Text style={buttonStyles.buttonPrimaryText}>RECEIVE MORE</Text>
+            <Text style={buttonStyles.buttonPrimaryText}>{t('receive.receiveMore')}</Text>
           </TouchableOpacity>
           <TouchableOpacity style={[buttonStyles.buttonSecondary, { marginTop: 8, width: '100%' }]} onPress={() => navigation.goBack()}>
-            <Text style={buttonStyles.buttonSecondaryText}>DONE</Text>
+            <Text style={buttonStyles.buttonSecondaryText}>{t('receive.done')}</Text>
           </TouchableOpacity>
         </View>
       )}
@@ -650,20 +652,20 @@ export default function ReceiveScreen({ navigation, route }) {
       <ModeSelector
         visible={showModeMenu}
         onClose={() => setShowModeMenu(false)}
-        title="RECEIVE MODE"
+        title={t('receive.modeTitle')}
         mode={mode}
         onChangeMode={changeMode}
-        standardDesc="Scan item, enter qty, confirm"
-        turboDesc="Each scan = 1 unit received"
+        standardDesc={t('receive.standardDesc')}
+        turboDesc={t('receive.turboDesc')}
       >
         <View style={{ height: 1, backgroundColor: colors.cardBorder, marginVertical: 8 }} />
-        <Text style={styles.modeTitle}>RECEIVING BIN</Text>
+        <Text style={styles.modeTitle}>{t('receive.receivingBin')}</Text>
         <TouchableOpacity
           style={styles.modeOption}
           onPress={() => { setShowModeMenu(false); setBinPickerValue(''); setShowBinPicker(true); }}
         >
-          <Text style={styles.modeOptionLabel}>{receivingBinCode || 'Not Set'}</Text>
-          <Text style={styles.modeOptionDesc}>Tap to change destination bin</Text>
+          <Text style={styles.modeOptionLabel}>{receivingBinCode || t('receive.notSet')}</Text>
+          <Text style={styles.modeOptionDesc}>{t('receive.tapToChange')}</Text>
         </TouchableOpacity>
       </ModeSelector>
 
@@ -671,12 +673,12 @@ export default function ReceiveScreen({ navigation, route }) {
       <Modal visible={showBinPicker} transparent animationType="fade">
         <View style={styles.modeOverlay}>
           <View style={[styles.modeCard, { maxHeight: '70%' }]}>
-            <Text style={styles.modeTitle}>CHANGE RECEIVING BIN</Text>
+            <Text style={styles.modeTitle}>{t('receive.changeBinTitle')}</Text>
             <Text style={{ fontSize: 12, color: colors.textMuted, marginBottom: 12 }}>
-              Scan or select a staging bin
+              {t('receive.scanOrSelectBin')}
             </Text>
             <ScanInput
-              placeholder="SCAN BIN"
+              placeholder={t('receive.scanBin')}
               onScan={async (barcode) => {
                 try {
                   const resp = await client.get(`/api/lookup/bin/${encodeURIComponent(barcode)}`);
@@ -686,12 +688,12 @@ export default function ReceiveScreen({ navigation, route }) {
                     setReceivingBinCode(bin.bin_code);
                     setShowBinPicker(false);
                   } else if (bin) {
-                    showError(`${bin.bin_code} is ${bin.bin_type}  -  must be Staging or PickableStaging`);
+                    showError(t('receive.binWrongType', { code: bin.bin_code, type: bin.bin_type }));
                   } else {
-                    showError('Bin not found');
+                    showError(t('receive.binNotFound'));
                   }
                 } catch {
-                  showError('Bin not found');
+                  showError(t('receive.binNotFound'));
                 }
               }}
               disabled={false}
@@ -701,7 +703,7 @@ export default function ReceiveScreen({ navigation, route }) {
                 {stagingBins.map((bin) => (
                   <TouchableOpacity
                     key={bin.bin_id}
-                    style={[listStyles.row, { padding: 10, marginBottom: 4 }, bin.bin_id === receivingBinId && { borderColor: colors.accentRed }]}
+                    style={[listStyles.row, { padding: 10, marginBottom: 4 }, bin.bin_id === receivingBinId && { borderColor: colors.accent }]}
                     onPress={() => {
                       setReceivingBinId(bin.bin_id);
                       setReceivingBinCode(bin.bin_code);
@@ -718,7 +720,7 @@ export default function ReceiveScreen({ navigation, route }) {
               style={[buttonStyles.buttonSecondary, { marginTop: 8 }]}
               onPress={() => setShowBinPicker(false)}
             >
-              <Text style={buttonStyles.buttonSecondaryText}>CANCEL</Text>
+              <Text style={buttonStyles.buttonSecondaryText}>{t('receive.cancelBtn')}</Text>
             </TouchableOpacity>
           </View>
         </View>
@@ -759,10 +761,10 @@ export default function ReceiveScreen({ navigation, route }) {
 
 const styles = StyleSheet.create({
   badge: {
-    backgroundColor: colors.accentRed, borderRadius: 10,
+    backgroundColor: colors.accent, borderRadius: 10,
     paddingHorizontal: 8, paddingVertical: 2, minWidth: 24, alignItems: 'center',
   },
-  badgeText: { color: '#FFFFFF', fontFamily: fonts.mono, fontSize: 12, fontWeight: '700' },
+  badgeText: { color: colors.background, fontFamily: fonts.mono, fontSize: 12, fontWeight: '700' },
 
   // Phase 1: PO queue
   poNumber: { fontFamily: fonts.mono, fontSize: 14, fontWeight: '700', color: colors.textPrimary },
@@ -779,16 +781,16 @@ const styles = StyleSheet.create({
     backgroundColor: colors.cardBorder, borderRadius: radii.badge,
     paddingHorizontal: 8, paddingVertical: 2,
   },
-  modeBadgeTurbo: { backgroundColor: colors.accentRed },
+  modeBadgeTurbo: { backgroundColor: colors.accent },
   modeBadgeText: { fontFamily: fonts.mono, fontSize: 10, fontWeight: '700', color: colors.cream, letterSpacing: 0.5 },
   turboCard: {
-    backgroundColor: '#f0f9f0', borderWidth: 1, borderColor: colors.success, borderRadius: radii.card,
+    backgroundColor: colors.successBg, borderWidth: 1, borderColor: colors.success, borderRadius: radii.card,
     padding: 12, marginBottom: 16, alignItems: 'center',
   },
   turboText: { fontFamily: fonts.mono, fontSize: 14, fontWeight: '600', color: colors.success },
   turboPending: { fontFamily: fonts.mono, fontSize: 11, color: colors.textMuted, marginTop: 4 },
   receiveCard: {
-    borderWidth: 1.5, borderColor: colors.accentRed, borderRadius: radii.card,
+    borderWidth: 1.5, borderColor: colors.accent, borderRadius: radii.card,
     padding: 12, marginBottom: 10,
   },
   expectedText: { fontFamily: fonts.mono, fontSize: 12, color: colors.textMuted, marginTop: 6 },
@@ -797,7 +799,7 @@ const styles = StyleSheet.create({
   lineQtyPending: { color: colors.copper },
   lineRowDone: { borderColor: colors.success },
   textDone: { color: colors.success },
-  textPending: { color: colors.accentRed },
+  textPending: { color: colors.danger },
   linePager: {
     flexDirection: 'row', alignItems: 'center', justifyContent: 'center',
     paddingVertical: 12, gap: 16,
@@ -842,7 +844,7 @@ const styles = StyleSheet.create({
   confirmTitle: { fontFamily: fonts.mono, fontSize: 16, fontWeight: '700', color: colors.textPrimary, marginBottom: 8 },
   confirmMessage: { fontFamily: fonts.mono, fontSize: 13, color: colors.textMuted, lineHeight: 20 },
   confirmButton: {
-    backgroundColor: colors.accentRed, borderRadius: radii.button,
+    backgroundColor: colors.accent, borderRadius: radii.button,
     paddingVertical: 12, alignItems: 'center',
   },
   confirmButtonText: { fontFamily: fonts.mono, fontSize: 13, fontWeight: '700', color: colors.cream, letterSpacing: 0.5 },

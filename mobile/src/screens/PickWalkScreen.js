@@ -4,9 +4,11 @@ import ScanInput from '../components/ScanInput';
 import ErrorPopup from '../components/ErrorPopup';
 import useScreenError from '../hooks/useScreenError';
 import client from '../api/client';
+import { useLocale } from '../i18n/locale.js';
 import { colors, fonts, radii, screenStyles, buttonStyles, modalStyles } from '../theme/styles';
 
 export default function PickWalkScreen({ navigation, route }) {
+  const { t } = useLocale();
   const { batch_id, batch } = route.params;
   const [task, setTask] = useState(null);
   const [scannedCount, setScannedCount] = useState(0);
@@ -63,7 +65,7 @@ export default function PickWalkScreen({ navigation, route }) {
       // Refresh task list so next-item preview has current statuses
       loadTaskList();
     } catch (err) {
-      showError(err.response?.data?.error || 'Failed to load next task');
+      showError(err.response?.data?.error || t('pick.loadNextFailed'));
     }
   };
 
@@ -73,7 +75,7 @@ export default function PickWalkScreen({ navigation, route }) {
     const expectedUpc = task.upc || '';
     const expectedSku = task.sku || '';
     if (barcode !== expectedUpc && barcode !== expectedSku) {
-      showError(`Wrong item \u2014 expected ${task.sku}`);
+      showError(t('pick.wrongItem', { sku: task.sku }));
       return;
     }
 
@@ -90,7 +92,7 @@ export default function PickWalkScreen({ navigation, route }) {
         setScannedCount(0);
         await loadNextTask();
       } catch (err) {
-        showError(err.response?.data?.error || 'Pick failed');
+        showError(err.response?.data?.error || t('pick.pickFailed'));
       }
     } else {
       setScannedCount(newCount);
@@ -113,7 +115,7 @@ export default function PickWalkScreen({ navigation, route }) {
       await loadNextTask();
     } catch (err) {
       setShowShortModal(false);
-      showError(err.response?.data?.error || 'Short pick failed');
+      showError(err.response?.data?.error || t('pick.shortPickFailed'));
     }
   };
 
@@ -168,7 +170,7 @@ export default function PickWalkScreen({ navigation, route }) {
       <View style={styles.header}>
         <View style={styles.headerLeft}>
           <Text style={styles.headerTitle}>
-            ITEM {pickNumber} OF {totalPicks}
+            {t('pick.itemOf', { n: pickNumber, total: totalPicks })}
           </Text>
           <View style={styles.headerOrderRow}>
             {/* v1.8.0 (#295) header swap: TO batches surface the TO
@@ -178,8 +180,8 @@ export default function PickWalkScreen({ navigation, route }) {
                 pick. */}
             <Text style={styles.headerOrders}>
               {task && task.to_number
-                ? `TO ${task.to_number}`
-                : `${totalOrders} order${totalOrders !== 1 ? 's' : ''}`}
+                ? t('pick.toNumber', { number: task.to_number })
+                : t(totalOrders !== 1 ? 'pick.orders_other' : 'pick.orders_one', { count: totalOrders })}
             </Text>
             <View style={styles.greenDot} />
           </View>
@@ -189,13 +191,13 @@ export default function PickWalkScreen({ navigation, route }) {
       {batchComplete ? (
         <View style={styles.roundComplete}>
           <Text style={styles.roundCompleteCheck}>{'\u2713'}</Text>
-          <Text style={styles.roundCompleteText}>Round Complete</Text>
+          <Text style={styles.roundCompleteText}>{t('pick.roundComplete')}</Text>
           <Text style={styles.roundCompleteDetail}>
-            {totalOrders} order{totalOrders !== 1 ? 's' : ''} ready for packing
+            {t('pick.readyForPacking', { orders: t(totalOrders !== 1 ? 'pick.orders_other' : 'pick.orders_one', { count: totalOrders }) })}
           </Text>
           <View style={styles.completeSummary}>
             <View style={styles.completeSummaryRow}>
-              <Text style={styles.completeSummaryLabel}>Total picks</Text>
+              <Text style={styles.completeSummaryLabel}>{t('pick.totalPicks')}</Text>
               <Text style={styles.completeSummaryValue}>{totalPicks}</Text>
             </View>
           </View>
@@ -203,28 +205,28 @@ export default function PickWalkScreen({ navigation, route }) {
             style={[buttonStyles.buttonPrimary, { width: '100%', marginBottom: 12 }]}
             onPress={() => navigation.replace('PickScan')}
           >
-            <Text style={buttonStyles.buttonPrimaryText}>START NEW BATCH</Text>
+            <Text style={buttonStyles.buttonPrimaryText}>{t('pick.startNewBatch')}</Text>
           </TouchableOpacity>
           <TouchableOpacity
             style={[buttonStyles.buttonSecondary, { width: '100%' }]}
             onPress={() => navigation.navigate('Home')}
           >
-            <Text style={buttonStyles.buttonSecondaryText}>DONE</Text>
+            <Text style={buttonStyles.buttonSecondaryText}>{t('pick.done')}</Text>
           </TouchableOpacity>
         </View>
       ) : !task ? (
         <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center' }}>
-          <ActivityIndicator size="large" color={colors.accentRed} />
+          <ActivityIndicator size="large" color={colors.accent} />
         </View>
       ) : (
         <ScrollView style={screenStyles.content} contentContainerStyle={screenStyles.contentInner} keyboardShouldPersistTaps="handled">
           {/* Bin hero card */}
           <View style={styles.binCard}>
-            <Text style={styles.binLabel}>GO TO BIN</Text>
+            <Text style={styles.binLabel}>{t('pick.goToBin')}</Text>
             <Text style={styles.binCode}>{task.bin_code}</Text>
             {task.zone_name && (
               <Text style={styles.binZone}>
-                {task.zone_name}{task.aisle ? ` \u00b7 AISLE ${task.aisle}` : ''}
+                {task.zone_name}{task.aisle ? t('pick.aisleSuffix', { aisle: task.aisle }) : ''}
               </Text>
             )}
           </View>
@@ -237,12 +239,12 @@ export default function PickWalkScreen({ navigation, route }) {
           >
             <View style={styles.itemCardInner}>
               <View style={{ flex: 1 }}>
-                <Text style={styles.itemLabel}>ITEM</Text>
+                <Text style={styles.itemLabel}>{t('pick.item')}</Text>
                 <Text style={styles.sku}>{task.sku}</Text>
                 <Text style={styles.itemName}>{task.item_name}</Text>
               </View>
               <View style={styles.qtySection}>
-                <Text style={styles.itemLabel}>QTY</Text>
+                <Text style={styles.itemLabel}>{t('pick.qty')}</Text>
                 <Text style={styles.qty}>{task.quantity_to_pick}</Text>
               </View>
             </View>
@@ -251,7 +253,7 @@ export default function PickWalkScreen({ navigation, route }) {
               <>
                 <View style={styles.itemDivider} />
                 <View style={styles.scanProgress}>
-                  <Text style={styles.scanProgressLabel}>SCANNED</Text>
+                  <Text style={styles.scanProgressLabel}>{t('pick.scanned')}</Text>
                   <Text style={styles.scanProgressCount}>
                     {scannedCount} / {task.quantity_to_pick}
                   </Text>
@@ -271,23 +273,23 @@ export default function PickWalkScreen({ navigation, route }) {
           {/* Next item preview */}
           {taskList.length > 0 && (nextTask ? (
             <View style={styles.nextCard}>
-              <Text style={styles.nextLabel}>NEXT</Text>
+              <Text style={styles.nextLabel}>{t('pick.next')}</Text>
               <Text style={styles.nextSku}>{nextTask.sku}</Text>
               <Text style={styles.nextName}>{nextTask.item_name}</Text>
               <View style={styles.nextBinRow}>
-                <Text style={styles.nextBinLabel}>BIN</Text>
+                <Text style={styles.nextBinLabel}>{t('pick.bin')}</Text>
                 <Text style={styles.nextBinCode}>{nextTask.bin_code}</Text>
               </View>
             </View>
           ) : isLastItem ? (
             <View style={styles.nextCard}>
-              <Text style={styles.lastItemText}>LAST ITEM IN BATCH</Text>
+              <Text style={styles.lastItemText}>{t('pick.lastItem')}</Text>
             </View>
           ) : null)}
 
           {/* Scan input */}
           <ScanInput
-            placeholder="SCAN ITEM"
+            placeholder={t('pick.scanItem')}
             onScan={handleScan}
             disabled={scanDisabled}
           />
@@ -299,7 +301,7 @@ export default function PickWalkScreen({ navigation, route }) {
               setShowShortModal(true);
             }}
           >
-            <Text style={styles.shortPickText}>SHORT PICK</Text>
+            <Text style={styles.shortPickText}>{t('pick.shortPick')}</Text>
           </TouchableOpacity>
         </ScrollView>
       )}
@@ -308,10 +310,10 @@ export default function PickWalkScreen({ navigation, route }) {
       {!batchComplete && (
         <View style={screenStyles.bottomBar}>
           <TouchableOpacity style={[buttonStyles.buttonPrimary, { flex: 1 }]} onPress={handleSubmit}>
-            <Text style={buttonStyles.buttonPrimaryText}>SUBMIT</Text>
+            <Text style={buttonStyles.buttonPrimaryText}>{t('pick.submit')}</Text>
           </TouchableOpacity>
           <TouchableOpacity style={[buttonStyles.buttonSecondary, { flex: 1 }]} onPress={handleCancel}>
-            <Text style={buttonStyles.buttonSecondaryText}>CANCEL</Text>
+            <Text style={buttonStyles.buttonSecondaryText}>{t('pick.cancel')}</Text>
           </TouchableOpacity>
         </View>
       )}
@@ -320,9 +322,9 @@ export default function PickWalkScreen({ navigation, route }) {
       <Modal visible={showShortModal} transparent animationType="fade">
         <View style={modalStyles.overlay}>
           <View style={modalStyles.card}>
-            <Text style={modalStyles.title}>SHORT PICK</Text>
+            <Text style={modalStyles.title}>{t('pick.shortPick')}</Text>
             <Text style={modalStyles.subtitle}>
-              Expected: {task?.quantity_to_pick} - Enter actual quantity available:
+              {t('pick.expectedEnterQty', { qty: task?.quantity_to_pick })}
             </Text>
             <TextInput
               style={styles.shortInput}
@@ -333,13 +335,13 @@ export default function PickWalkScreen({ navigation, route }) {
             />
             <View style={modalStyles.actions}>
               <TouchableOpacity style={[buttonStyles.buttonPrimary, { flex: 1 }]} onPress={handleShort}>
-                <Text style={buttonStyles.buttonPrimaryText}>CONFIRM</Text>
+                <Text style={buttonStyles.buttonPrimaryText}>{t('pick.confirm')}</Text>
               </TouchableOpacity>
               <TouchableOpacity
                 style={[buttonStyles.buttonSecondary, { flex: 1 }]}
                 onPress={() => setShowShortModal(false)}
               >
-                <Text style={buttonStyles.buttonSecondaryText}>CANCEL</Text>
+                <Text style={buttonStyles.buttonSecondaryText}>{t('pick.cancel')}</Text>
               </TouchableOpacity>
             </View>
           </View>
@@ -350,29 +352,29 @@ export default function PickWalkScreen({ navigation, route }) {
       <Modal visible={showEarlySubmit} transparent animationType="fade">
         <View style={modalStyles.overlay}>
           <View style={modalStyles.card}>
-            <Text style={modalStyles.title}>INCOMPLETE BATCH</Text>
+            <Text style={modalStyles.title}>{t('pick.incompleteBatch')}</Text>
             <Text style={modalStyles.subtitle}>
-              Are you sure you want to submit? Not all orders are fulfilled.
+              {t('pick.confirmSubmit')}
             </Text>
             <ScrollView style={styles.earlySubmitList}>
-              {allTasks.map((t, i) => (
+              {allTasks.map((tk, i) => (
                 <View key={i} style={styles.earlySubmitRow}>
-                  <Text style={styles.earlySubmitSku}>{t.sku || t.item_name}</Text>
+                  <Text style={styles.earlySubmitSku}>{tk.sku || tk.item_name}</Text>
                   <Text style={styles.earlySubmitQty}>
-                    {t.quantity_to_pick - (t.quantity_picked || 0)} remaining
+                    {t('pick.remaining', { qty: tk.quantity_to_pick - (tk.quantity_picked || 0) })}
                   </Text>
                 </View>
               ))}
             </ScrollView>
             <View style={modalStyles.actions}>
               <TouchableOpacity style={[buttonStyles.buttonPrimary, { flex: 1 }]} onPress={() => { setShowEarlySubmit(false); doSubmit(); }}>
-                <Text style={buttonStyles.buttonPrimaryText}>SUBMIT</Text>
+                <Text style={buttonStyles.buttonPrimaryText}>{t('pick.submit')}</Text>
               </TouchableOpacity>
               <TouchableOpacity
                 style={[buttonStyles.buttonSecondary, { flex: 1 }]}
                 onPress={() => setShowEarlySubmit(false)}
               >
-                <Text style={buttonStyles.buttonSecondaryText}>BACK</Text>
+                <Text style={buttonStyles.buttonSecondaryText}>{t('pick.back')}</Text>
               </TouchableOpacity>
             </View>
           </View>
@@ -383,7 +385,7 @@ export default function PickWalkScreen({ navigation, route }) {
       <Modal visible={showItemDetail} transparent animationType="fade">
         <View style={modalStyles.overlay}>
           <View style={modalStyles.card}>
-            <Text style={modalStyles.title}>ITEM DETAILS</Text>
+            <Text style={modalStyles.title}>{t('pick.itemDetails')}</Text>
             {task && (
               <View>
                 <View style={styles.detailRow}>
@@ -391,7 +393,7 @@ export default function PickWalkScreen({ navigation, route }) {
                   <Text style={styles.detailValue}>{task.sku}</Text>
                 </View>
                 <View style={styles.detailRow}>
-                  <Text style={styles.detailLabel}>NAME</Text>
+                  <Text style={styles.detailLabel}>{t('pick.name')}</Text>
                   <Text style={styles.detailValue}>{task.item_name}</Text>
                 </View>
                 <View style={styles.detailRow}>
@@ -399,26 +401,26 @@ export default function PickWalkScreen({ navigation, route }) {
                   <Text style={styles.detailValue}>{task.upc || '-'}</Text>
                 </View>
                 <View style={styles.detailRow}>
-                  <Text style={styles.detailLabel}>BIN</Text>
+                  <Text style={styles.detailLabel}>{t('pick.bin')}</Text>
                   <Text style={styles.detailValue}>{task.bin_code}</Text>
                 </View>
                 {task.zone_name && (
                   <View style={styles.detailRow}>
-                    <Text style={styles.detailLabel}>ZONE</Text>
-                    <Text style={styles.detailValue}>{task.zone_name}{task.aisle ? ` / Aisle ${task.aisle}` : ''}</Text>
+                    <Text style={styles.detailLabel}>{t('pick.zone')}</Text>
+                    <Text style={styles.detailValue}>{task.zone_name}{task.aisle ? t('pick.aisleSlash', { aisle: task.aisle }) : ''}</Text>
                   </View>
                 )}
                 <View style={styles.detailRow}>
-                  <Text style={styles.detailLabel}>QTY NEEDED</Text>
+                  <Text style={styles.detailLabel}>{t('pick.qtyNeeded')}</Text>
                   <Text style={styles.detailValue}>{task.quantity_to_pick}</Text>
                 </View>
                 <View style={styles.detailRow}>
-                  <Text style={styles.detailLabel}>SCANNED</Text>
+                  <Text style={styles.detailLabel}>{t('pick.scanned')}</Text>
                   <Text style={styles.detailValue}>{scannedCount} / {task.quantity_to_pick}</Text>
                 </View>
                 {contributingOrders.length > 0 && (
                   <View style={{ marginTop: 12 }}>
-                    <Text style={styles.detailLabel}>ORDERS</Text>
+                    <Text style={styles.detailLabel}>{t('pick.orders')}</Text>
                     {contributingOrders.map((order, i) => (
                       <View key={i} style={styles.detailOrderRow}>
                         <Text style={styles.detailOrderSo}>{order.so_number}</Text>
@@ -448,20 +450,20 @@ export default function PickWalkScreen({ navigation, route }) {
                       await loadNextTask();
                     } catch (err) {
                       setShowItemDetail(false);
-                      showError(err.response?.data?.error || 'Pick failed');
+                      showError(err.response?.data?.error || t('pick.pickFailed'));
                     }
                   } else {
                     setScannedCount(newCount);
                   }
                 }}
               >
-                <Text style={buttonStyles.buttonPrimaryText}>PICK</Text>
+                <Text style={buttonStyles.buttonPrimaryText}>{t('pick.pick')}</Text>
               </TouchableOpacity>
               <TouchableOpacity
                 style={[buttonStyles.buttonSecondary, { flex: 1 }]}
                 onPress={() => setShowItemDetail(false)}
               >
-                <Text style={buttonStyles.buttonSecondaryText}>CLOSE</Text>
+                <Text style={buttonStyles.buttonSecondaryText}>{t('pick.close')}</Text>
               </TouchableOpacity>
             </View>
           </View>
@@ -472,22 +474,22 @@ export default function PickWalkScreen({ navigation, route }) {
       <Modal visible={showCancelModal} transparent animationType="fade">
         <View style={modalStyles.overlay}>
           <View style={modalStyles.card}>
-            <Text style={modalStyles.title}>CANCEL PICK WALK</Text>
+            <Text style={modalStyles.title}>{t('pick.cancelPickWalk')}</Text>
             <Text style={modalStyles.subtitle}>
-              Are you sure? Progress on this batch will be lost.
+              {t('pick.confirmCancel')}
             </Text>
             <View style={modalStyles.actions}>
               <TouchableOpacity
                 style={[buttonStyles.buttonPrimary, { flex: 1 }]}
                 onPress={() => { setShowCancelModal(false); navigation.navigate('Home'); }}
               >
-                <Text style={buttonStyles.buttonPrimaryText}>CANCEL BATCH</Text>
+                <Text style={buttonStyles.buttonPrimaryText}>{t('pick.cancelBatch')}</Text>
               </TouchableOpacity>
               <TouchableOpacity
                 style={[buttonStyles.buttonSecondary, { flex: 1 }]}
                 onPress={() => setShowCancelModal(false)}
               >
-                <Text style={buttonStyles.buttonSecondaryText}>BACK</Text>
+                <Text style={buttonStyles.buttonSecondaryText}>{t('pick.back')}</Text>
               </TouchableOpacity>
             </View>
           </View>
@@ -522,7 +524,7 @@ const styles = StyleSheet.create({
   roundCompleteDetail: { fontSize: 15, color: colors.textMuted },
 
   binCard: {
-    backgroundColor: colors.accentRed,
+    backgroundColor: colors.accent,
     borderRadius: radii.heroCard,
     padding: 14, marginBottom: 10, alignItems: 'center',
   },
@@ -539,14 +541,14 @@ const styles = StyleSheet.create({
   sku: { fontFamily: fonts.mono, fontSize: 14, fontWeight: '700', color: colors.textPrimary },
   itemName: { fontSize: 12, color: colors.textMuted, marginTop: 2 },
   qtySection: { alignItems: 'flex-end' },
-  qty: { fontFamily: fonts.mono, fontSize: 30, fontWeight: '700', color: colors.accentRed },
+  qty: { fontFamily: fonts.mono, fontSize: 30, fontWeight: '700', color: colors.accent },
 
   itemDivider: { height: 1, backgroundColor: colors.cardBorder, marginVertical: 12 },
   scanProgress: {},
   scanProgressLabel: { fontFamily: fonts.mono, fontSize: 9, fontWeight: '600', color: colors.textMuted },
   scanProgressCount: { fontFamily: fonts.mono, fontSize: 14, fontWeight: '700', color: colors.textPrimary, marginTop: 2 },
   progressBar: { height: 4, backgroundColor: colors.cardBorder, borderRadius: 2, marginTop: 8 },
-  progressFill: { height: 4, backgroundColor: colors.accentRed, borderRadius: 2 },
+  progressFill: { height: 4, backgroundColor: colors.accent, borderRadius: 2 },
 
   nextCard: {
     backgroundColor: colors.cardBg, borderWidth: 1, borderColor: colors.cardBorder, borderRadius: radii.card,
@@ -557,7 +559,7 @@ const styles = StyleSheet.create({
   nextName: { fontSize: 11, color: colors.textMuted, marginTop: 1 },
   nextBinRow: { flexDirection: 'row', alignItems: 'center', marginTop: 8 },
   nextBinLabel: { fontFamily: fonts.mono, fontSize: 9, fontWeight: '600', color: colors.textMuted, letterSpacing: 0.3, marginRight: 6 },
-  nextBinCode: { fontFamily: fonts.mono, fontSize: 12, fontWeight: '700', color: colors.accentRed },
+  nextBinCode: { fontFamily: fonts.mono, fontSize: 12, fontWeight: '700', color: colors.accent },
   lastItemText: { fontFamily: fonts.mono, fontSize: 11, fontWeight: '600', color: colors.textMuted, textAlign: 'center', letterSpacing: 0.5 },
 
   shortPickText: {
@@ -578,14 +580,14 @@ const styles = StyleSheet.create({
     paddingVertical: 6, borderBottomWidth: 1, borderBottomColor: colors.cardBorder,
   },
   earlySubmitSku: { fontFamily: fonts.mono, fontSize: 13, color: colors.textPrimary },
-  earlySubmitQty: { fontFamily: fonts.mono, fontSize: 13, color: colors.accentRed },
+  earlySubmitQty: { fontFamily: fonts.mono, fontSize: 13, color: colors.accent },
 
   detailRow: { flexDirection: 'row', justifyContent: 'space-between', paddingVertical: 6, borderBottomWidth: 1, borderBottomColor: colors.cardBorder },
   detailLabel: { fontFamily: fonts.mono, fontSize: 11, fontWeight: '600', color: colors.textMuted, letterSpacing: 0.3 },
   detailValue: { fontFamily: fonts.mono, fontSize: 13, color: colors.textPrimary, textAlign: 'right', flex: 1, marginLeft: 12 },
   detailOrderRow: { flexDirection: 'row', justifyContent: 'space-between', paddingVertical: 4, paddingLeft: 8 },
   detailOrderSo: { fontFamily: fonts.mono, fontSize: 12, color: colors.textPrimary },
-  detailOrderQty: { fontFamily: fonts.mono, fontSize: 12, fontWeight: '700', color: colors.accentRed },
+  detailOrderQty: { fontFamily: fonts.mono, fontSize: 12, fontWeight: '700', color: colors.accent },
 
   completeSummary: { width: '100%', marginBottom: 32 },
   completeSummaryRow: {

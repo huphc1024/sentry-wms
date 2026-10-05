@@ -1,8 +1,10 @@
 import React, { useState } from 'react';
 import { View, Text, TouchableOpacity, ScrollView, StyleSheet } from 'react-native';
 import { colors, fonts } from '../theme/styles';
+import { useLocale } from '../i18n/locale';
 
 export default function PagedList({ items, pageSize = 20, renderItem }) {
+  const { t } = useLocale();
   const [page, setPage] = useState(0);
   const totalPages = Math.max(1, Math.ceil(items.length / pageSize));
   const start = page * pageSize;
@@ -25,7 +27,7 @@ export default function PagedList({ items, pageSize = 20, renderItem }) {
             <Text style={[styles.pageArrow, page === 0 && styles.pageArrowDisabled]}>{'<'}</Text>
           </TouchableOpacity>
           <Text style={styles.pageText}>
-            Page {page + 1} of {totalPages}
+            {t('common.pageOf', { page: page + 1, total: totalPages })}
           </Text>
           <TouchableOpacity
             style={styles.pageButton}

@@ -1,18 +1,18 @@
 import React from 'react';
 import { Modal, View, Text, ScrollView, TouchableOpacity, StyleSheet } from 'react-native';
 import { colors, fonts, radii } from '../theme/styles';
+import { useLocale } from '../i18n/locale';
 
 export default function UnpickableOrdersModal({ visible, unpickable, onCancel, onContinue }) {
+  const { t } = useLocale();
   const count = unpickable?.length || 0;
   return (
     <Modal visible={visible} transparent animationType="fade">
       <View style={styles.overlay}>
         <View style={styles.card}>
-          <Text style={styles.title}>INSUFFICIENT STOCK</Text>
+          <Text style={styles.title}>{t('common.unpickableTitle')}</Text>
           <Text style={styles.body}>
-            {count === 1 ? '1 order does' : `${count} orders do`} not have pickable
-            stock in this warehouse. Continue to pick the orders that are ready to
-            be fulfilled, or cancel to adjust the batch.
+            {count === 1 ? t('common.unpickableBodyOne') : t('common.unpickableBodyMany', { count })}
           </Text>
 
           <ScrollView style={styles.list} contentContainerStyle={{ paddingBottom: 8 }}>
@@ -21,7 +21,7 @@ export default function UnpickableOrdersModal({ visible, unpickable, onCancel, o
                 <Text style={styles.soNumber}>{so.so_number}</Text>
                 {(so.lines || []).map((ln, idx) => (
                   <Text key={`${so.so_id}-${idx}`} style={styles.lineRow}>
-                    {ln.sku} · ordered {ln.ordered} · available {ln.available}
+                    {t('common.unpickableLine', { sku: ln.sku, ordered: ln.ordered, available: ln.available })}
                   </Text>
                 ))}
               </View>
@@ -30,10 +30,10 @@ export default function UnpickableOrdersModal({ visible, unpickable, onCancel, o
 
           <View style={styles.buttonRow}>
             <TouchableOpacity style={[styles.button, styles.buttonCancel]} onPress={onCancel}>
-              <Text style={styles.buttonCancelText}>CANCEL</Text>
+              <Text style={styles.buttonCancelText}>{t('common.cancel')}</Text>
             </TouchableOpacity>
             <TouchableOpacity style={[styles.button, styles.buttonContinue]} onPress={onContinue}>
-              <Text style={styles.buttonContinueText}>CONTINUE</Text>
+              <Text style={styles.buttonContinueText}>{t('common.continue')}</Text>
             </TouchableOpacity>
           </View>
         </View>
@@ -54,7 +54,7 @@ const styles = StyleSheet.create({
     backgroundColor: colors.background,
     borderRadius: radii.card,
     borderWidth: 1.5,
-    borderColor: colors.accentRed,
+    borderColor: colors.danger,
     padding: 20,
     width: '100%',
     maxWidth: 420,
@@ -65,7 +65,7 @@ const styles = StyleSheet.create({
     fontSize: 14,
     fontWeight: '700',
     letterSpacing: 0.5,
-    color: colors.accentRed,
+    color: colors.danger,
     textAlign: 'center',
     marginBottom: 8,
   },
@@ -84,7 +84,7 @@ const styles = StyleSheet.create({
     paddingVertical: 8,
     paddingHorizontal: 4,
     borderBottomWidth: 1,
-    borderBottomColor: colors.border || '#333',
+    borderBottomColor: colors.border || colors.textPrimary,
   },
   soNumber: {
     fontFamily: fonts.mono,
@@ -125,7 +125,7 @@ const styles = StyleSheet.create({
     letterSpacing: 0.5,
   },
   buttonContinue: {
-    backgroundColor: colors.accentRed,
+    backgroundColor: colors.danger,
   },
   buttonContinueText: {
     color: colors.cream,

@@ -4,11 +4,15 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useAuth } from '../auth/AuthContext';
 import client, { getStoredApiUrl, setApiUrl, hasStoredApiUrl } from '../api/client';
 import { colors, fonts, radii } from '../theme/styles';
+import { BRAND_SHORT, BRAND_TAGLINE } from '../brand';
+import { useLocale } from '../i18n/locale.js';
+import LanguageToggle from '../components/LanguageToggle';
 
-const SENTRY_LOGIN_RENDERED = '__sentry_login_rendered__';
+const LOGIN_RENDERED = '__sonloc_login_rendered__';
 
 export default function LoginScreen() {
   const { login } = useAuth();
+  const { t } = useLocale();
   const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
   const [error, setError] = useState('');
@@ -24,13 +28,13 @@ export default function LoginScreen() {
   const [modalChecking, setModalChecking] = useState(false);
   const [renderGuard] = useState(() => {
     // Guard against duplicate renders  -  only allow one instance
-    if (global[SENTRY_LOGIN_RENDERED]) return false;
-    global[SENTRY_LOGIN_RENDERED] = true;
+    if (global[LOGIN_RENDERED]) return false;
+    global[LOGIN_RENDERED] = true;
     return true;
   });
 
   useEffect(() => {
-    return () => { global[SENTRY_LOGIN_RENDERED] = false; };
+    return () => { global[LOGIN_RENDERED] = false; };
   }, []);
 
   useEffect(() => {
@@ -51,7 +55,7 @@ export default function LoginScreen() {
   const handleConnect = async () => {
     const trimmed = connectUrl.replace(/\/+$/, '').trim();
     if (!trimmed) {
-      setConnectError('Enter a server URL');
+      setConnectError(t('auth.enterServerUrl'));
       return;
     }
     setConnecting(true);
@@ -61,12 +65,12 @@ export default function LoginScreen() {
       const timeout = setTimeout(() => controller.abort(), 5000);
       const resp = await fetch(`${trimmed}/api/health`, { signal: controller.signal });
       clearTimeout(timeout);
-      if (!resp.ok) throw new Error('Bad response');
+      if (!resp.ok) throw new Error(t('auth.badResponse'));
       await setApiUrl(trimmed);
       setServerDisplay(trimmed);
       setNeedsSetup(false);
     } catch (err) {
-      setConnectError(`Could not connect: ${err.message}`);
+      setConnectError(t('auth.couldNotConnectWith', { message: err.message }));
     } finally {
       setConnecting(false);
     }
@@ -74,7 +78,7 @@ export default function LoginScreen() {
 
   const handleLogin = async () => {
     if (!username || !password) {
-      setError('Username and password are required');
+      setError(t('auth.credentialsRequired'));
       return;
     }
     setError('');
@@ -84,10 +88,10 @@ export default function LoginScreen() {
       await login(username, password);
     } catch (err) {
       if (err.response?.status === 401) {
-        setError('Invalid credentials');
+        setError(t('auth.invalidCredentials'));
         setPassword('');
       } else {
-        setError('Connection error - check WiFi');
+        setError(t('auth.connectionError'));
       }
     } finally {
       setLoading(false);
@@ -113,12 +117,12 @@ export default function LoginScreen() {
       const timeout = setTimeout(() => controller.abort(), 5000);
       const resp = await fetch(`${trimmed}/api/health`, { signal: controller.signal });
       clearTimeout(timeout);
-      if (!resp.ok) throw new Error('Bad response');
+      if (!resp.ok) throw new Error(t('auth.badResponse'));
       await setApiUrl(trimmed);
       setServerDisplay(trimmed);
       setShowServerModal(false);
     } catch {
-      setModalError('Could not connect to server');
+      setModalError(t('auth.couldNotConnect'));
     } finally {
       setModalChecking(false);
     }
@@ -131,20 +135,21 @@ export default function LoginScreen() {
     return (
       <KeyboardAvoidingView
         style={styles.screen}
-        behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+        behavior={Platform.OS === 'ios' ? 'padding' : 'height'} // i18n-ignore
       >
         <View style={styles.container}>
           <View style={styles.logoSection}>
-            <Text style={styles.logoText}>SENTRY</Text>
-            <Text style={styles.logoSubtext}>WAREHOUSE MANAGEMENT</Text>
+            <Text style={styles.logoText}>{BRAND_SHORT}</Text>
+            <Text style={styles.logoSubtext}>{BRAND_TAGLINE}</Text>
+            <LanguageToggle style={{ marginTop: 12, alignSelf: 'center' }} />
           </View>
 
           <View style={styles.form}>
-            <Text style={styles.setupLabel}>SERVER URL</Text>
+            <Text style={styles.setupLabel}>{t('auth.serverUrl')}</Text>
             <TextInput
               style={styles.input}
               value={connectUrl}
-              onChangeText={(t) => { setConnectUrl(t); setConnectError(''); }}
+              onChangeText={(v) => { setConnectUrl(v); setConnectError(''); }}
               placeholder="http://192.168.1.100:5000"
               placeholderTextColor={colors.textPlaceholder}
               autoCapitalize="none"
@@ -161,7 +166,7 @@ export default function LoginScreen() {
               disabled={connecting}
             >
               <Text style={styles.loginButtonText}>
-                {connecting ? 'CONNECTING...' : 'CONNECT'}
+                {connecting ? t('auth.connecting') : t('auth.connect')}
               </Text>
             </TouchableOpacity>
 
@@ -175,18 +180,19 @@ export default function LoginScreen() {
   return (
     <KeyboardAvoidingView
       style={styles.screen}
-      behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+      behavior={Platform.OS === 'ios' ? 'padding' : 'height'} // i18n-ignore
     >
       <View style={styles.container}>
         <View style={styles.logoSection}>
-          <Text style={styles.logoText}>SENTRY</Text>
-          <Text style={styles.logoSubtext}>WAREHOUSE MANAGEMENT</Text>
+          <Text style={styles.logoText}>{BRAND_SHORT}</Text>
+          <Text style={styles.logoSubtext}>{BRAND_TAGLINE}</Text>
+          <LanguageToggle style={{ marginTop: 12, alignSelf: 'center' }} />
         </View>
 
         <View style={styles.form}>
           <TextInput
             style={styles.input}
-            placeholder="Username"
+            placeholder={t('auth.username')}
             placeholderTextColor={colors.textPlaceholder}
             value={username}
             onChangeText={setUsername}
@@ -195,7 +201,7 @@ export default function LoginScreen() {
           />
           <TextInput
             style={styles.input}
-            placeholder="Password"
+            placeholder={t('auth.password')}
             placeholderTextColor={colors.textPlaceholder}
             value={password}
             onChangeText={setPassword}
@@ -207,7 +213,7 @@ export default function LoginScreen() {
             onPress={handleLogin}
             disabled={loading}
           >
-            <Text style={styles.loginButtonText}>{loading ? 'LOGGING IN...' : 'LOGIN'}</Text>
+            <Text style={styles.loginButtonText}>{loading ? t('auth.loggingIn') : t('auth.login')}</Text>
           </TouchableOpacity>
 
           {error ? <Text style={styles.error}>{error}</Text> : null}
@@ -225,11 +231,11 @@ export default function LoginScreen() {
       <Modal visible={showServerModal} transparent animationType="fade">
         <Pressable style={styles.modalOverlay} onPress={() => setShowServerModal(false)}>
           <Pressable style={styles.modalCard} onPress={() => {}}>
-            <Text style={styles.modalTitle}>SERVER URL</Text>
+            <Text style={styles.modalTitle}>{t('auth.serverUrl')}</Text>
             <TextInput
               style={styles.modalInput}
               value={serverUrl}
-              onChangeText={(t) => { setServerUrlLocal(t); setModalError(''); }}
+              onChangeText={(v) => { setServerUrlLocal(v); setModalError(''); }}
               placeholder="http://10.1.10.150:5000"
               autoCapitalize="none"
               autoCorrect={false}
@@ -246,10 +252,10 @@ export default function LoginScreen() {
                 onPress={saveServerUrl}
                 disabled={modalChecking}
               >
-                <Text style={styles.modalSaveBtnText}>{modalChecking ? 'CHECKING...' : 'SAVE'}</Text>
+                <Text style={styles.modalSaveBtnText}>{modalChecking ? t('auth.checking') : t('auth.save')}</Text>
               </TouchableOpacity>
               <TouchableOpacity style={styles.modalCancelBtn} onPress={() => setShowServerModal(false)}>
-                <Text style={styles.modalCancelBtnText}>CANCEL</Text>
+                <Text style={styles.modalCancelBtnText}>{t('auth.cancel')}</Text>
               </TouchableOpacity>
             </View>
           </Pressable>
@@ -276,16 +282,16 @@ const styles = StyleSheet.create({
   },
   logoText: {
     fontFamily: fonts.mono,
-    fontSize: 36,
+    fontSize: 30,
     fontWeight: '700',
-    color: colors.accentRed,
-    letterSpacing: 4,
+    color: colors.accent,
+    letterSpacing: 2,
   },
   logoSubtext: {
     fontFamily: fonts.mono,
     fontSize: 11,
     color: colors.textMuted,
-    letterSpacing: 2,
+    letterSpacing: 1.5,
     marginTop: 4,
   },
   form: {
@@ -303,7 +309,7 @@ const styles = StyleSheet.create({
     minHeight: 48,
   },
   loginButton: {
-    backgroundColor: colors.accentRed,
+    backgroundColor: colors.accent,
     borderRadius: radii.button,
     paddingVertical: 14,
     alignItems: 'center',
@@ -321,7 +327,7 @@ const styles = StyleSheet.create({
     letterSpacing: 1,
   },
   error: {
-    color: colors.accentRed,
+    color: colors.accent,
     fontSize: 13,
     textAlign: 'center',
     marginTop: 8,
@@ -389,7 +395,7 @@ const styles = StyleSheet.create({
     marginBottom: 16,
   },
   modalErrorText: {
-    color: colors.accentRed,
+    color: colors.accent,
     fontSize: 12,
     marginBottom: 12,
   },
@@ -399,7 +405,7 @@ const styles = StyleSheet.create({
   },
   modalSaveBtn: {
     flex: 1,
-    backgroundColor: colors.accentRed,
+    backgroundColor: colors.accent,
     borderRadius: radii.button,
     paddingVertical: 12,
     alignItems: 'center',
