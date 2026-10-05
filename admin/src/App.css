@@ -1390,6 +1390,15 @@ a {
   border-top: 1px solid var(--border);
 }
 
+/* Pages pass plain `.btn` buttons as the antd Modal footer; antd only
+   spaces its own `.ant-btn`, so without this they sit flush together. */
+.ant-modal-footer {
+  display: flex;
+  justify-content: flex-end;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
 /* ── Forms ───────────────────────────────── */
 
 .form-group {
