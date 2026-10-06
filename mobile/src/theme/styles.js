@@ -164,6 +164,48 @@ const MAP_DARK = {
 
 export const mapColors = { light: MAP_LIGHT, dark: MAP_DARK }[scheme];
 
+/**
+ * The 3D warehouse view's inputs, mirroring the admin panel's --map-*
+ * custom properties (admin/src/App.css) so the handheld and the web 3D
+ * page colour bins the same way. warehouse3d/palette.js turns them into
+ * the scene palette exactly as the admin palette.js does.
+ */
+const SCENE3D_LIGHT = {
+  '--map-surface': '#FFFFFF',
+  '--map-surface-2': '#F7FAFF',
+  '--map-fill': '#EEF2F7',
+  '--map-border-strong': '#CBD5E1',
+  '--map-muted': '#5E7FA8',
+  '--map-accent': '#2563EB',
+  '--map-accent-strong': '#1D4ED8',
+  '--map-ok': '#16A34A',
+  '--map-warn': '#E9B949',
+  '--map-bad': '#DC2626',
+  '--map-special': '#7C3AED',
+  zoneFallback: '#95A5A6',
+  labelText: '#1C1B19',
+  labelBg: '#FFFFFF',
+};
+
+const SCENE3D_DARK = {
+  '--map-surface': '#232322',
+  '--map-surface-2': '#282826',
+  '--map-fill': '#2B2B29',
+  '--map-border-strong': '#4C4A44',
+  '--map-muted': '#A8A49D',
+  '--map-accent': '#6BA8F0',
+  '--map-accent-strong': '#8FC0F7',
+  '--map-ok': '#5FBF7A',
+  '--map-warn': '#D4AA3A',
+  '--map-bad': '#E0705C',
+  '--map-special': '#9B93E8',
+  zoneFallback: '#7A766F',
+  labelText: '#EDEBE7',
+  labelBg: '#232322',
+};
+
+export const scene3dColors = { light: SCENE3D_LIGHT, dark: SCENE3D_DARK }[scheme];
+
 export const radii = {
   card: 12,
   input: 12,

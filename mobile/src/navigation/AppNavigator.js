@@ -1,4 +1,4 @@
-import React, { useEffect } from 'react';
+import React, { Suspense, lazy, useEffect } from 'react';
 import { ActivityIndicator, View } from 'react-native';
 import { NavigationContainer } from '@react-navigation/native';
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
@@ -26,6 +26,24 @@ import TransferScreen from '../screens/TransferScreen';
 import MapScreen from '../screens/MapScreen';
 import ZoneMapScreen from '../screens/ZoneMapScreen';
 import RackMapScreen from '../screens/RackMapScreen';
+
+// The 3D view pulls in three.js, @react-three/fiber and expo-gl. Loaded on
+// first open so no other screen pays for it at startup.
+const Warehouse3DScreen = lazy(() => import('../screens/Warehouse3DScreen'));
+
+function Warehouse3DRoute(props) {
+  return (
+    <Suspense
+      fallback={(
+        <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center', backgroundColor: colors.background }}>
+          <ActivityIndicator size="large" color={colors.accent} />
+        </View>
+      )}
+    >
+      <Warehouse3DScreen {...props} />
+    </Suspense>
+  );
+}
 
 const Stack = createNativeStackNavigator();
 
@@ -89,6 +107,7 @@ export default function AppNavigator() {
               <Stack.Screen name="Map" component={MapScreen} />
               <Stack.Screen name="ZoneMap" component={ZoneMapScreen} />
               <Stack.Screen name="RackMap" component={RackMapScreen} />
+              <Stack.Screen name="Warehouse3D" component={Warehouse3DRoute} />
             </>
           )
         ) : (
