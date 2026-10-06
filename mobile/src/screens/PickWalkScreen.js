@@ -1,4 +1,5 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
+import { useFocusEffect } from '@react-navigation/native';
 import { View, Text, TouchableOpacity, TextInput, ScrollView, Modal, ActivityIndicator, StyleSheet } from 'react-native';
 import ScanInput from '../components/ScanInput';
 import ErrorPopup from '../components/ErrorPopup';
@@ -35,6 +36,15 @@ export default function PickWalkScreen({ navigation, route }) {
     loadNextTask();
     loadTaskList();
   }, []);
+
+  // Coming back from the 3D view (or the 2D map): refresh the task list.
+  // The re-render also re-registers this screen's ScanInput as the
+  // hardware-scan handler, which the pushed screen's own ScanInput took.
+  const focusCount = useRef(0);
+  useFocusEffect(useCallback(() => {
+    focusCount.current += 1;
+    if (focusCount.current > 1) loadTaskList();
+  }, []));
 
   const loadTaskList = () => {
     client.get(`/api/picking/batch/${batch_id}`)
@@ -253,6 +263,16 @@ export default function PickWalkScreen({ navigation, route }) {
               })}
             >
               <Text style={buttonStyles.buttonSecondaryText}>{t('pick.viewOnMap')}</Text>
+            </TouchableOpacity>
+            <TouchableOpacity
+              style={[buttonStyles.buttonSecondary, { marginTop: 8, width: '100%' }]}
+              onPress={() => navigation.navigate('Warehouse3D', {
+                batchId: batch_id,
+                currentTaskId: task.pick_task_id,
+                tasks: taskList,
+              })}
+            >
+              <Text style={buttonStyles.buttonSecondaryText}>{t('pick.view3d')}</Text>
             </TouchableOpacity>
           </View>
 

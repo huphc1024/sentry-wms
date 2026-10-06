@@ -29,6 +29,7 @@ const FUNCTIONS = [
   { key: 'transfer', labelKey: 'home.fn.transfer.label', subKey: 'home.fn.transfer.sub', screen: 'Transfer', accent: 'gray' }, // i18n-ignore: screen names / accent codes
   { key: 'count', labelKey: 'home.fn.count.label', subKey: 'home.fn.count.sub', screen: 'Count', accent: 'gray' }, // i18n-ignore: screen names / accent codes
   { key: 'map', labelKey: 'home.fn.map.label', subKey: 'home.fn.map.sub', screen: 'Map', accent: 'gray' }, // i18n-ignore: screen names / accent codes
+  { key: 'map3d', labelKey: 'home.fn.map3d.label', subKey: 'home.fn.map3d.sub', screen: 'Warehouse3D', accent: 'gray' }, // i18n-ignore: screen names / accent codes
   { key: 'ship', labelKey: 'home.fn.ship.label', subKey: 'home.fn.ship.sub', screen: 'Ship', accent: 'gray' }, // i18n-ignore: screen names / accent codes
 ];
 
@@ -198,7 +199,7 @@ export default function HomeScreen({ navigation }) {
   // warehouse locator, not an operational privilege like pick/receive.
   // Gate is available to any authenticated floor user (check-in is low-privilege).
   const visibleFunctions = FUNCTIONS.filter(
-    (fn) => fn.key === 'map' || fn.key === 'gate' || allowedFunctions.includes(fn.key)
+    (fn) => fn.key === 'map' || fn.key === 'map3d' || fn.key === 'gate' || allowedFunctions.includes(fn.key)
   );
 
   const getBadgeCount = (key) => badges[key] || 0;

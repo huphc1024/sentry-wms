@@ -48,6 +48,7 @@ nav:
   - AI Suggestions: ai-suggestions.md
   - AI Assistant: ai-assistant.md
   - Dashboard API: dashboard-api.md
+  - 3D Warehouse View: warehouse-3d.md
   - Architecture patterns: patterns.md
   - Go-live:
       - Runbook: runbooks/go-live.md

@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import math
 from typing import Any
 
 from sqlalchemy import text
@@ -171,10 +172,43 @@ def load_warehouse_layout(db, warehouse_id: int) -> dict:
     }
 
 
-def validate_layout_payload(db, warehouse_id: int, payload: SaveWarehouseLayoutRequest) -> tuple[list[str], list[str]]:
-    """Return (errors, warnings). Errors block save."""
-    errors: list[str] = []
-    warnings: list[str] = []
+def _rack_footprint(rack: dict) -> dict:
+    """Axis-aligned box of a rack after its rotation about its centre.
+
+    ``x_m/y_m/w_m/h_m`` are the unrotated rectangle; ``rotation_deg``
+    turns it about its centre (the convention of the 3D view and the
+    admin layout editor). Bounds, overlap and path checks use this box,
+    so a rack turned 90 degrees is checked where it actually stands.
+    """
+    rot = math.radians(float(rack.get("rotation_deg") or 0) % 360)
+    cos, sin = abs(math.cos(rot)), abs(math.sin(rot))
+    w, h = rack["w_m"], rack["h_m"]
+    fw = w * cos + h * sin
+    fh = w * sin + h * cos
+    cx = rack["x_m"] + w / 2
+    cy = rack["y_m"] + h / 2
+    return {**rack, "x_m": cx - fw / 2, "y_m": cy - fh / 2, "w_m": fw, "h_m": fh}
+
+
+# Rounding noise from sin/cos (a 90-degree turn) must not turn an
+# exactly-fitting item into a bounds error.
+_EPS = 0.01
+
+
+def validate_layout_issues(db, warehouse_id: int, payload: SaveWarehouseLayoutRequest) -> list[dict]:
+    """Structured validation result.
+
+    Each issue is ``{severity: "error"|"warning", code, message,
+    zone_ids?, rack_keys?, path?}`` so a client can highlight the
+    offending items and translate the text from ``code``. ``message`` is
+    the English text ``validate_layout_payload`` has always returned.
+    """
+    issues: list[dict] = []
+
+    def add(severity, code, message, **refs):
+        issue = {"severity": severity, "code": code, "message": message}
+        issue.update({k: v for k, v in refs.items() if v is not None})
+        issues.append(issue)
 
     cfg = payload.layout
     wh_right = cfg.warehouse_x_m + cfg.warehouse_w_m
@@ -227,7 +261,11 @@ def validate_layout_payload(db, warehouse_id: int, payload: SaveWarehouseLayoutR
         }
         missing = supplied_rack_ids - owned_rack_ids
         if missing:
-            errors.append(f"Racks {sorted(missing)} do not belong to warehouse")
+            add(
+                "error", "rack_not_in_warehouse",
+                f"Racks {sorted(missing)} do not belong to warehouse",
+                rack_keys=[r.rack_key for r in payload.racks if r.rack_id in missing],
+            )
 
     supplied_path_ids = {p.path_id for p in payload.paths if p.path_id}
     if supplied_path_ids:
@@ -243,40 +281,56 @@ def validate_layout_payload(db, warehouse_id: int, payload: SaveWarehouseLayoutR
         }
         missing = supplied_path_ids - owned_path_ids
         if missing:
-            errors.append(f"Paths {sorted(missing)} do not belong to warehouse")
+            add(
+                "error", "path_not_in_warehouse",
+                f"Paths {sorted(missing)} do not belong to warehouse",
+            )
 
     for zone in payload.zones:
-        if zone.zone_id not in zone_ids:
-            errors.append(f"Zone {zone.zone_id} does not belong to warehouse")
+        zid = zone.zone_id
+        if zid not in zone_ids:
+            add("error", "zone_not_in_warehouse",
+                f"Zone {zid} does not belong to warehouse", zone_ids=[zid])
             continue
-        if zone.map_x < cfg.warehouse_x_m or zone.map_y < cfg.warehouse_y_m:
-            errors.append(f"Zone {zone.zone_id} is outside warehouse bounds")
-        if zone.map_x + zone.map_w > wh_right + 0.01 or zone.map_y + zone.map_h > wh_bottom + 0.01:
-            errors.append(f"Zone {zone.zone_id} extends beyond warehouse bounds")
+        if zone.map_x < cfg.warehouse_x_m - _EPS or zone.map_y < cfg.warehouse_y_m - _EPS:
+            add("error", "zone_outside_bounds",
+                f"Zone {zid} is outside warehouse bounds", zone_ids=[zid])
+        if zone.map_x + zone.map_w > wh_right + _EPS or zone.map_y + zone.map_h > wh_bottom + _EPS:
+            add("error", "zone_beyond_bounds",
+                f"Zone {zid} extends beyond warehouse bounds", zone_ids=[zid])
 
-    racks = [r.model_dump() for r in payload.racks]
+    racks = [_rack_footprint(r.model_dump()) for r in payload.racks]
     for rack in racks:
-        if rack["x_m"] < cfg.warehouse_x_m or rack["y_m"] < cfg.warehouse_y_m:
-            errors.append(f"Rack {rack['rack_key']} is outside warehouse bounds")
-        if rack["x_m"] + rack["w_m"] > wh_right + 0.01 or rack["y_m"] + rack["h_m"] > wh_bottom + 0.01:
-            errors.append(f"Rack {rack['rack_key']} extends beyond warehouse bounds")
+        key = rack["rack_key"]
+        if rack["x_m"] < cfg.warehouse_x_m - _EPS or rack["y_m"] < cfg.warehouse_y_m - _EPS:
+            add("error", "rack_outside_bounds",
+                f"Rack {key} is outside warehouse bounds", rack_keys=[key])
+        if rack["x_m"] + rack["w_m"] > wh_right + _EPS or rack["y_m"] + rack["h_m"] > wh_bottom + _EPS:
+            add("error", "rack_beyond_bounds",
+                f"Rack {key} extends beyond warehouse bounds", rack_keys=[key])
         if rack.get("zone_id") and rack["zone_id"] not in zone_ids:
-            errors.append(f"Rack {rack['rack_key']} references unknown zone")
+            add("error", "rack_unknown_zone",
+                f"Rack {key} references unknown zone", rack_keys=[key])
         zone_rect = zone_bounds.get(rack.get("zone_id"))
         if zone_rect and (
-            rack["x_m"] < zone_rect["x_m"]
-            or rack["y_m"] < zone_rect["y_m"]
-            or rack["x_m"] + rack["w_m"] > zone_rect["x_m"] + zone_rect["w_m"]
-            or rack["y_m"] + rack["h_m"] > zone_rect["y_m"] + zone_rect["h_m"]
+            rack["x_m"] < zone_rect["x_m"] - _EPS
+            or rack["y_m"] < zone_rect["y_m"] - _EPS
+            or rack["x_m"] + rack["w_m"] > zone_rect["x_m"] + zone_rect["w_m"] + _EPS
+            or rack["y_m"] + rack["h_m"] > zone_rect["y_m"] + zone_rect["h_m"] + _EPS
         ):
-            warnings.append(f"Rack {rack['rack_key']} is not fully inside its zone")
+            add("warning", "rack_outside_zone",
+                f"Rack {key} is not fully inside its zone",
+                rack_keys=[key], zone_ids=[rack["zone_id"]])
 
     for i, a in enumerate(racks):
         for b in racks[i + 1:]:
             if _rect_overlap(a, b):
-                errors.append(f"Racks {a['rack_key']} and {b['rack_key']} overlap")
+                add("error", "racks_overlap",
+                    f"Racks {a['rack_key']} and {b['rack_key']} overlap",
+                    rack_keys=[a["rack_key"], b["rack_key"]])
 
     for path in payload.paths:
+        name = path.label or path.path_type
         for pt in path.points:
             if (
                 pt.x < cfg.warehouse_x_m
@@ -284,22 +338,25 @@ def validate_layout_payload(db, warehouse_id: int, payload: SaveWarehouseLayoutR
                 or pt.x > wh_right
                 or pt.y > wh_bottom
             ):
-                errors.append(
-                    f"Path {path.label or path.path_type} has a point outside warehouse"
-                )
+                add("error", "path_outside_bounds",
+                    f"Path {name} has a point outside warehouse", path=name)
         if path.path_type == "PEDESTRIAN" and path.width_m < 1.0:
-            warnings.append(f"Pedestrian path {path.label or 'unnamed'} is narrower than 1 m")
+            add("warning", "pedestrian_path_narrow",
+                f"Pedestrian path {path.label or 'unnamed'} is narrower than 1 m",
+                path=path.label)
         if path.path_type == "FORKLIFT" and path.width_m < 2.5:
-            warnings.append(f"Forklift path {path.label or 'unnamed'} is narrower than 2.5 m")
+            add("warning", "forklift_path_narrow",
+                f"Forklift path {path.label or 'unnamed'} is narrower than 2.5 m",
+                path=path.label)
         pts = [{"x": p.x, "y": p.y} for p in path.points]
         for rack in racks:
             for idx in range(len(pts) - 1):
                 if _segment_intersects_rect(
                     pts[idx], pts[idx + 1], rack, path.width_m / 2
                 ):
-                    warnings.append(
-                        f"Path {path.label or path.path_type} crosses rack {rack['rack_key']}"
-                    )
+                    add("warning", "path_crosses_rack",
+                        f"Path {name} crosses rack {rack['rack_key']}",
+                        path=name, rack_keys=[rack["rack_key"]])
                     break
 
     forklift_paths = [p for p in payload.paths if p.path_type == "FORKLIFT"]
@@ -319,12 +376,21 @@ def validate_layout_payload(db, warehouse_id: int, payload: SaveWarehouseLayoutR
                 for j in range(len(pedestrian_pts) - 1)
             )
             if intersects:
-                warnings.append(
+                add("warning", "paths_intersect",
                     f"Forklift path {forklift.label or 'unnamed'} intersects "
-                    f"pedestrian path {pedestrian.label or 'unnamed'}"
-                )
+                    f"pedestrian path {pedestrian.label or 'unnamed'}",
+                    path=forklift.label)
 
-    return errors, warnings
+    return issues
+
+
+def validate_layout_payload(db, warehouse_id: int, payload: SaveWarehouseLayoutRequest) -> tuple[list[str], list[str]]:
+    """Return (errors, warnings). Errors block save."""
+    issues = validate_layout_issues(db, warehouse_id, payload)
+    return (
+        [i["message"] for i in issues if i["severity"] == "error"],
+        [i["message"] for i in issues if i["severity"] == "warning"],
+    )
 
 
 def save_warehouse_layout(
@@ -356,9 +422,17 @@ def save_warehouse_layout(
             "current_version": current_version,
         }
 
-    errors, warnings = validate_layout_payload(db, warehouse_id, payload)
+    issues = validate_layout_issues(db, warehouse_id, payload)
+    errors = [i["message"] for i in issues if i["severity"] == "error"]
+    warnings = [i["message"] for i in issues if i["severity"] == "warning"]
     if errors:
-        return {"ok": False, "status": 400, "errors": errors, "warnings": warnings}
+        return {
+            "ok": False,
+            "status": 400,
+            "errors": errors,
+            "warnings": warnings,
+            "issues": issues,
+        }
 
     before = load_warehouse_layout(db, warehouse_id)
     cfg = payload.layout

@@ -9,8 +9,9 @@ import * as count from './count.js';
 import * as transfer from './transfer.js';
 import * as gate from './gate.js';
 import * as map from './map.js';
+import * as map3d from './map3d.js';
 
-const files = [common, auth, home, receive, putaway, pick, packship, count, transfer, gate, map];
+const files = [common, auth, home, receive, putaway, pick, packship, count, transfer, gate, map, map3d];
 
 function merge(lang) {
   const out = {};

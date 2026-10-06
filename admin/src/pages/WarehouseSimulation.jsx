@@ -7,6 +7,12 @@ import Modal from '../components/Modal.jsx';
 import SkuBarcodeAutocomplete from '../components/SkuBarcodeAutocomplete.jsx';
 import { resolveItemFromScan } from '../utils/itemScanOptions.js';
 import { t as tr } from '../i18n/translate.js';
+import { Link } from 'react-router-dom';
+import BinDetailCard from '../components/simulation/BinDetailCard.jsx';
+import AttachPalletModal from '../components/simulation/AttachPalletModal.jsx';
+import {
+  apiErrorMessage, binSlotStatus, binStockView, matchingLocations,
+} from './simulation/binModel.js';
 
 const ZONE_TYPES = ['RECEIVING', 'STORAGE', 'PICKING', 'STAGING', 'SHIPPING'];
 
@@ -97,25 +103,6 @@ function zoneForContext(selectedZone, selectedZoneId, zones) {
   return selectedZone || zones.find((z) => z.zone_id === selectedZoneId) || null;
 }
 
-function apiErrorMessage(data, fallback) {
-  if (data?.error === 'Permission denied') {
-    return 'Không đủ quyền thao tác. Cần quyền Simulation hoặc trang tương ứng.';
-  }
-  if (data?.error === 'validation_error' && Array.isArray(data.details)) {
-    return data.details.map((d) => d.msg || d.type).join('; ');
-  }
-  if (data?.error === 'integrity_constraint_violation') {
-    return 'Dữ liệu xung đột — thử tải lại hoặc chọn pallet khác.';
-  }
-  return data?.error || data?.message || fallback;
-}
-
-function normalizeLotNumber(lot) {
-  if (lot == null) return null;
-  const value = String(lot).trim();
-  return value || null;
-}
-
 function printSlip(type, pallet, bin) {
   // Printed and handed to the floor. The two titles here were
   // unaccented Vietnamese -- `Phieu nhap pallet`, `Ton` -- which is
@@ -134,29 +121,6 @@ function printSlip(type, pallet, bin) {
       <tr><td style="border:1px solid #ccc;padding:6px">${tr('common.bin')}</td><td style="border:1px solid #ccc;padding:6px">${bin?.bin_code || '-'}</td></tr>
     </table></body></html>`;
   w.document.open(); w.document.write(html); w.document.close(); w.focus(); w.print();
-}
-
-function binSlotStatus(bin) {
-  if (!bin || Number(bin.total_qty || 0) <= 0) return 'empty';
-  const nearExpiry = (bin.pallets || []).some((p) => {
-    if (!p.expiry_date) return false;
-    const d = Math.ceil((new Date(p.expiry_date).getTime() - Date.now()) / (86400000));
-    return d <= 30;
-  });
-  return nearExpiry ? 'expired' : 'occupied';
-}
-
-/** Pallets with LPN, empty LPNs, and bin-level inventory without pallet. */
-function binStockView(bin) {
-  const allPallets = (bin?.pallets || []).filter((p) => !p.is_synthetic);
-  const unpalletized = (bin?.contents || []).filter(
-    (c) => (c.pallet_id == null || c.pallet_id === '') && Number(c.quantity_on_hand || 0) > 0,
-  );
-  const pallets = allPallets.filter((p) => Number(p.quantity_on_hand || 0) > 0);
-  const emptyPallets = allPallets.filter(
-    (p) => Number(p.quantity_on_hand || 0) <= 0 || p.is_empty,
-  );
-  return { pallets, emptyPallets, unpalletized, allPallets };
 }
 
 function binsForRack(rack, bins) {
@@ -289,9 +253,6 @@ export default function WarehouseSimulation() {
   const [addBusy, setAddBusy] = useState(false);
   const [attachOpen, setAttachOpen] = useState(false);
   const [attachRow, setAttachRow] = useState(null);
-  const [attachForm, setAttachForm] = useState({});
-  const [attachError, setAttachError] = useState('');
-  const [attachBusy, setAttachBusy] = useState(false);
   const [moveLot, setMoveLot] = useState(null);
 
   const bins = useMemo(() => mapData?.bins || [], [mapData]);
@@ -358,37 +319,10 @@ export default function WarehouseSimulation() {
     return [...options.values()].sort((a, b) => a.sku.localeCompare(b.sku));
   }, [bins]);
 
-  const buildMatchingLocations = useCallback((queryValue) => {
-    const query = String(queryValue || '').trim().toLowerCase();
-    if (!query) return [];
-    return bins.flatMap((bin) => {
-      const binMatch = String(bin.bin_code || '').toLowerCase().includes(query);
-      const realPallets = (bin.pallets || []).filter((p) => !p.is_synthetic);
-      const pallets = realPallets.filter((pallet) => (
-        [pallet.sku, pallet.lot_code, pallet.pallet_id, pallet.pallet_code, pallet.item_name].some((value) => (
-          String(value || '').toLowerCase().includes(query)
-        ))
-      ));
-      const contentMatch = (bin.contents || []).some((content) => (
-        [content.sku, content.item_name, content.lot_number].some((value) => (
-          String(value || '').toLowerCase().includes(query)
-        ))
-      ));
-      if (!binMatch && !contentMatch && pallets.length === 0) return [];
-      const location = {
-        bin_id: bin.bin_id,
-        bin_code: bin.bin_code,
-        zone_id: bin.zone_id,
-        rack_id: bin.rack_id,
-        rack_key: bin.rack_key,
-        level: Number(bin.level ?? bin.level_num ?? 1) || 1,
-      };
-      if (pallets.length) {
-        return pallets.map((pallet) => ({ ...location, pallet_id: pallet.pallet_id }));
-      }
-      return [{ ...location, pallet_id: null }];
-    });
-  }, [bins]);
+  const buildMatchingLocations = useCallback(
+    (queryValue) => matchingLocations(bins, queryValue),
+    [bins],
+  );
 
   const clearNav = () => {
     setSelectedZoneId(null);
@@ -785,65 +719,20 @@ export default function WarehouseSimulation() {
 
   const openAttachPallet = (row) => {
     if (!selected) return;
-    const stock = binStockView(selected);
-    const defaultPallet = stock.emptyPallets[0]?.pallet_id;
     setAttachRow(row);
-    setAttachForm({
-      pallet_id: defaultPallet ? String(defaultPallet) : 'new',
-      quantity: String(row.quantity_on_hand || ''),
-    });
-    setAttachError('');
     setAttachOpen(true);
   };
 
-  const submitAttachPallet = async () => {
-    if (!selected || !attachRow || !warehouseId) return;
-    if (!attachRow.item_id) {
-      setAttachError('Thiếu thông tin SKU — tải lại bản đồ kho.');
-      return;
-    }
-    setAttachBusy(true);
-    setAttachError('');
-    try {
-      let palletId = attachForm.pallet_id === 'new'
-        ? null
-        : Number(attachForm.pallet_id);
-      if (!Number.isFinite(palletId)) {
-        const createRes = await api.post('/admin/pallets', {
-          warehouse_id: Number(warehouseId),
-          bin_id: Number(selected.bin_id),
-          quantity: 0,
-        }, { silentPermissionDenied: true });
-        if (!createRes?.ok) {
-          const data = await createRes?.json().catch(() => ({}));
-          throw new Error(apiErrorMessage(data, 'Không tạo được pallet.'));
-        }
-        const created = await createRes.json();
-        palletId = created.pallet_id;
-      }
-      const qtyRaw = attachForm.quantity !== '' && attachForm.quantity != null
-        ? parseInt(String(attachForm.quantity), 10)
-        : undefined;
-      const body = {
-        item_id: Number(attachRow.item_id),
-        bin_id: Number(selected.bin_id),
-        lot_number: normalizeLotNumber(attachRow.lot_number),
-      };
-      if (Number.isFinite(qtyRaw) && qtyRaw > 0) body.quantity = qtyRaw;
-      const res = await api.post(`/admin/pallets/${palletId}/attach-inventory`, body, { silentPermissionDenied: true });
-      if (!res?.ok) {
-        const data = await res?.json().catch(() => ({}));
-        throw new Error(apiErrorMessage(data, 'Không gắn được pallet.'));
-      }
-      setAttachOpen(false);
-      setAttachRow(null);
-      await loadMap();
-      selectBin(selected.bin_id, palletId);
-    } catch (err) {
-      setAttachError(err.message || 'Không gắn được pallet.');
-    } finally {
-      setAttachBusy(false);
-    }
+  const closeAttachPallet = () => {
+    setAttachOpen(false);
+    setAttachRow(null);
+  };
+
+  const onPalletAttached = async (palletId) => {
+    const binId = selected.bin_id;
+    closeAttachPallet();
+    await loadMap();
+    selectBin(binId, palletId);
   };
 
   const warehouseTitle = warehouse?.warehouse_name
@@ -856,6 +745,7 @@ export default function WarehouseSimulation() {
   return (
     <div className="warehouse-simulation-page">
       <PageHeader title={warehouseTitle}>
+        <Link className="btn btn-sm" to="/warehouse-3d">{t('warehouse3d.open3d')}</Link>
         <button type="button" className="btn btn-sm" onClick={loadMap} disabled={loading}>
           {loading ? t('warehouseSimulation.loading') : t('warehouseSimulation.refresh')}
         </button>
@@ -1087,94 +977,15 @@ export default function WarehouseSimulation() {
                   })}
                 </div>
 
-                {selected && (() => {
-                  const stock = binStockView(selected);
-                  const hasAnything = stock.pallets.length
-                    || stock.emptyPallets.length
-                    || stock.unpalletized.length;
-                  return (
-                  <div className="sim2-detail-card" style={{ marginTop: 16 }}>
-                    <div style={{ fontWeight: 800, marginBottom: 8 }}>
-                      {t('warehouseSimulation.binN', { code: selected.bin_code })}
-                    </div>
-                    <div className="sim2-detail-row"><span>{t('common.onHand')}</span><strong>{selected.total_qty}</strong></div>
-                    {stock.pallets.length > 0 && (
-                      <div className="sim2-pallet-list">
-                        <div className="sim2-pallet-list-title">{t('warehouseSimulation.palletsWithStock')}</div>
-                        {stock.pallets.map((pallet) => (
-                          <button
-                            key={pallet.pallet_id}
-                            type="button"
-                            className={`sim-slot-pallet-item${selectedPallet === pallet.pallet_id ? ' is-active' : ''}`}
-                            onClick={() => setSelectedPallet(pallet.pallet_id)}
-                            style={{ textAlign: 'left' }}
-                          >
-                            <strong>{pallet.pallet_code || pallet.pallet_id}</strong>
-                            <span>
-                              {t('warehouseSimulation.skuQty', {
-                                sku: pallet.sku || '-',
-                                qty: pallet.quantity_on_hand ?? 0,
-                              })}
-                            </span>
-                            {pallet.lot_code && (
-                              <span>{t('warehouseSimulation.lotN', { lot: pallet.lot_code })}</span>
-                            )}
-                          </button>
-                        ))}
-                      </div>
-                    )}
-                    {stock.emptyPallets.length > 0 && (
-                      <div className="sim2-pallet-list">
-                        <div className="sim2-pallet-list-title">{t('warehouseSimulation.emptyPallets')}</div>
-                        {stock.emptyPallets.map((pallet) => (
-                          <div key={pallet.pallet_id} className="sim-slot-pallet-item" style={{ display: 'flex', flexWrap: 'wrap', gap: 8, alignItems: 'center' }}>
-                            <button
-                              type="button"
-                              className={`sim-slot-pallet-item${selectedPallet === pallet.pallet_id ? ' is-active' : ''}`}
-                              onClick={() => setSelectedPallet(pallet.pallet_id)}
-                              style={{ flex: '1 1 160px', textAlign: 'left' }}
-                            >
-                              <strong>{pallet.pallet_code || pallet.pallet_id}</strong>
-                              <span>{t('warehouseSimulation.emptyReady')}</span>
-                            </button>
-                            <button
-                              type="button"
-                              className="btn btn-sm btn-primary"
-                              onClick={() => openBinSlot(selected.bin_id, pallet.pallet_id)}
-                            >
-                              {t('warehouseSimulation.moveIn')}
-                            </button>
-                          </div>
-                        ))}
-                      </div>
-                    )}
-                    {stock.unpalletized.length > 0 && (
-                      <div className="sim2-pallet-list">
-                        <div className="sim2-pallet-list-title">{t('warehouseSimulation.unpalletized')}</div>
-                        {stock.unpalletized.map((row) => (
-                          <div key={`${row.item_id}-${row.lot_number || 'x'}`} className="sim-slot-pallet-item" style={{ display: 'flex', flexWrap: 'wrap', gap: 8, alignItems: 'center' }}>
-                            <div style={{ flex: '1 1 160px' }}>
-                              <strong>{row.sku || row.item_name || row.item_id}</strong>
-                              {row.item_name && row.sku && <span>{row.item_name}</span>}
-                              <span>
-                                {t('warehouseSimulation.qtyN', {
-                                  qty: row.quantity_on_hand ?? 0,
-                                })}
-                                {row.lot_number
-                                  ? ` · ${t('warehouseSimulation.lotN', { lot: row.lot_number })}`
-                                  : ''}
-                              </span>
-                            </div>
-                            <button type="button" className="btn btn-sm btn-primary" onClick={() => openAttachPallet(row)}>
-                              {t('warehouseSimulation.attachPallet')}
-                            </button>
-                          </div>
-                        ))}
-                      </div>
-                    )}
-                    {!hasAnything && (
-                      <div className="sim2-empty-hint">{t('warehouseSimulation.binEmpty')}</div>
-                    )}
+                {selected && (
+                  <BinDetailCard
+                    bin={selected}
+                    selectedPallet={selectedPallet}
+                    onSelectPallet={setSelectedPallet}
+                    onMoveIntoPallet={(palletId) => openBinSlot(selected.bin_id, palletId)}
+                    onAttachPallet={openAttachPallet}
+                    style={{ marginTop: 16 }}
+                  >
                     <div style={{ display: 'flex', gap: 8, marginTop: 12, flexWrap: 'wrap' }}>
                       <button
                         type="button"
@@ -1199,9 +1010,8 @@ export default function WarehouseSimulation() {
                         </>
                       )}
                     </div>
-                  </div>
-                  );
-                })()}
+                  </BinDetailCard>
+                )}
               </>
             )}
           </div>
@@ -1273,59 +1083,13 @@ export default function WarehouseSimulation() {
       )}
 
       {attachOpen && selected && attachRow && (
-        <Modal
-          title={t('warehouseSimulation.attachTitle', {
-            item: attachRow.sku || attachRow.item_name,
-          })}
-          onClose={() => { setAttachOpen(false); setAttachRow(null); setAttachError(''); }}
-          footer={(
-            <>
-              <button type="button" className="btn" onClick={() => { setAttachOpen(false); setAttachRow(null); }}>{t('common.cancel')}</button>
-              <button type="button" className="btn btn-primary" disabled={attachBusy} onClick={submitAttachPallet}>
-                {attachBusy ? '…' : t('warehouseSimulation.attachPallet')}
-              </button>
-            </>
-          )}
-        >
-          <p className="sim2-empty-hint" style={{ marginTop: 0 }}>
-            {t('warehouseSimulation.attachHint')}
-          </p>
-          <div className="form-group">
-            <label>{t('warehouseSimulation.pallet')}</label>
-            <select
-              className="form-select"
-              value={attachForm.pallet_id || 'new'}
-              onChange={(e) => setAttachForm({ ...attachForm, pallet_id: e.target.value })}
-            >
-              <option value="new">{t('warehouseSimulation.newPallet')}</option>
-              {binStockView(selected).emptyPallets.map((p) => (
-                <option key={p.pallet_id} value={String(p.pallet_id)}>
-                  {t('warehouseSimulation.palletEmptyMark', {
-                    code: p.pallet_code || p.pallet_id,
-                  })}
-                </option>
-              ))}
-            </select>
-          </div>
-          <div className="form-group">
-            <label>{t('warehouseSimulation.attachQty')}</label>
-            <input
-              className="form-input"
-              type="number"
-              min="1"
-              max={attachRow.quantity_on_hand}
-              value={attachForm.quantity ?? ''}
-              onChange={(e) => setAttachForm({ ...attachForm, quantity: e.target.value })}
-            />
-          </div>
-          {attachRow.lot_number && (
-            <div className="form-group">
-              <label>{t('warehouseSimulation.lot')}</label>
-              <input className="form-input" value={attachRow.lot_number} readOnly />
-            </div>
-          )}
-          {attachError && <div className="form-error">{attachError}</div>}
-        </Modal>
+        <AttachPalletModal
+          bin={selected}
+          row={attachRow}
+          warehouseId={warehouseId}
+          onClose={closeAttachPallet}
+          onAttached={onPalletAttached}
+        />
       )}
 
       {addModal === 'zone' && (
