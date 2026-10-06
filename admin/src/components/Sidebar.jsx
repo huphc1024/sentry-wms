@@ -47,6 +47,7 @@ const NAV = [
     labelKey: 'nav.warehouse',
     items: [
       { to: '/warehouse-simulation', labelKey: 'nav.simulation', pageKey: 'warehouse-simulation' },
+      { to: '/warehouse-3d', labelKey: 'nav.warehouse3d', pageKey: 'warehouse-simulation' },
       { to: '/items', labelKey: 'nav.items', pageKey: 'items' },
       { to: '/vendors', labelKey: 'nav.vendors', pageKey: 'vendors' },
       { to: '/adjustments', labelKey: 'nav.adjustments', pageKey: 'adjustments' },

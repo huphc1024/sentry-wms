@@ -1420,6 +1420,155 @@ class Gen:
         insert(cur, "billing_invoice_lines", ["invoice_id", "event_id", "description", "quantity",
                                               "unit_price", "amount"], ilines)
 
+    # ------------------------------------------------------------- pick batches
+    # (wave status, number of orders) per warehouse. IN_PROGRESS has its
+    # first stops already picked; COMPLETED batches walk recently PICKED
+    # orders so the 3D view has finished routes to replay.
+    PICK_BATCH_PLAN = {
+        0: [("IN_PROGRESS", 4), ("OPEN", 3), ("OPEN", 5), ("COMPLETED", 4), ("COMPLETED", 3)],
+        1: [("OPEN", 3), ("COMPLETED", 3)],
+    }
+
+    def pick_batches(self):
+        """Pick batches / batch orders / pick tasks for open and picked orders.
+
+        Runs last and draws from its own RNG, so every row generated before
+        it is identical to a build without this step. Open orders are
+        batched only when the stock allocated to them in their pick bins
+        covers every line, exactly as create_pick_batch would require.
+        """
+        cur = self.cur
+        prng = random.Random(RANDOM_SEED + 101)
+        bin_by_id = {b["bin_id"]: b for by in self.bins for rows in by.values() for b in rows}
+        alloc_left = {}
+        rows_by_item = {}
+        for r in self.all_inv:
+            if r.get("pallet") is None and r.get("quantity_allocated"):
+                alloc_left[r["inventory_id"]] = r["quantity_allocated"]
+                rows_by_item.setdefault((r["wi"], r["item_id"]), []).append(r)
+
+        def cover(so):
+            """Inventory rows + quantities that cover every line, or None."""
+            plan, taken = [], {}
+            for ln in so["line_rows"]:
+                need = ln["quantity_ordered"]
+                for r in rows_by_item.get((so["wi"], ln["item_id"]), []):
+                    left = alloc_left[r["inventory_id"]] - taken.get(r["inventory_id"], 0)
+                    if need <= 0 or left <= 0:
+                        continue
+                    q = min(need, left)
+                    taken[r["inventory_id"]] = taken.get(r["inventory_id"], 0) + q
+                    plan.append((ln, r, q))
+                    need -= q
+                if need > 0:
+                    return None
+            for iid, q in taken.items():
+                alloc_left[iid] -= q
+            return plan
+
+        batches, links, tasks = [], [], []
+        picked_inv, picked_lines = {}, {}
+        for wi, plan_rows in self.PICK_BATCH_PLAN.items():
+            pickers = self.staff[wi]["pick"] or ["admin"]
+            open_pool = sorted(
+                (so for so in self.orders if so["wi"] == wi and so["status"] == "OPEN"
+                 and so.get("order_type", "sale") == "sale" and not so.get("parent")),
+                key=lambda so: so["created"])
+            done_pool = sorted(
+                (so for so in self.orders if so["wi"] == wi and so["status"] == "PICKED"
+                 and so.get("picked_at")),
+                key=lambda so: so["picked_at"], reverse=True)
+            for n, (status, size) in enumerate(plan_rows, 1):
+                picker = prng.choice(pickers)
+                members = []
+                if status == "COMPLETED":
+                    members = [(so, None) for so in done_pool[:size]]
+                    done_pool = done_pool[size:]
+                else:
+                    while open_pool and len(members) < size:
+                        so = open_pool.pop(0)
+                        covered = cover(so)
+                        if covered:
+                            members.append((so, covered))
+                if not members:
+                    continue
+                if status == "COMPLETED":
+                    done_at = max(so["picked_at"] for so, _ in members)
+                    created = done_at - timedelta(minutes=prng.randint(25, 70))
+                    started = created + timedelta(minutes=prng.randint(2, 8))
+                else:
+                    created = max(so["created"] for so, _ in members) + timedelta(
+                        minutes=prng.randint(3, 20))
+                    created = min(created, self.now - timedelta(minutes=prng.randint(5, 40)))
+                    started = created + timedelta(minutes=4) if status == "IN_PROGRESS" else None
+                    done_at = None
+                batch = {"batch_number": f"BATCH-{created:%Y%m%d-%H%M%S}-{wi}{n:02d}",
+                         "warehouse_id": self.wh_ids[wi], "status": status,
+                         "assigned_to": picker, "total_orders": len(members),
+                         "created_at": created, "started_at": started, "completed_at": done_at,
+                         "tasks": []}
+                for tote, (so, covered) in enumerate(members, 1):
+                    links.append({"batch": batch, "so_id": so["so_id"], "tote_number": f"TOTE-{tote}"})
+                    if covered is None:      # already picked: walk the item's pick bin
+                        covered = []
+                        for ln in so["line_rows"]:
+                            it = self.item_by_id[ln["item_id"]]
+                            pb = it.get("pick_bins", {}).get(wi) or self.bins[wi]["pick"][0]
+                            covered.append((ln, {"bin_id": pb["bin_id"], "inventory_id": None}, ln["quantity_ordered"]))
+                    for ln, r, q in covered:
+                        batch["tasks"].append({
+                            "batch": batch, "so_id": so["so_id"], "so_line_id": ln["so_line_id"],
+                            "item_id": ln["item_id"], "bin_id": r["bin_id"], "quantity_to_pick": q,
+                            "pick_sequence": bin_by_id[r["bin_id"]]["pick_sequence"],
+                            "tote_number": f"TOTE-{tote}", "inventory_id": r["inventory_id"]})
+                walk = sorted(batch["tasks"], key=lambda t: (t["pick_sequence"], t["so_id"]))
+                done_upto = len(walk) // 2 if status == "IN_PROGRESS" else (
+                    len(walk) if status == "COMPLETED" else 0)
+                for i, t in enumerate(walk):
+                    picked = i < done_upto
+                    t["status"] = "PICKED" if picked else "PENDING"
+                    t["quantity_picked"] = t["quantity_to_pick"] if picked else 0
+                    t["picked_by"] = picker if picked else None
+                    t["scan_confirmed"] = picked
+                    if picked:
+                        span = ((done_at or self.now) - (started or created)).total_seconds()
+                        t["picked_at"] = (started or created) + timedelta(
+                            seconds=span * (i + 1) / (len(walk) + 1))
+                        if status == "IN_PROGRESS":
+                            picked_inv[t["inventory_id"]] = picked_inv.get(t["inventory_id"], 0) + t["quantity_to_pick"]
+                            picked_lines[t["so_line_id"]] = picked_lines.get(t["so_line_id"], 0) + t["quantity_to_pick"]
+                    else:
+                        t["picked_at"] = None
+                batch["total_items"] = sum(t["quantity_to_pick"] for t in walk)
+                batches.append(batch)
+                tasks.extend(walk)
+
+        ids = insert(cur, "pick_batches", ["batch_number", "warehouse_id", "status", "assigned_to",
+                                           "total_orders", "total_items", "created_at",
+                                           "started_at", "completed_at"], batches, "batch_id")
+        for b, bid in zip(batches, ids):
+            b["batch_id"] = bid
+        for row in links + tasks:
+            row["batch_id"] = row["batch"]["batch_id"]
+        insert(cur, "pick_batch_orders", ["batch_id", "so_id", "tote_number"], links)
+        insert(cur, "pick_tasks", ["batch_id", "so_id", "so_line_id", "item_id", "bin_id",
+                                   "quantity_to_pick", "quantity_picked", "pick_sequence",
+                                   "tote_number", "status", "picked_by", "picked_at",
+                                   "scan_confirmed"], tasks)
+        # Stops already walked in an IN_PROGRESS batch moved stock into the
+        # tote, the same bookkeeping confirm_pick does.
+        if picked_inv:
+            execute_values(cur, """
+                UPDATE inventory AS i
+                   SET quantity_on_hand = GREATEST(0, i.quantity_on_hand - v.q),
+                       quantity_allocated = GREATEST(0, i.quantity_allocated - v.q)
+                  FROM (VALUES %s) AS v(id, q) WHERE i.inventory_id = v.id
+            """, list(picked_inv.items()))
+            execute_values(cur, """
+                UPDATE sales_order_lines AS l SET quantity_picked = l.quantity_picked + v.q
+                  FROM (VALUES %s) AS v(id, q) WHERE l.so_line_id = v.id
+            """, list(picked_lines.items()))
+
     # ------------------------------------------------------------- audit
     def write_audit(self):
         self.audit.sort(key=lambda a: a[6])
@@ -1437,7 +1586,8 @@ class Gen:
                  ("inventory (plan)", self.inventory), ("backorders", self.backorders),
                  ("sales orders (write)", self.write_sales), ("purchasing / receipts", self.purchasing),
                  ("inventory (write)", self.write_inventory), ("cycle counts", self.cycle_counts),
-                 ("billing", self.billing), ("audit log", self.write_audit)]
+                 ("billing", self.billing), ("pick batches", self.pick_batches),
+                 ("audit log", self.write_audit)]
         for label, fn in steps:
             print(f"  - {label}")
             fn()
@@ -1451,7 +1601,7 @@ SUMMARY_TABLES = ["warehouses", "zones", "bins", "users", "user_page_permissions
                   "sales_orders", "sales_order_lines", "item_fulfillments", "item_fulfillment_lines",
                   "cycle_counts", "cycle_count_lines", "inventory_adjustments", "customer_contracts",
                   "billing_rate_cards", "billing_events", "billing_invoices", "billing_invoice_lines",
-                  "audit_log", "app_settings"]
+                  "pick_batches", "pick_batch_orders", "pick_tasks", "audit_log", "app_settings"]
 
 
 def summary(cur):
@@ -1463,6 +1613,8 @@ def summary(cur):
     print("  sales_orders by status: " + ", ".join(f"{s}={n}" for s, n in cur.fetchall()))
     cur.execute("SELECT status, COUNT(*) FROM purchase_orders GROUP BY 1 ORDER BY 2 DESC")
     print("  purchase_orders by status: " + ", ".join(f"{s}={n}" for s, n in cur.fetchall()))
+    cur.execute("SELECT status, COUNT(*) FROM pick_batches GROUP BY 1 ORDER BY 2 DESC")
+    print("  pick_batches by status: " + ", ".join(f"{s}={n}" for s, n in cur.fetchall()))
     cur.execute("SELECT status, COUNT(*) FROM billing_invoices GROUP BY 1 ORDER BY 2 DESC")
     print("  billing_invoices by status: " + ", ".join(f"{s}={n}" for s, n in cur.fetchall()))
 

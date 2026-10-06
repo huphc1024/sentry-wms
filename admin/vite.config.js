@@ -18,7 +18,9 @@ export default defineConfig({
           groups: [
             {
               name: 'react-vendor',
-              test: /node_modules[\/](react|react-dom|react-router|react-router-dom|scheduler)[\/]/,
+              // Not the copies nested under @react-three (fiber ships its
+              // own scheduler): those belong to the lazy 'three' chunk.
+              test: /^(?!.*node_modules[\/]@react-three[\/]).*node_modules[\/](react|react-dom|react-router|react-router-dom|scheduler)[\/]/,
               priority: 20,
             },
             {
@@ -31,6 +33,14 @@ export default defineConfig({
               // out of the entry bundle and cacheable on their own.
               name: 'charts',
               test: /node_modules[\/](recharts|d3-[\w-]+|victory-vendor|internmap|decimal\.js-light)[\/]/,
+              priority: 10,
+            },
+            {
+              // three.js + react-three-fiber/drei: only the lazily loaded
+              // 3D warehouse page (/warehouse-3d) imports them, so this
+              // chunk is fetched on that route and never by the entry.
+              name: 'three',
+              test: /node_modules[\/](three|three-[\w-]+|@react-three|@use-gesture|@monogrid|@mediapipe|react-reconciler|its-fine|suspend-react|zustand|react-use-measure|camera-controls|maath|meshline|troika-[\w-]+|bidi-js|webgl-sdf-generator|stats-gl|stats\.js|detect-gpu|hls\.js|tunnel-rat|glsl-noise)[\/]/,
               priority: 10,
             },
           ],

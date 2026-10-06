@@ -3433,3 +3433,406 @@ select.form-input {
 
 /* The modal title is a real <h2>; keep antd's title typography. */
 .modal .modal-title-text { margin: 0; font: inherit; color: inherit; display: inline; }
+
+/* 3D warehouse (pages/Warehouse3D.jsx). Bin detail reuses the sim2-*
+   classes, which the page gets by also carrying .warehouse-simulation-page. */
+.warehouse-3d-page .wh3d-toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px 18px;
+  margin-bottom: 10px;
+}
+
+.warehouse-3d-page .wh3d-search,
+.warehouse-3d-page .wh3d-group {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+}
+
+.warehouse-3d-page .wh3d-group .form-select {
+  width: auto;
+  min-width: 220px;
+  max-width: 100%;
+}
+
+.warehouse-3d-page .wh3d-group-label,
+.warehouse-3d-page .wh3d-count {
+  color: var(--text-secondary);
+  font-size: 14px;
+  font-weight: 500;
+}
+
+/* The 3D page reuses the simulation page's map styles but keeps the
+   ordinary page chrome (title, header spacing, inputs) of the other pages. */
+.warehouse-3d-page .page-header {
+  min-height: 0;
+  margin-bottom: 20px;
+  padding: 0;
+  border-bottom: 0;
+}
+
+.warehouse-3d-page .page-header h1 {
+  color: var(--text);
+  font-size: 18px;
+  font-weight: 600;
+  letter-spacing: normal;
+  text-transform: none;
+}
+
+.warehouse-3d-page .wh3d-toolbar {
+  gap: 12px 24px;
+  margin-bottom: 16px;
+}
+
+.warehouse-3d-page .wh3d-search-input {
+  width: min(340px, 100%);
+}
+
+.warehouse-3d-page .wh3d-swatch {
+  display: inline-block;
+  width: 12px;
+  height: 12px;
+  margin-right: 6px;
+  border: 1px solid var(--map-border-strong);
+  border-radius: 3px;
+  vertical-align: -2px;
+}
+
+.warehouse-3d-page .wh3d-main {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 360px;
+  gap: 14px;
+  align-items: start;
+}
+
+.warehouse-3d-page .wh3d-canvas {
+  position: relative;
+  height: min(72vh, 760px);
+  min-height: 420px;
+  overflow: hidden;
+  border: 1px solid var(--map-border);
+  border-radius: 8px;
+  background: var(--map-surface-2);
+}
+
+.warehouse-3d-page .wh3d-fallback {
+  padding: 24px;
+  color: var(--map-muted);
+}
+
+.warehouse-3d-page .wh3d-tooltip {
+  position: absolute;
+  z-index: 40;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 6px 9px;
+  border: 1px solid var(--map-border-strong);
+  border-radius: 6px;
+  background: var(--map-surface);
+  color: var(--map-text);
+  font-size: 12px;
+  pointer-events: none;
+  box-shadow: 0 4px 14px rgb(0 0 0 / 12%);
+}
+
+.warehouse-3d-page .wh3d-stats {
+  position: absolute;
+  bottom: 8px;
+  left: 10px;
+  color: var(--map-muted);
+  font-size: 11px;
+  pointer-events: none;
+}
+
+.warehouse-3d-page .wh3d-side {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  max-height: min(72vh, 760px);
+  overflow-y: auto;
+}
+
+.warehouse-3d-page .wh3d-hint {
+  color: var(--map-muted);
+  font-size: 13px;
+}
+
+.warehouse-3d-page .wh3d-list {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin: 8px 0 0;
+  padding: 0;
+  list-style: none;
+}
+
+.warehouse-3d-page .wh3d-list-item {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px 8px;
+  width: 100%;
+  padding: 6px 8px;
+  border: 1px solid var(--map-border);
+  border-radius: 6px;
+  background: var(--map-surface);
+  color: var(--map-text);
+  font-size: 12px;
+  text-align: left;
+  cursor: pointer;
+}
+
+.warehouse-3d-page .wh3d-list-item.is-active {
+  border-color: var(--map-accent);
+  background: var(--map-accent-tint);
+}
+
+.warehouse-3d-page .wh3d-list-item.is-done {
+  opacity: .6;
+}
+
+.warehouse-3d-page .wh3d-stop-index,
+.wh3d-stop {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 22px;
+  height: 22px;
+  padding: 0 5px;
+  border-radius: 11px;
+  background: var(--map-special);
+  color: #FFFFFF;
+  font-size: 11px;
+  font-weight: 800;
+}
+
+.wh3d-stop {
+  border: 2px solid var(--map-surface);
+  cursor: pointer;
+  box-shadow: 0 2px 6px rgb(0 0 0 / 25%);
+}
+
+.wh3d-stop.is-done {
+  opacity: .55;
+}
+
+.wh3d-zone-label span {
+  display: inline-block;
+  padding: 2px 6px;
+  border-left: 3px solid;
+  border-radius: 3px;
+  background: var(--map-surface);
+  color: var(--map-text);
+  font-size: 11px;
+  font-weight: 700;
+  white-space: nowrap;
+  pointer-events: none;
+}
+
+@media (max-width: 1100px) {
+  .warehouse-3d-page .wh3d-main {
+    grid-template-columns: 1fr;
+  }
+
+  .warehouse-3d-page .wh3d-side {
+    max-height: none;
+  }
+}
+
+/* 3D page: floor-plan layout editor (pages/warehouse3d/LayoutEditor.jsx) */
+.warehouse-3d-page .wh3d-main.is-editing {
+  grid-template-columns: minmax(0, 1.25fr) minmax(0, 1fr);
+}
+
+.warehouse-3d-page .wh3d-editor {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  min-width: 0;
+}
+
+.warehouse-3d-page .wh3d-ed-toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+}
+
+.warehouse-3d-page .wh3d-ed-check {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  color: var(--map-text);
+  font-size: 12px;
+}
+
+.warehouse-3d-page .wh3d-ed-status {
+  margin-left: auto;
+  color: var(--map-muted);
+  font-size: 12px;
+}
+
+.warehouse-3d-page .wh3d-ed-message {
+  margin-bottom: 8px;
+}
+
+.wh3d-ed-ok {
+  padding: 8px 10px;
+  border: 1px solid var(--map-ok-border);
+  border-radius: 6px;
+  background: var(--map-ok-tint);
+  color: var(--map-ok-text);
+  font-size: 13px;
+}
+
+.warehouse-3d-page .wh3d-ed-body {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 240px;
+  gap: 10px;
+  align-items: start;
+}
+
+.warehouse-3d-page .wh3d-ed-plan {
+  width: 100%;
+  height: min(66vh, 700px);
+  min-height: 380px;
+  border: 1px solid var(--map-border);
+  border-radius: 8px;
+  background: var(--map-surface-2);
+  touch-action: none;
+  user-select: none;
+}
+
+.warehouse-3d-page .wh3d-ed-plan:focus-visible {
+  outline: 2px solid var(--map-accent);
+  outline-offset: 2px;
+}
+
+.warehouse-3d-page .wh3d-ed-floor {
+  fill: var(--map-surface);
+  stroke: var(--map-border-strong);
+  stroke-width: 2px;
+  vector-effect: non-scaling-stroke;
+}
+
+.warehouse-3d-page .wh3d-ed-gridline {
+  fill: none;
+  stroke: var(--map-border);
+  stroke-width: 1px;
+  vector-effect: non-scaling-stroke;
+}
+
+.warehouse-3d-page .wh3d-ed-zone {
+  fill: var(--zone-color, var(--map-fill));
+  fill-opacity: 0.14;
+  stroke: var(--zone-color, var(--map-border-strong));
+  stroke-width: 1.5px;
+  stroke-dasharray: 6 3;
+  vector-effect: non-scaling-stroke;
+  cursor: move;
+}
+
+.warehouse-3d-page .wh3d-ed-zone-label {
+  fill: var(--map-text);
+  font-weight: 700;
+  pointer-events: none;
+}
+
+.warehouse-3d-page .wh3d-ed-rack {
+  fill: var(--map-cell-stocked);
+  stroke: var(--map-text);
+  stroke-width: 1px;
+  vector-effect: non-scaling-stroke;
+  cursor: move;
+}
+
+.warehouse-3d-page .wh3d-ed-zone.is-selected,
+.warehouse-3d-page .wh3d-ed-rack.is-selected {
+  stroke: var(--map-accent);
+  stroke-width: 2.5px;
+  stroke-dasharray: none;
+}
+
+.warehouse-3d-page .wh3d-ed-zone.has-warning,
+.warehouse-3d-page .wh3d-ed-rack.has-warning {
+  stroke: var(--map-warn);
+  stroke-width: 2.5px;
+}
+
+.warehouse-3d-page .wh3d-ed-zone.has-error,
+.warehouse-3d-page .wh3d-ed-rack.has-error {
+  stroke: var(--map-bad);
+  stroke-width: 3px;
+}
+
+.warehouse-3d-page .wh3d-ed-rack.has-error {
+  fill: var(--danger-bg);
+}
+
+.warehouse-3d-page .wh3d-ed-handle {
+  fill: var(--map-surface);
+  stroke: var(--map-accent);
+  stroke-width: 1.5px;
+  vector-effect: non-scaling-stroke;
+  cursor: nwse-resize;
+}
+
+.warehouse-3d-page .wh3d-ed-props {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  max-height: min(66vh, 700px);
+  overflow-y: auto;
+}
+
+.warehouse-3d-page .wh3d-ed-grid2 {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 6px;
+}
+
+.warehouse-3d-page .wh3d-ed-field {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  color: var(--map-muted);
+  font-size: 11px;
+}
+
+.warehouse-3d-page .wh3d-ed-field .form-input {
+  width: 100%;
+  min-width: 0;
+}
+
+.warehouse-3d-page .wh3d-ed-rotate {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  gap: 6px;
+  margin-top: 8px;
+}
+
+.warehouse-3d-page .wh3d-ed-hint {
+  margin-top: 4px;
+  color: var(--map-muted);
+  font-size: 12px;
+}
+
+.warehouse-3d-page .wh3d-ed-issue.is-error strong {
+  color: var(--map-bad);
+}
+
+.warehouse-3d-page .wh3d-ed-issue.is-warning strong {
+  color: var(--map-warn-text);
+}
+
+@media (max-width: 1100px) {
+  .warehouse-3d-page .wh3d-main.is-editing,
+  .warehouse-3d-page .wh3d-ed-body {
+    grid-template-columns: 1fr;
+  }
+}

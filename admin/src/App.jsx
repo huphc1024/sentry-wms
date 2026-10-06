@@ -1,3 +1,4 @@
+import { lazy, Suspense } from 'react';
 import { Routes, Route, Navigate, useLocation } from 'react-router-dom';
 import { useAuth } from './auth.jsx';
 import { useLocale } from './i18n/locale.jsx';
@@ -54,6 +55,11 @@ import RateCards from './pages/RateCards.jsx';
 import Invoices from './pages/Invoices.jsx';
 import Customers from './pages/Customers.jsx';
 
+// three.js and react-three-fiber are large and only this page uses them:
+// loading it lazily keeps them out of the entry bundle (see the 'three'
+// group in vite.config.js).
+const Warehouse3D = lazy(() => import('./pages/Warehouse3D.jsx'));
+
 function ProtectedRoute({ children }) {
   const { user, loading } = useAuth();
   const location = useLocation();
@@ -107,6 +113,7 @@ export default function App() {
         <Route path="/" element={<ErrorBoundary fallbackMessage={t('errors.couldNotLoad', { name: t('nav.dashboard') })}><Dashboard /></ErrorBoundary>} />
         <Route path="/inventory" element={<ErrorBoundary fallbackMessage={t('errors.couldNotLoad', { name: t('nav.inventory') })}><Inventory /></ErrorBoundary>} />
         <Route path="/warehouse-simulation" element={<ErrorBoundary fallbackMessage={t('errors.couldNotLoad', { name: t('nav.simulation') })}><WarehouseSimulation /></ErrorBoundary>} />
+        <Route path="/warehouse-3d" element={<ErrorBoundary fallbackMessage={t('errors.couldNotLoad', { name: t('nav.warehouse3d') })}><Suspense fallback={null}><Warehouse3D /></Suspense></ErrorBoundary>} />
         <Route path="/cycle-counts" element={<ErrorBoundary fallbackMessage={t('errors.couldNotLoad', { name: t('nav.counts') })}><CycleCounts /></ErrorBoundary>} />
         <Route path="/count-approvals" element={<ErrorBoundary fallbackMessage={t('errors.couldNotLoad', { name: t('nav.approvals') })}><CycleCountApproval /></ErrorBoundary>} />
         <Route path="/receiving" element={<ErrorBoundary fallbackMessage={t('errors.couldNotLoad', { name: t('nav.receiving') })}><Receiving /></ErrorBoundary>} />

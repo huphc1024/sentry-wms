@@ -56,6 +56,7 @@ Log in to the admin as `admin`. Switch it back to `sentry` when you are done.
 | Sales | ~4,200 orders over 120 days with weekday/weekend pattern, ~35% growth and "ngày đôi" promo spikes; channels Shopee, Lazada, TikTok Shop, ERP dealers, website, POS; totals in VND |
 | Lifecycle | OPEN / PICKED / PACKED / SHIPPED / CANCELLED / REFUNDED / FRAUD_REVIEW, plus `-BO` backorders in WAITING_STOCK (some covered by a PO due soon, some by stock in the other warehouse, some partial, some with nothing) |
 | Customers | 14 B2B customers (`KH-0001` ...) and generated retail buyers; phones start with `000`, emails use `example.com`, addresses say "Đường Demo" |
+| Pick batches | `SL-HCM`: one IN_PROGRESS batch (first half of its stops picked, stock moved to the tote), two OPEN and two COMPLETED (recently PICKED orders); `SL-HN`: one OPEN, one COMPLETED. Open batches only take OPEN orders whose allocated pick-bin stock covers every line. Used by the 3D view's pick route ([3D Warehouse View](warehouse-3d.md)). |
 | Cycle counts | Completed history, counts in VARIANCE with pending adjustments (including an unexpected item), in-progress and pending counts |
 | Billing | Contracts, rate cards, daily billing events, monthly invoices (PAID / SENT / DRAFT / one CANCELLED) |
 | Users | `admin`, `quanly.hcm` (ADMIN), supervisors / accountant with page permissions, and floor staff (`nv.*`) with 120 days of receive / put-away / pick / pack / ship activity for the Productivity tab |
